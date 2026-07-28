@@ -1,0 +1,40 @@
+# --- Build / tooling state that must never be committed ---------------------
+# The container is ephemeral. Installed state is rebuilt by scripts/setup-tools.sh,
+# not restored from git. See TOOLING.md.
+
+# mxcli source clone and binaries (built into /opt and /usr/local/bin, but guard
+# against a stray in-tree clone or a project-local ./mxcli)
+/mxcli
+/mxcli-src/
+bin/
+*.exe
+
+# Mendix build output
+*.mda
+*.mpk
+deployment/
+javasource/**/*.class
+
+# Mendix project working state
+*.mpr.bak
+*.mpr-journal
+*.launch
+.mendix-cache/
+modeler-merge-marker
+
+# Toolchain caches
+.antlr/
+node_modules/
+
+# Setup logs
+*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*~
+
+# Claude Code local overrides (settings.json IS committed; local ones are not)
+.claude/settings.local.json
