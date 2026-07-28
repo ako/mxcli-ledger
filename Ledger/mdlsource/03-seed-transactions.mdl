@@ -1,0 +1,274 @@
+-- ============================================================================
+-- 03 - Demo data: transactions
+-- ============================================================================
+-- Generates the transaction history for one category across the elapsed months
+-- of 2026, then the deliberately uncategorised backlog.
+--
+-- The prototype used a seeded LCG so screenshots stayed stable. The same idea
+-- is used here (a small Lehmer generator, period 65536) rather than random(),
+-- so re-seeding a fresh database produces identical figures. Multiplier and
+-- modulus are kept small so intermediate products stay well inside Integer.
+--
+-- Months after the current one get no transactions at all — see
+-- ../../PROTOTYPE-ANALYSIS.md §5.3. A future month with a zero actual would
+-- read as maximally under budget and paint the whole second half of the year
+-- green.
+-- ============================================================================
+
+/**
+ * Creates the transactions for one category, for every elapsed month of 2026.
+ *
+ * Amounts are the category baseline split across TxPerMonth bookings, scaled by
+ * a per-month drift and a per-transaction jitter so the matrix has texture
+ * rather than identical rows.
+ *
+ * @param $Category Category to generate for
+ * @param $PrimaryAccount Account most of these bookings land on
+ * @param $AltAccount Secondary account; every third booking uses it. May be empty.
+ * @param $MirrorAccount When set, each booking also creates the receiving half
+ *        of an internal transfer on this account, flagged IsMirror
+ * @param $TxPerMonth How many bookings per month
+ * @param $SharePerTx 1/TxPerMonth as a decimal, passed in because Mendix cannot
+ *        divide a Decimal by an Integer (see ../../FINDINGS.md)
+ * @param $MerchantCount How many known merchants this category has
+ * @param $JitterPercent Spread around the mean booking, 0-100
+ * @param $SeedBase Distinct per category, so categories do not correlate
+ * @param $IsIncome True for income categories (positive SignedAmount)
+ * @param $ThroughMonth Last month to generate, 1-12
+ * @returns Number of transactions created
+ */
+create or modify microflow Ledger.Seed_CategoryTransactions (
+  $Category: Ledger.Category,
+  $PrimaryAccount: Ledger.Account,
+  $AltAccount: Ledger.Account,
+  $MirrorAccount: Ledger.Account,
+  $TxPerMonth: integer,
+  $SharePerTx: decimal,
+  $MerchantCount: integer,
+  $JitterPercent: integer,
+  $SeedBase: integer,
+  $IsIncome: boolean,
+  $ThroughMonth: integer
+)
+returns integer as $Created
+folder 'Demo data'
+begin
+  declare $Created integer = 0;
+  declare $Seed integer = $SeedBase;
+  declare $Month integer = 1;
+  declare $DaysInMonth integer = 31;
+  declare $MonthKey string = '';
+  declare $DriftPermille integer = 1000;
+  declare $Index integer = 0;
+  declare $Pick integer = 1;
+  declare $Position integer = 0;
+  declare $MerchantName string = '';
+  declare $FactorPermille decimal = 1000;
+  declare $Amount decimal = 0;
+  declare $Signed decimal = 0;
+  declare $Day integer = 1;
+  declare $TxDate datetime = [%CurrentDateTime%];
+  declare $Description string = '';
+  declare $UseAlt boolean = false;
+
+  retrieve $Merchants from Ledger.Merchant
+    where Ledger.Merchant_Category = $Category
+    sort by SortOrder asc;
+
+  @annotation 'One month per iteration; stops at the current month'
+  while $Month <= $ThroughMonth
+  begin
+    -- Days per month for 2026. 2026 is not a leap year, so February has 28.
+    if $Month = 2 then
+      set $DaysInMonth = 28;
+    else
+      if $Month = 4 or $Month = 6 or $Month = 9 or $Month = 11 then
+        set $DaysInMonth = 30;
+      else
+        set $DaysInMonth = 31;
+      end if;
+    end if;
+
+    if $Month < 10 then
+      set $MonthKey = '2026-0' + toString($Month);
+    else
+      set $MonthKey = '2026-' + toString($Month);
+    end if;
+
+    -- Per-month drift, roughly -13% to +15%, so months differ from each other.
+    -- Kept in permille as an Integer; scaled to a Decimal by multiplying by
+    -- 0.001 at the point of use. Mendix rejects mixed-type division.
+    set $Seed = ($Seed * 75 + 74) mod 65537;
+    set $DriftPermille = 1000 + (($Seed mod 280) - 126);
+
+    set $Index = 1;
+    while $Index <= $TxPerMonth
+    begin
+      -- Merchant: pick one of the category's known counterparties.
+      set $Seed = ($Seed * 75 + 74) mod 65537;
+      set $Pick = ($Seed mod $MerchantCount) + 1;
+      set $Position = 0;
+      set $MerchantName = '';
+      loop $Mer in $Merchants
+      begin
+        set $Position = $Position + 1;
+        if $Position = $Pick then
+          set $MerchantName = $Mer/Name;
+        end if;
+      end loop;
+
+      -- Amount: baseline share, jittered. All multiplication — see the note on
+      -- drift above.
+      set $Seed = ($Seed * 75 + 74) mod 65537;
+      set $FactorPermille = 1000 + (((($Seed mod 1000) - 500) * 2 * $JitterPercent) * 0.01);
+      set $Amount = round($Category/BaselineBudget * $SharePerTx
+        * ($DriftPermille * 0.001) * ($FactorPermille * 0.001), 2);
+
+      if $IsIncome then
+        set $Signed = $Amount;
+      else
+        set $Signed = -$Amount;
+      end if;
+
+      set $Seed = ($Seed * 75 + 74) mod 65537;
+      set $Day = ($Seed mod $DaysInMonth) + 1;
+
+      @annotation 'dateTime() only accepts literals, so step off 1 January'
+      set $TxDate = addDays(addMonths(dateTime(2026, 1, 1), $Month - 1), $Day - 1);
+
+      if $IsIncome then
+        set $Description = 'SEPA overboeking';
+      else
+        if $Seed mod 2 = 0 then
+          set $Description = 'Betaalautomaat';
+        else
+          set $Description = 'iDEAL ' + toString(10000 + $Seed);
+        end if;
+      end if;
+
+      set $UseAlt = $AltAccount != empty and $Index mod 3 = 0;
+
+      @annotation 'Skip negligible amounts, as the prototype did'
+      if $Amount > 0.5 then
+        $Tx = create Ledger.Transaction (
+          TxDate = $TxDate,
+          MonthKey = $MonthKey,
+          Merchant = $MerchantName,
+          Description = $Description,
+          Amount = $Amount,
+          SignedAmount = $Signed,
+          IsMirror = false,
+          CategorisedByRule = true);
+        change $Tx (Ledger.Transaction_Category = $Category);
+        if $UseAlt then
+          change $Tx (Ledger.Transaction_Account = $AltAccount);
+        else
+          change $Tx (Ledger.Transaction_Account = $PrimaryAccount);
+        end if;
+        commit $Tx;
+        set $Created = $Created + 1;
+
+        @annotation 'Receiving half of an internal transfer — excluded from category totals'
+        if $MirrorAccount != empty then
+          $Mirror = create Ledger.Transaction (
+            TxDate = $TxDate,
+            MonthKey = $MonthKey,
+            Merchant = 'Van Betaalrekening',
+            Description = 'SEPA overboeking',
+            Amount = $Amount,
+            SignedAmount = $Amount,
+            IsMirror = true,
+            CategorisedByRule = true);
+          change $Mirror (Ledger.Transaction_Category = $Category);
+          change $Mirror (Ledger.Transaction_Account = $MirrorAccount);
+          commit $Mirror;
+          set $Created = $Created + 1;
+        end if;
+      end if;
+
+      set $Index = $Index + 1;
+    end while;
+
+    set $Month = $Month + 1;
+  end while;
+
+  return $Created;
+end;
+/
+
+/**
+ * Creates the backlog of uncategorised transactions shown as 'needs review'.
+ *
+ * These deliberately match no categorisation rule, so the Transactions screen
+ * has something to review and the sidebar badge has a non-zero count.
+ *
+ * @param $AccIng Checking account
+ * @param $AccAbn Credit card account
+ * @param $ThroughMonth Current month, so the backlog lands in the latest month
+ * @returns Number of transactions created
+ */
+create or modify microflow Ledger.Seed_UncategorisedTransactions (
+  $AccIng: Ledger.Account,
+  $AccAbn: Ledger.Account,
+  $ThroughMonth: integer
+)
+returns integer as $Created
+folder 'Demo data'
+begin
+  declare $Created integer = 0;
+  declare $Index integer = 0;
+  declare $MonthKey string = '';
+  declare $Day integer = 1;
+  declare $Amount decimal = 0;
+  declare $Name string = '';
+  declare $TxDate datetime = [%CurrentDateTime%];
+
+  if $ThroughMonth < 10 then
+    set $MonthKey = '2026-0' + toString($ThroughMonth);
+  else
+    set $MonthKey = '2026-' + toString($ThroughMonth);
+  end if;
+
+  @annotation 'Twelve merchants that match no rule'
+  while $Index < 12
+  begin
+    if $Index = 0 then set $Name = 'Pluk Bloemen'; end if;
+    if $Index = 1 then set $Name = 'Rituals'; end if;
+    if $Index = 2 then set $Name = 'Vinted'; end if;
+    if $Index = 3 then set $Name = 'De Bijenkorf'; end if;
+    if $Index = 4 then set $Name = 'Praxis'; end if;
+    if $Index = 5 then set $Name = 'Ticketmaster'; end if;
+    if $Index = 6 then set $Name = 'Dille & Kamille'; end if;
+    if $Index = 7 then set $Name = 'Bagels & Beans'; end if;
+    if $Index = 8 then set $Name = 'Sissy-Boy'; end if;
+    if $Index = 9 then set $Name = 'Boekhandel Kade'; end if;
+    if $Index = 10 then set $Name = 'Fietsenmaker Rooie'; end if;
+    if $Index = 11 then set $Name = 'Tikkie J. Bakker'; end if;
+
+    set $Day = 4 + ($Index * 2);
+    set $Amount = round(12 + ($Index * 9.4), 2);
+    set $TxDate = addDays(addMonths(dateTime(2026, 1, 1), $ThroughMonth - 1), $Day - 1);
+
+    $Tx = create Ledger.Transaction (
+      TxDate = $TxDate,
+      MonthKey = $MonthKey,
+      Merchant = $Name,
+      Description = 'iDEAL ' + toString(20000 + ($Index * 137)),
+      Amount = $Amount,
+      SignedAmount = -$Amount,
+      IsMirror = false,
+      CategorisedByRule = false);
+    if $Index mod 3 = 0 then
+      change $Tx (Ledger.Transaction_Account = $AccAbn);
+    else
+      change $Tx (Ledger.Transaction_Account = $AccIng);
+    end if;
+    commit $Tx;
+
+    set $Created = $Created + 1;
+    set $Index = $Index + 1;
+  end while;
+
+  return $Created;
+end;
+/

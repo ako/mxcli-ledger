@@ -1,0 +1,314 @@
+-- ============================================================================
+-- 01 - Domain model
+-- ============================================================================
+-- Ledger: household finance tracking. Rebuild of the Claude prototype
+-- (see ../../PROTOTYPE-ANALYSIS.md for the mapping and the decisions taken).
+--
+-- Apply order: this file first — everything else references these entities.
+-- Re-apply from scratch; do not hand-edit the .mpr.
+-- ============================================================================
+
+create module Ledger;
+
+-- MARK: Enumerations
+
+/** Kind of account a transaction can land on. */
+create or modify enumeration Ledger.AccountType (
+  /** Day-to-day payment account */
+  Checking 'Checking',
+  /** Savings account */
+  Savings 'Savings',
+  /** Credit card */
+  Credit 'Credit'
+);
+/
+
+/**
+ * Whether a category group counts as money in or money out.
+ * Drives the sign flip in variance: for income, over budget is good.
+ */
+create or modify enumeration Ledger.GroupType (
+  /** Money in */
+  Income 'Income',
+  /** Money out */
+  Expense 'Expense'
+);
+/
+
+/** Which number the cashflow matrix shows in each cell. */
+create or modify enumeration Ledger.ReportMode (
+  /** What was actually spent or received */
+  Actual 'Actual',
+  /** What was budgeted */
+  Budget 'Budget',
+  /** Budget minus actual, sign-corrected per group type */
+  Variance 'Variance'
+);
+/
+
+/** Transaction field a categorisation rule inspects. */
+create or modify enumeration Ledger.RuleField (
+  /** Counterparty name */
+  Merchant 'Merchant',
+  /** Free-text description / payment reference */
+  Description 'Description',
+  /** Transaction amount */
+  Amount 'Amount'
+);
+/
+
+/**
+ * How a rule compares its value against the field.
+ * IsOneOf treats MatchValue as a comma-separated list.
+ */
+create or modify enumeration Ledger.RuleOperator (
+  /** Field contains the value (case-insensitive) */
+  Contains 'contains',
+  /** Field starts with the value (case-insensitive) */
+  StartsWith 'starts with',
+  /** Field equals one of a comma-separated list */
+  IsOneOf 'is one of',
+  /** Field equals the value exactly */
+  Equals 'equals'
+);
+/
+
+-- MARK: Reference data
+
+/**
+ * A bank or credit card account. Balance and LastImport are maintained by the
+ * import process, not derived from the transaction list.
+ */
+@position(100, 100)
+create or modify persistent entity Ledger.Account (
+  /** Display name, e.g. 'ING Betaalrekening' */
+  Name: string(100) not null error 'Account name is required',
+  /** IBAN, or a masked card number for credit accounts */
+  IBAN: string(50),
+  /** Checking / Savings / Credit */
+  AccountType: enumeration(Ledger.AccountType) not null,
+  /** Balance as of the last import */
+  Balance: decimal default 0,
+  /** Change over the current month, shown on the account card */
+  MonthDelta: decimal default 0,
+  /** Date of the most recent successful import */
+  LastImport: date,
+  /** Display order on the Accounts screen */
+  SortOrder: integer default 0
+);
+/
+
+/**
+ * Top level of the two-level taxonomy, e.g. Housing, Daily living.
+ * ColorHex drives the group dot in the matrix and the taxonomy list.
+ */
+@position(100, 320)
+create or modify persistent entity Ledger.CategoryGroup (
+  /** Display name */
+  Name: string(50) not null error 'Group name is required',
+  /** Income or Expense */
+  GroupType: enumeration(Ledger.GroupType) not null,
+  /** Accent colour, e.g. '#1B4D4B' */
+  ColorHex: string(10),
+  /** Display order */
+  SortOrder: integer default 0
+);
+/
+
+/**
+ * Second level of the taxonomy. BaselineBudget is the default monthly amount;
+ * a BudgetOverride replaces it for a specific month.
+ */
+@position(380, 320)
+create or modify persistent entity Ledger.Category (
+  /** Display name */
+  Name: string(100) not null error 'Category name is required',
+  /** Default monthly budget, used when no override exists */
+  BaselineBudget: decimal default 0,
+  /** Display order within the group */
+  SortOrder: integer default 0
+);
+/
+
+/**
+ * Per-category, per-month budget that replaces the category baseline.
+ *
+ * This single entity covers both of the prototype's mechanisms: the seeded
+ * BUDGET_OVERRIDES constants and the session-only budgetEdits made by editing
+ * a cell on the Budgets screen. There is no meaningful difference between them.
+ */
+@position(660, 320)
+create or modify persistent entity Ledger.BudgetOverride (
+  /** Month this override applies to, format YYYY-MM */
+  MonthKey: string(7) not null error 'Month is required',
+  /** Budget amount for this category in this month */
+  Amount: decimal default 0
+);
+/
+
+/**
+ * A known counterparty belonging to a category, e.g. 'Albert Heijn' under
+ * Groceries.
+ *
+ * Kept as an entity rather than a comma-separated field on Category because it
+ * is real domain data — it drives rule suggestions on the Categories & rules
+ * screen, and it lets the demo-data seeder pick merchants without doing string
+ * splitting in microflow expressions.
+ */
+@position(940, 320)
+create or modify persistent entity Ledger.Merchant (
+  /** Counterparty name as it appears on statements */
+  Name: string(200) not null error 'Merchant name is required',
+  /** Display / pick order within the category */
+  SortOrder: integer default 0
+);
+/
+
+-- MARK: Transactions
+
+/**
+ * A single booking on an account.
+ *
+ * Amount is always positive; SignedAmount carries the direction (negative for
+ * spending, positive for income) so the UI can colour it without consulting the
+ * category group.
+ *
+ * IsMirror marks the receiving half of an internal transfer — a savings
+ * transfer produces a debit on the checking account and a matching credit on
+ * the savings account. Category totals must exclude mirrors or every transfer
+ * is counted twice.
+ *
+ * MonthKey is denormalised from TxDate so the matrix can group without date
+ * arithmetic in every aggregate.
+ */
+@position(380, 100)
+create or modify persistent entity Ledger.Transaction (
+  /** Booking date */
+  TxDate: date not null error 'Transaction date is required',
+  /** Denormalised from TxDate, format YYYY-MM */
+  MonthKey: string(7) not null,
+  /** Counterparty name as it appeared on the statement */
+  Merchant: string(200) not null,
+  /** Payment reference / description */
+  Description: string(500),
+  /** Absolute amount, always positive */
+  Amount: decimal default 0,
+  /** Signed amount: negative for spending, positive for income */
+  SignedAmount: decimal default 0,
+  /** True for the receiving half of an internal transfer — excluded from totals */
+  IsMirror: boolean default false,
+  /** True when the category was assigned by a rule rather than by hand */
+  CategorisedByRule: boolean default false
+)
+index (MonthKey);
+/
+
+-- MARK: Rules and import
+
+/**
+ * A categorisation rule, applied in SortOrder on import. First match wins.
+ *
+ * Note the prototype's rule list never executed — it was a display list only.
+ * This is a real, evaluable model: one field, one operator, one value per rule.
+ * The prototype's compound rule 8 ('amount = -700 and merchant Spaarrekening')
+ * is not expressible here and is split into a dedicated savings rule.
+ */
+@position(660, 100)
+create or modify persistent entity Ledger.CategoryRule (
+  /** Evaluation order; lower runs first, first match wins */
+  SortOrder: integer default 0,
+  /** Which transaction field to inspect */
+  RuleField: enumeration(Ledger.RuleField) not null,
+  /** How to compare */
+  RuleOperator: enumeration(Ledger.RuleOperator) not null,
+  /** Value to compare against; comma-separated for IsOneOf */
+  MatchValue: string(200) not null,
+  /** Running count of transactions this rule has categorised */
+  MatchCount: integer default 0
+);
+/
+
+/** One CSV import run against one account. */
+@position(940, 100)
+create or modify persistent entity Ledger.ImportBatch (
+  /** Name of the uploaded file */
+  FileName: string(200) not null,
+  /** When the import ran */
+  ImportedOn: datetime,
+  /** Rows inserted */
+  NewCount: integer default 0,
+  /** Rows skipped as duplicates */
+  DupeCount: integer default 0
+);
+/
+
+-- MARK: Associations
+--
+-- Direction matters and is easy to get backwards: `from` is the entity that
+-- OWNS the reference (the many side), `to` is the entity being pointed at (the
+-- one side). Writing these the other way round models cleanly and passes
+-- `mxcli check`, but every microflow that sets the association then fails
+-- `mx check` with CE0854 "association is not reachable from entity".
+
+/** Each category belongs to one group. */
+create or modify association Ledger.Category_CategoryGroup
+  from Ledger.Category
+  to Ledger.CategoryGroup
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/
+
+/** An override belongs to one category. */
+create or modify association Ledger.BudgetOverride_Category
+  from Ledger.BudgetOverride
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/
+
+/** Each known merchant belongs to one category. */
+create or modify association Ledger.Merchant_Category
+  from Ledger.Merchant
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/
+
+/** Every transaction sits on exactly one account. */
+create or modify association Ledger.Transaction_Account
+  from Ledger.Transaction
+  to Ledger.Account
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/
+
+/** A transaction may be uncategorised — an empty reference means 'needs review'. */
+create or modify association Ledger.Transaction_Category
+  from Ledger.Transaction
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/
+
+/** A rule assigns one category. */
+create or modify association Ledger.CategoryRule_Category
+  from Ledger.CategoryRule
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/
+
+/** An import batch targets one account. */
+create or modify association Ledger.ImportBatch_Account
+  from Ledger.ImportBatch
+  to Ledger.Account
+  type reference
+  owner default
+  delete_behavior CASCADE;
+/

@@ -199,3 +199,208 @@ later phase knows they are untested here:
   device-flow endpoints are unreachable. `MXCLI_HUB_KEY` must be minted at
   <https://hub.mxcli.org/cli> and supplied via the Claude Code environment
   configuration.
+
+---
+
+## Phase 2 — domain model and demo data (2026-07-28)
+
+### 12. `DELETE_CASCADE` is documented but the grammar rejects it
+
+`docs/05-mdl-specification/03-domain-model.md` lists `DELETE_CASCADE` in the
+delete-behavior table. The parser disagrees:
+
+```
+$ ./mxcli check mdlsource/01-domain-model.mdl
+  - line 235:18 missing {DELETE_AND_REFERENCES, DELETE_BUT_KEEP_REFERENCES,
+    DELETE_IF_NO_REFERENCES, CASCADE, PREVENT} at 'DELETE_CASCADE'
+```
+
+**Workaround:** use `CASCADE`. The error message is the authoritative list.
+
+### 13. Association direction is inverted relative to the documented example — and only `mx check` catches it
+
+This one cost the most time, because `mxcli check` passes and the model looks
+right in `SHOW ASSOCIATIONS`.
+
+The spec's table and its example contradict each other:
+
+| Property | MDL Clause | Description |
+|----------|------------|-------------|
+| Parent | `from entity` | Parent (**owner/many**) side of relationship |
+| Child | `to entity` | Child (referenced/**one**) side |
+
+but the example immediately below reads:
+
+```sql
+/** Order belongs to Customer (many-to-one) */
+create association Sales.Order_Customer
+  from Sales.Customer      -- the ONE side
+  to Sales.Order           -- the MANY side
+```
+
+The table is right and the example is wrong. `from` must be the entity that
+**owns the reference** (the many side). Following the example produces an
+association that `mxcli check` accepts and `SHOW ASSOCIATIONS` renders happily,
+but every microflow that sets it fails validation:
+
+```
+$ ~/.mxcli/mxbuild/11.12.1/modeler/mx check Ledger.mpr
+[error] [CE0854] "Association 'Ledger.Transaction_Account' is not reachable
+  from entity 'Ledger.Transaction'." at Change object activity
+  'Change 'Tx' (Transaction_Account)'
+...
+The app contains: 76 errors.
+```
+
+68 of those 76 errors were this single mistake, repeated.
+
+**Workaround:** write `from <child/many> to <parent/one>`. `create or modify`
+will not flip an existing association — it must be dropped and recreated:
+
+```
+./mxcli -p Ledger.mpr -c "DROP ASSOCIATION Ledger.Transaction_Account"
+```
+
+### 14. Scripts are not re-runnable unless every statement says `create or modify`
+
+The ground rule is to re-apply MDL from scratch rather than patch the `.mpr`,
+but a plain `create` is not idempotent:
+
+```
+$ ./mxcli exec mdlsource/01-domain-model.mdl
+Error: enumeration already exists: Ledger.AccountType (use create or modify to update)
+  hint: Ledger.Account is defined later in this script — move its create statement before this one
+```
+
+The hint is misleading — it points at an unrelated entity and suggests
+reordering, which is not the fix. The message before it is the real one.
+
+**Workaround:** use `create or modify` on every enumeration, entity,
+association and microflow. Associations still cannot change direction this way
+(see 13).
+
+### 15. Every `create` in a microflow needs a distinct output variable
+
+Reusing a scratch variable across creates is rejected:
+
+```
+$ ./mxcli check mdlsource/02-seed-reference.mdl -p Ledger.mpr --references
+  - duplicate variable name '$M' — create output variable is already declared in this scope (CE0111)
+  [... x34]
+```
+
+**Workaround:** number them (`$M1`…`$M35`). Verbose, but there is no scoping
+construct that would let a name be reused.
+
+### 16. mxcli accepts expression functions that Mendix does not have
+
+`year()` and `month()` are in mxcli's function whitelist
+(`mdl/exprcheck/func_checker.go`) and pass `mxcli check --references` cleanly.
+Mendix has no such functions, so the build fails later:
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Year'
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable ThroughMonth'
+```
+
+**Workaround:** format and re-parse.
+
+```
+set $Year = parseInteger(formatDateTime([%CurrentDateTime%], 'yyyy'));
+set $Month = parseInteger(formatDateTime([%CurrentDateTime%], 'M'));
+```
+
+### 17. BUG: division by a variable silently loses the `$` sigil
+
+Written:
+
+```
+set $B02 = $Dec / $Dec2;
+```
+
+Stored in the model (via `DESCRIBE MICROFLOW`):
+
+```
+set $B02 = $Dec/Dec2;
+```
+
+The `$` on the right operand of `/` is eaten, producing an unresolvable
+expression. `mxcli check` passes; `mx check` reports only the generic
+CE0117 "Error(s) in expression", with no indication that the text was
+rewritten. `DESCRIBE MICROFLOW` is the only way to see it.
+
+**Workaround:** never divide by a variable. Multiply by a reciprocal instead,
+passing it in as a Decimal parameter if necessary.
+
+### 18. BUG: decimal literals with a zero fraction are truncated to integers
+
+Written `$Dec / 2.0`, stored as `$Dec / 2` — which then fails Mendix's
+type rules (see 20). Same for `100.0` → `100`.
+
+**Workaround:** avoid `X.0` literals entirely; use a multiplication by
+`0.01`/`0.001` instead of a division by `100.0`/`1000.0`.
+
+### 19. BUG: small decimal literals are emitted in scientific notation
+
+Written `$Dec * $I * $I * 0.000001`, stored as `$Dec * $I * $I * 1e-06`.
+Mendix expressions do not accept `1e-06`, so this fails CE0117.
+
+`0.001` survives correctly, so the threshold is somewhere between.
+
+**Workaround:** keep literals at `0.001` or larger, applying them more than
+once where a smaller scale factor is needed:
+
+```
+-- instead of  * 0.000001
+* ($DriftPermille * 0.001) * ($FactorPermille * 0.001)
+```
+
+### 20. Mendix division requires BOTH operands to be Decimal
+
+Not an mxcli issue, but it shapes every calculation. All of these fail CE0117:
+
+| Expression | Result |
+|---|---|
+| `$Integer / 1000` | fails (even into a Decimal variable) |
+| `$Decimal / 2` | fails |
+| `$Integer / 1000.0` | fails |
+| `$Decimal * $Integer` | **works** |
+| `$Integer * 9.4` | **works** |
+| `round($Dec * $I * 0.001, 2)` | **works** |
+
+Multiplication mixes types freely; division does not mix at all.
+
+**Workaround:** express every ratio as a multiplication. Where a true division
+is unavoidable, pass the reciprocal in as a Decimal parameter — this is why
+`Seed_CategoryTransactions` takes `$SharePerTx` (1/n) rather than computing it
+from `$TxPerMonth`.
+
+### 21. `dateTime()` only accepts literal constants
+
+```
+set $C01 = dateTime(2026, 7, 15);        -- works
+set $C02 = dateTime(2026, $Month, $Day); -- CE0117
+```
+
+**Workaround:** step off a literal anchor date.
+
+```
+set $TxDate = addDays(addMonths(dateTime(2026, 1, 1), $Month - 1), $Day - 1);
+```
+
+### 22. Working rule: `mxcli check` is necessary but not sufficient
+
+Findings 13, 16, 17, 18, 19, 20 and 21 all pass `mxcli check --references`
+and fail `mx check`. Treat `mxcli check` as a syntax gate only, and run
+
+```
+~/.mxcli/mxbuild/11.12.1/modeler/mx check Ledger.mpr
+```
+
+after every `exec`. When CE0117 appears, `DESCRIBE MICROFLOW <name>` to see
+what was actually written to the model — the stored text is not always the text
+that was authored (17, 18, 19).
+
+Isolating CE0117 is easiest with a throwaway probe microflow that assigns each
+candidate expression to its own uniquely-named variable, since `mx check`
+reports the variable name but not the expression.

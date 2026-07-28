@@ -1,0 +1,276 @@
+-- ============================================================================
+-- 02 - Demo data: reference data
+-- ============================================================================
+-- Accounts, the two-level taxonomy, known merchants, budget overrides and the
+-- categorisation rules.
+--
+-- Values mirror the prototype (see ../../PROTOTYPE-ANALYSIS.md §1). Two
+-- deliberate departures:
+--   * The month window is the 2026 calendar year, not the prototype's Feb-Jul.
+--   * The rules are real and evaluable. The prototype's compound rule 8
+--     ('amount = -700,00 and merchant Spaarrekening') was a display string, not
+--     data; it is replaced by a plain merchant-contains rule on 'Spaarrekening'.
+-- ============================================================================
+
+/**
+ * Creates all reference data: accounts, category groups, categories, known
+ * merchants, budget overrides and categorisation rules.
+ *
+ * Assumes the tables are empty — the caller (Seed_DemoData) guards on that.
+ *
+ * @returns true when the reference data has been created
+ */
+create or modify microflow Ledger.Seed_ReferenceData ()
+returns boolean as $Done
+folder 'Demo data'
+begin
+  declare $Done boolean = false;
+
+  -- MARK: Accounts
+
+  $AccIng = create Ledger.Account (
+    Name = 'ING Betaalrekening',
+    IBAN = 'NL21 INGB 0004 5567 21',
+    AccountType = Ledger.AccountType.Checking,
+    Balance = 4820,
+    MonthDelta = 310,
+    LastImport = dateTime(2026, 7, 24),
+    SortOrder = 1);
+
+  $AccSpaar = create Ledger.Account (
+    Name = 'ING Spaarrekening',
+    IBAN = 'NL21 INGB 0009 8812 04',
+    AccountType = Ledger.AccountType.Savings,
+    Balance = 28450,
+    MonthDelta = 700,
+    LastImport = dateTime(2026, 7, 24),
+    SortOrder = 2);
+
+  $AccAbn = create Ledger.Account (
+    Name = 'ABN AMRO Creditcard',
+    IBAN = '**** 4471',
+    AccountType = Ledger.AccountType.Credit,
+    Balance = -612,
+    MonthDelta = -84,
+    LastImport = dateTime(2026, 7, 22),
+    SortOrder = 3);
+
+  $AccRev = create Ledger.Account (
+    Name = 'Revolut',
+    IBAN = 'LT84 3250 0117 4291 06',
+    AccountType = Ledger.AccountType.Checking,
+    Balance = 340,
+    MonthDelta = -55,
+    LastImport = dateTime(2026, 7, 19),
+    SortOrder = 4);
+
+  commit $AccIng;
+  commit $AccSpaar;
+  commit $AccAbn;
+  commit $AccRev;
+
+  -- MARK: Category groups
+
+  $GrpIncome = create Ledger.CategoryGroup (
+    Name = 'Income', GroupType = Ledger.GroupType.Income,
+    ColorHex = '#2C6E4A', SortOrder = 1);
+  $GrpHousing = create Ledger.CategoryGroup (
+    Name = 'Housing', GroupType = Ledger.GroupType.Expense,
+    ColorHex = '#1B4D4B', SortOrder = 2);
+  $GrpDaily = create Ledger.CategoryGroup (
+    Name = 'Daily living', GroupType = Ledger.GroupType.Expense,
+    ColorHex = '#8A5A2B', SortOrder = 3);
+  $GrpLifestyle = create Ledger.CategoryGroup (
+    Name = 'Lifestyle', GroupType = Ledger.GroupType.Expense,
+    ColorHex = '#6B4E8A', SortOrder = 4);
+  $GrpFinancial = create Ledger.CategoryGroup (
+    Name = 'Financial', GroupType = Ledger.GroupType.Expense,
+    ColorHex = '#3A4A6B', SortOrder = 5);
+
+  commit $GrpIncome;
+  commit $GrpHousing;
+  commit $GrpDaily;
+  commit $GrpLifestyle;
+  commit $GrpFinancial;
+
+  -- MARK: Categories
+
+  $CatSalary = create Ledger.Category (Name = 'Salary', BaselineBudget = 5200, SortOrder = 1);
+  change $CatSalary (Ledger.Category_CategoryGroup = $GrpIncome);
+  $CatFreelance = create Ledger.Category (Name = 'Freelance', BaselineBudget = 900, SortOrder = 2);
+  change $CatFreelance (Ledger.Category_CategoryGroup = $GrpIncome);
+
+  $CatRent = create Ledger.Category (Name = 'Rent', BaselineBudget = 1480, SortOrder = 3);
+  change $CatRent (Ledger.Category_CategoryGroup = $GrpHousing);
+  $CatUtilities = create Ledger.Category (Name = 'Utilities', BaselineBudget = 210, SortOrder = 4);
+  change $CatUtilities (Ledger.Category_CategoryGroup = $GrpHousing);
+  $CatInternet = create Ledger.Category (Name = 'Internet & phone', BaselineBudget = 78, SortOrder = 5);
+  change $CatInternet (Ledger.Category_CategoryGroup = $GrpHousing);
+
+  $CatGroceries = create Ledger.Category (Name = 'Groceries', BaselineBudget = 620, SortOrder = 6);
+  change $CatGroceries (Ledger.Category_CategoryGroup = $GrpDaily);
+  $CatRestaurants = create Ledger.Category (Name = 'Restaurants & cafes', BaselineBudget = 240, SortOrder = 7);
+  change $CatRestaurants (Ledger.Category_CategoryGroup = $GrpDaily);
+  $CatTransport = create Ledger.Category (Name = 'Transport', BaselineBudget = 190, SortOrder = 8);
+  change $CatTransport (Ledger.Category_CategoryGroup = $GrpDaily);
+
+  $CatSubs = create Ledger.Category (Name = 'Subscriptions', BaselineBudget = 62, SortOrder = 9);
+  change $CatSubs (Ledger.Category_CategoryGroup = $GrpLifestyle);
+  $CatShopping = create Ledger.Category (Name = 'Shopping', BaselineBudget = 260, SortOrder = 10);
+  change $CatShopping (Ledger.Category_CategoryGroup = $GrpLifestyle);
+  $CatHealth = create Ledger.Category (Name = 'Health & sport', BaselineBudget = 145, SortOrder = 11);
+  change $CatHealth (Ledger.Category_CategoryGroup = $GrpLifestyle);
+
+  $CatInsurance = create Ledger.Category (Name = 'Insurance', BaselineBudget = 305, SortOrder = 12);
+  change $CatInsurance (Ledger.Category_CategoryGroup = $GrpFinancial);
+  $CatSavings = create Ledger.Category (Name = 'Savings transfer', BaselineBudget = 700, SortOrder = 13);
+  change $CatSavings (Ledger.Category_CategoryGroup = $GrpFinancial);
+
+  -- MARK: Known merchants
+
+  $M1 = create Ledger.Merchant (Name = 'Koelewijn Holding BV', SortOrder = 1);
+  change $M1 (Ledger.Merchant_Category = $CatSalary);
+
+  $M2 = create Ledger.Merchant (Name = 'Studio Vermeer', SortOrder = 1);
+  change $M2 (Ledger.Merchant_Category = $CatFreelance);
+  $M3 = create Ledger.Merchant (Name = 'Nieuwe Kade Media', SortOrder = 2);
+  change $M3 (Ledger.Merchant_Category = $CatFreelance);
+
+  $M4 = create Ledger.Merchant (Name = 'Woonstad Verhuur', SortOrder = 1);
+  change $M4 (Ledger.Merchant_Category = $CatRent);
+
+  $M5 = create Ledger.Merchant (Name = 'Vattenfall', SortOrder = 1);
+  change $M5 (Ledger.Merchant_Category = $CatUtilities);
+  $M6 = create Ledger.Merchant (Name = 'Waternet', SortOrder = 2);
+  change $M6 (Ledger.Merchant_Category = $CatUtilities);
+
+  $M7 = create Ledger.Merchant (Name = 'Ziggo', SortOrder = 1);
+  change $M7 (Ledger.Merchant_Category = $CatInternet);
+  $M8 = create Ledger.Merchant (Name = 'Simyo', SortOrder = 2);
+  change $M8 (Ledger.Merchant_Category = $CatInternet);
+
+  $M9 = create Ledger.Merchant (Name = 'Albert Heijn', SortOrder = 1);
+  change $M9 (Ledger.Merchant_Category = $CatGroceries);
+  $M10 = create Ledger.Merchant (Name = 'Jumbo', SortOrder = 2);
+  change $M10 (Ledger.Merchant_Category = $CatGroceries);
+  $M11 = create Ledger.Merchant (Name = 'Lidl', SortOrder = 3);
+  change $M11 (Ledger.Merchant_Category = $CatGroceries);
+  $M12 = create Ledger.Merchant (Name = 'Marqt', SortOrder = 4);
+  change $M12 (Ledger.Merchant_Category = $CatGroceries);
+
+  $M13 = create Ledger.Merchant (Name = 'Bar Bruut', SortOrder = 1);
+  change $M13 (Ledger.Merchant_Category = $CatRestaurants);
+  $M14 = create Ledger.Merchant (Name = 'Toko Ramen', SortOrder = 2);
+  change $M14 (Ledger.Merchant_Category = $CatRestaurants);
+  $M15 = create Ledger.Merchant (Name = 'Koffie Kaap', SortOrder = 3);
+  change $M15 (Ledger.Merchant_Category = $CatRestaurants);
+  $M16 = create Ledger.Merchant (Name = 'Thuisbezorgd', SortOrder = 4);
+  change $M16 (Ledger.Merchant_Category = $CatRestaurants);
+
+  $M17 = create Ledger.Merchant (Name = 'NS Reizen', SortOrder = 1);
+  change $M17 (Ledger.Merchant_Category = $CatTransport);
+  $M18 = create Ledger.Merchant (Name = 'Shell', SortOrder = 2);
+  change $M18 (Ledger.Merchant_Category = $CatTransport);
+  $M19 = create Ledger.Merchant (Name = 'GVB', SortOrder = 3);
+  change $M19 (Ledger.Merchant_Category = $CatTransport);
+  $M20 = create Ledger.Merchant (Name = 'Swapfiets', SortOrder = 4);
+  change $M20 (Ledger.Merchant_Category = $CatTransport);
+
+  $M21 = create Ledger.Merchant (Name = 'Spotify', SortOrder = 1);
+  change $M21 (Ledger.Merchant_Category = $CatSubs);
+  $M22 = create Ledger.Merchant (Name = 'Netflix', SortOrder = 2);
+  change $M22 (Ledger.Merchant_Category = $CatSubs);
+  $M23 = create Ledger.Merchant (Name = 'iCloud', SortOrder = 3);
+  change $M23 (Ledger.Merchant_Category = $CatSubs);
+  $M24 = create Ledger.Merchant (Name = 'NRC', SortOrder = 4);
+  change $M24 (Ledger.Merchant_Category = $CatSubs);
+
+  $M25 = create Ledger.Merchant (Name = 'Bol.com', SortOrder = 1);
+  change $M25 (Ledger.Merchant_Category = $CatShopping);
+  $M26 = create Ledger.Merchant (Name = 'Coolblue', SortOrder = 2);
+  change $M26 (Ledger.Merchant_Category = $CatShopping);
+  $M27 = create Ledger.Merchant (Name = 'HEMA', SortOrder = 3);
+  change $M27 (Ledger.Merchant_Category = $CatShopping);
+  $M28 = create Ledger.Merchant (Name = 'Zara', SortOrder = 4);
+  change $M28 (Ledger.Merchant_Category = $CatShopping);
+
+  $M29 = create Ledger.Merchant (Name = 'Etos', SortOrder = 1);
+  change $M29 (Ledger.Merchant_Category = $CatHealth);
+  $M30 = create Ledger.Merchant (Name = 'TrainMore', SortOrder = 2);
+  change $M30 (Ledger.Merchant_Category = $CatHealth);
+  $M31 = create Ledger.Merchant (Name = 'Tandarts Kade', SortOrder = 3);
+  change $M31 (Ledger.Merchant_Category = $CatHealth);
+
+  $M32 = create Ledger.Merchant (Name = 'Zilveren Kruis', SortOrder = 1);
+  change $M32 (Ledger.Merchant_Category = $CatInsurance);
+  $M33 = create Ledger.Merchant (Name = 'Centraal Beheer', SortOrder = 2);
+  change $M33 (Ledger.Merchant_Category = $CatInsurance);
+  $M34 = create Ledger.Merchant (Name = 'Aegon', SortOrder = 3);
+  change $M34 (Ledger.Merchant_Category = $CatInsurance);
+
+  $M35 = create Ledger.Merchant (Name = 'Naar Spaarrekening', SortOrder = 1);
+  change $M35 (Ledger.Merchant_Category = $CatSavings);
+
+  -- MARK: Budget overrides
+  -- Months where the household knowingly deviated from the baseline.
+
+  $B1 = create Ledger.BudgetOverride (MonthKey = '2026-07', Amount = 700);
+  change $B1 (Ledger.BudgetOverride_Category = $CatGroceries);
+  $B2 = create Ledger.BudgetOverride (MonthKey = '2026-05', Amount = 480);
+  change $B2 (Ledger.BudgetOverride_Category = $CatShopping);
+  $B3 = create Ledger.BudgetOverride (MonthKey = '2026-06', Amount = 340);
+  change $B3 (Ledger.BudgetOverride_Category = $CatTransport);
+  $B4 = create Ledger.BudgetOverride (MonthKey = '2026-07', Amount = 1400);
+  change $B4 (Ledger.BudgetOverride_Category = $CatFreelance);
+  $B5 = create Ledger.BudgetOverride (MonthKey = '2026-06', Amount = 320);
+  change $B5 (Ledger.BudgetOverride_Category = $CatRestaurants);
+
+  -- MARK: Categorisation rules
+  -- Evaluated in SortOrder on import; first match wins.
+
+  $R1 = create Ledger.CategoryRule (SortOrder = 1,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'Albert Heijn');
+  change $R1 (Ledger.CategoryRule_Category = $CatGroceries);
+
+  $R2 = create Ledger.CategoryRule (SortOrder = 2,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'Jumbo');
+  change $R2 (Ledger.CategoryRule_Category = $CatGroceries);
+
+  $R3 = create Ledger.CategoryRule (SortOrder = 3,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.StartsWith, MatchValue = 'NS ');
+  change $R3 (Ledger.CategoryRule_Category = $CatTransport);
+
+  $R4 = create Ledger.CategoryRule (SortOrder = 4,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'Woonstad');
+  change $R4 (Ledger.CategoryRule_Category = $CatRent);
+
+  $R5 = create Ledger.CategoryRule (SortOrder = 5,
+    RuleField = Ledger.RuleField.Description,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'SEPA salaris');
+  change $R5 (Ledger.CategoryRule_Category = $CatSalary);
+
+  $R6 = create Ledger.CategoryRule (SortOrder = 6,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.IsOneOf, MatchValue = 'Spotify,Netflix,iCloud');
+  change $R6 (Ledger.CategoryRule_Category = $CatSubs);
+
+  $R7 = create Ledger.CategoryRule (SortOrder = 7,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'Zilveren Kruis');
+  change $R7 (Ledger.CategoryRule_Category = $CatInsurance);
+
+  @annotation 'Replaces the prototype rule 8, which was not evaluable data'
+  $R8 = create Ledger.CategoryRule (SortOrder = 8,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains, MatchValue = 'Spaarrekening');
+  change $R8 (Ledger.CategoryRule_Category = $CatSavings);
+
+  log info node 'LedgerSeed' 'Reference data created';
+  set $Done = true;
+  return $Done;
+end;
+/
