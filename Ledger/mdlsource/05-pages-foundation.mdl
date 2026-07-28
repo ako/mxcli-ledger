@@ -1,0 +1,218 @@
+-- ============================================================================
+-- 05 - Foundation pages: Accounts, Categories & rules, Transactions
+-- ============================================================================
+-- Atlas-native rather than a reproduction of the prototype's bespoke design
+-- system (see ../../PROTOTYPE-ANALYSIS.md §3). Layout, grouping and the
+-- needs-review emphasis carry over; the IBM Plex / warm-paper styling does not.
+--
+-- Cashflow and Budgets are phase 3 — they need the pivot matrix.
+-- ============================================================================
+
+/**
+ * Shared sidebar navigation for the Ledger screens.
+ *
+ * Created empty first, then filled in at the bottom of this script. The snippet
+ * and the pages reference each other, and mxcli resolves references strictly in
+ * statement order, so one side has to start as a stub.
+ */
+create or replace snippet Ledger.SNIPPET_LedgerMenu
+folder 'Navigation'
+{
+  dynamictext txtMenuPlaceholder (content: 'Ledger')
+}
+/
+
+/**
+ * Account cards: balance, type and the date of the last import.
+ */
+create or replace page Ledger.Account_Overview
+(
+  title: 'Accounts',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'accounts',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgAccounts {
+    row rowMain {
+      column colMenu (desktopwidth: 2) {
+        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
+      }
+      column colBody (desktopwidth: 10) {
+        dynamictext txtHeading (content: 'Accounts', rendermode: H2)
+        dynamictext txtSub (content: 'Balances as of the last import.', class: 'text-muted')
+
+        gallery galAccounts (
+          datasource: database from Ledger.Account sort by SortOrder asc,
+          DesktopColumns: 2,
+          TabletColumns: 1,
+          PhoneColumns: 1
+        ) {
+          template tplAccount {
+            container ctnCard (class: 'card') {
+              dynamictext txtName (attribute: Name, rendermode: H4)
+              dynamictext txtIban (attribute: IBAN, rendermode: paragraph, class: 'text-muted')
+              dynamictext txtBalance (
+                content: '€ {1}',
+                contentparams: [{1} = Balance],
+                rendermode: H3)
+              -- Deliberately one widget, not two. Consecutive dynamictexts
+              -- render inline whatever RenderMode says, so two of them here
+              -- produce '€ 310Last import: 7/24/2026' with no separator.
+              dynamictext txtFooter (
+                content: 'This month: € {1}  ·  Last import: {2}',
+                -- contentparams accepts attribute names only; an expression here
+                -- is stored as if it were an attribute and fails CE1613.
+                contentparams: [{1} = MonthDelta, {2} = LastImport],
+                rendermode: paragraph,
+                class: 'text-muted')
+            }
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+/**
+ * The two-level taxonomy and the categorisation rules that feed it.
+ *
+ * Rules are shown in evaluation order — first match wins on import.
+ */
+create or replace page Ledger.Category_Overview
+(
+  title: 'Categories & rules',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'categories',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgCategories {
+    row rowMain {
+      column colMenu (desktopwidth: 2) {
+        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
+      }
+      column colBody (desktopwidth: 10) {
+        dynamictext txtHeading (content: 'Categories & rules', rendermode: H2)
+        dynamictext txtSub (
+          content: 'Two-level taxonomy plus the rules that assign categories on import. First match wins.',
+          class: 'text-muted')
+
+        dynamictext txtCatsHeading (content: 'Categories', rendermode: H4)
+        datagrid dgCategories (
+          datasource: database from Ledger.Category sort by SortOrder asc
+        ) {
+          column colCatName (attribute: Name, caption: 'Category')
+          column colCatBudget (attribute: BaselineBudget, caption: 'Baseline budget / mo', Alignment: right)
+          column colCatOrder (attribute: SortOrder, caption: 'Order', Alignment: right)
+        }
+
+        dynamictext txtRulesHeading (content: 'Rules', rendermode: H4)
+        datagrid dgRules (
+          datasource: database from Ledger.CategoryRule sort by SortOrder asc
+        ) {
+          column colRuleOrder (attribute: SortOrder, caption: '#', Alignment: right)
+          column colRuleField (attribute: RuleField, caption: 'Field')
+          column colRuleOp (attribute: RuleOperator, caption: 'Operator')
+          column colRuleValue (attribute: MatchValue, caption: 'Value')
+          column colRuleHits (attribute: MatchCount, caption: 'Matched', Alignment: right)
+        }
+      }
+    }
+  }
+}
+/
+
+/**
+ * Transaction list.
+ *
+ * Uncategorised rows are the point of this screen — they stay out of the
+ * cashflow report until a category is assigned, so they are surfaced in their
+ * own grid above the full list rather than being buried in it.
+ */
+create or replace page Ledger.Transaction_Overview
+(
+  title: 'Transactions',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'transactions',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgTransactions {
+    row rowMain {
+      column colMenu (desktopwidth: 2) {
+        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
+      }
+      column colBody (desktopwidth: 10) {
+        dynamictext txtHeading (content: 'Transactions', rendermode: H2)
+        dynamictext txtSub (
+          content: 'Transactions with no category stay out of the cashflow report until assigned.',
+          class: 'text-muted')
+
+        dynamictext txtNeedsReview (content: 'Needs review', rendermode: H4)
+        datagrid dgNeedsReview (
+          datasource: database from Ledger.Transaction
+            where [not(Ledger.Transaction_Category/Ledger.Category)]
+            sort by TxDate desc
+        ) {
+          column colNrDate (attribute: TxDate, caption: 'Date')
+          column colNrMerchant (attribute: Merchant, caption: 'Merchant')
+          column colNrDesc (attribute: Description, caption: 'Description')
+          column colNrAmount (attribute: SignedAmount, caption: 'Amount', Alignment: right)
+        }
+
+        dynamictext txtAll (content: 'All transactions', rendermode: H4)
+        datagrid dgTransactions (
+          datasource: database from Ledger.Transaction
+            where [IsMirror = false]
+            sort by TxDate desc
+        ) {
+          column colDate (attribute: TxDate, caption: 'Date')
+          column colMerchant (attribute: Merchant, caption: 'Merchant')
+          column colDesc (attribute: Description, caption: 'Description')
+          column colMonth (attribute: MonthKey, caption: 'Month')
+          column colAmount (attribute: SignedAmount, caption: 'Amount', Alignment: right)
+        }
+      }
+    }
+  }
+}
+/
+
+/**
+ * Fill in the navigation now that every target page exists.
+ *
+ * Buttons rather than a `navigationlist`: mxcli drops the item names when it
+ * writes a navigationlist, and the caption Text it generates inside each item
+ * has no name at all, which fails CE7247 / CE0495. See ../../FINDINGS.md.
+ */
+create or replace snippet Ledger.SNIPPET_LedgerMenu
+folder 'Navigation'
+{
+  container ctnMenu (class: 'card') {
+    dynamictext txtMenuTitle (content: 'Ledger', rendermode: H4)
+    actionbutton btnTransactions (
+      caption: 'Transactions',
+      action: show_page Ledger.Transaction_Overview,
+      class: 'btn-block')
+    actionbutton btnAccounts (
+      caption: 'Accounts',
+      action: show_page Ledger.Account_Overview,
+      class: 'btn-block')
+    actionbutton btnCategories (
+      caption: 'Categories & rules',
+      action: show_page Ledger.Category_Overview,
+      class: 'btn-block')
+  }
+}
+/
+
+create or replace navigation Responsive
+  home page Ledger.Transaction_Overview
+  menu (
+    menu item 'Transactions' page Ledger.Transaction_Overview;
+    menu item 'Accounts' page Ledger.Account_Overview;
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+  );
+/

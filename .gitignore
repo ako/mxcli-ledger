@@ -38,3 +38,9 @@ Thumbs.db
 
 # Claude Code local overrides (settings.json IS committed; local ones are not)
 .claude/settings.local.json
+
+# Mendix app: runtime state and local tooling
+Ledger/mxcli
+Ledger/.mxcli/*.log
+Ledger/.mxcli/*.out
+Ledger/deployment/

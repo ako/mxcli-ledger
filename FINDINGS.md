@@ -404,3 +404,128 @@ that was authored (17, 18, 19).
 Isolating CE0117 is easiest with a throwaway probe microflow that assigns each
 candidate expression to its own uniquely-named variable, since `mx check`
 reports the variable name but not the expression.
+
+### 23. Uncommitted objects break the next `retrieve` — with a misleading error
+
+`Seed_ReferenceData` created categories, merchants, overrides and rules with
+`create` + `change`, but only committed the accounts and groups. Everything
+uncommitted stayed out of the database, so the retrieves in `Seed_DemoData`
+returned nothing and the app failed to boot:
+
+```
+2026-07-28 16:11:19.841 INFO  - LedgerSeed: Reference data created
+2026-07-28 16:11:20.030 ERROR - Core: An exception occurred while running the after-startup-action.
+com.mendix.modules.microflowengine.MicroflowException: Failed to evaluate expression,
+error occurred on line 1, character 7
+round($Category/BaselineBudget * $SharePerTx
+      ^
+Caused by: ExpressionException: Left and right hand side of binary expression should not be empty
+```
+
+The message points at the arithmetic, which is fine — the real problem is that
+`$Category` is empty two microflows upstream. `mx check` cannot catch this; it
+only shows up at runtime.
+
+**Workaround:** commit every object a later `retrieve` depends on. The
+`@annotation` on the guard is not enough — the guard checked `Account`, which
+*was* committed, so a partially-seeded database also silently suppressed
+re-seeding on the next boot. Drop and recreate the database when a seed run
+fails halfway:
+
+```
+su postgres -c "psql -c 'DROP DATABASE IF EXISTS ledger;'"
+su postgres -c "psql -c 'CREATE DATABASE ledger OWNER mendix;'"
+```
+
+### 24. BUG: `navigationlist` loses every item name and generates unnamed Text widgets
+
+Authored:
+
+```
+navigationlist navLedger {
+  item itemTransactions (caption: 'Transactions', action: show_page Ledger.Transaction_Overview)
+  ...
+}
+```
+
+Stored (via `DESCRIBE SNIPPET`):
+
+```
+navigationlist navLedger {
+  item  (Action: show_page 'Ledger.Transaction_Overview') {
+    dynamictext  (Content: 'Transactions')
+  }
+  ...
+}
+```
+
+Both the `item` name and the generated caption `dynamictext` name are empty,
+so every item fails validation and they collide with each other:
+
+```
+[error] [CE0495] "Duplicate name ''." at Text '', Text ''
+[error] [CE7247] "The name cannot be empty." at Text ''   (x3)
+```
+
+**Workaround:** build sidebar navigation from `actionbutton`s inside a
+`container` instead. `action: show_page Module.Page` works there and the names
+survive.
+
+### 25. XPath has no `= empty` for associations
+
+```
+where [Ledger.Transaction_Category = empty]
+  -> [error] [CE0161] "Error(s) in XPath constraint." at Data grid 2 'dgNeedsReview'
+```
+
+**Workaround:** test for the absence of the associated object.
+
+```
+where [not(Ledger.Transaction_Category/Ledger.Category)]
+```
+
+### 26. `contentparams` accepts attribute names only, never expressions
+
+```
+contentparams: [{2} = formatDateTime($currentObject/LastImport, 'd MMM yyyy')]
+```
+
+is stored as if the whole expression were an attribute name, and fails:
+
+```
+[error] [CE1613] "The selected attribute
+  'Ledger.Account.formatDateTime($currentObject/LastImport,'d MMM yyyy')'
+  no longer exists." at Text 'txtFooter'
+```
+
+**Workaround:** bind the bare attribute and accept the default formatting, or
+add a derived string attribute and format it in a microflow.
+
+### 27. Consecutive `dynamictext` widgets render inline regardless of `RenderMode`
+
+Two sibling dynamictexts inside a container produced
+`This month: € 310Last import: 7/24/2026` — no separator, values fused.
+`rendermode: paragraph` is stored correctly (confirmed with `DESCRIBE PAGE`)
+and passes `mx check`, but does not make them block-level.
+
+**Workaround:** merge them into a single widget with two content params, or
+wrap each in its own `container`.
+
+### 28. Anchored pgrep patterns matter — demonstrated
+
+The ground rule is real. With the app running as `./mxcli run --local`:
+
+```
+$ pgrep -a -f "mxcli run"
+430  ./mxcli run --local          <- the app
+4727 /bin/bash -c ... pgrep -a -f "mxcli run" ...   <- this very command
+```
+
+A bare `pkill -f "mxcli run"` would kill the invoking shell and take the rest
+of the command chain with it. Note also that `^/.*mxcli run --local` matches
+nothing, because the process command line is the relative `./mxcli`. The
+pattern that works here is:
+
+```
+pkill -f "^\./mxcli run --local"
+```
