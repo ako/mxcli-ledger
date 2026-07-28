@@ -20,7 +20,8 @@ driven by one `state` object:
 
 ### Seed data (hardcoded constants)
 
-- `MONTHS` — 6 fixed months, `2026-02` … `2026-07`
+- `MONTHS` — 6 fixed months, `2026-02` … `2026-07`, each with a `days` count used
+  by the generator (the Mendix app widens this to a full calendar year — see §3)
 - `ACCOUNTS` — 4 (ING Betaalrekening, ING Spaarrekening, ABN AMRO Creditcard, Revolut)
 - `GROUPS` — 5 (Income, Housing, Daily living, Lifestyle, Financial), each `income` or `expense`
 - `CATS` — 13 categories, each with a baseline monthly budget, a merchant list, and eligible accounts
@@ -75,6 +76,11 @@ port. They are also the two things a real ledger depends on.
   reproducing the bespoke IBM Plex / warm-paper / dark-sidebar design system.
 - **Rules and import: build both for real.** Ordered rules with first-match-wins
   evaluation applied on import, and real CSV parsing with duplicate detection.
+- **Window: 12 months, calendar year 2026.** Widened from the prototype's 6.
+  Actuals are seeded January–July (today is 2026-07-28); August–December carry
+  budgets but no actuals. This is how a household budget app actually behaves, and
+  it gives Budget and Variance modes a purpose beyond restating Actual. Note 2026
+  is not a leap year, so February has 28 days.
 
 ## 4. Domain model
 
@@ -96,7 +102,7 @@ Non-persistent (report scaffolding):
 |---|---|
 | `ReportContext` | screen, mode (Actual/Budget/Variance), drill category + month, filters, search |
 | `CashflowRow` | one matrix row: label, row kind (group/category/net), row total |
-| `CashflowCell` | one cell: amount, variance band, target category + month for drilldown |
+| `CashflowCell` | one cell: amount, variance band, `IsElapsed` flag, target category + month for drilldown |
 
 Notes:
 
@@ -111,9 +117,11 @@ Notes:
 ### 5.1 The pivot matrix is the bulk of the work
 
 MDL/Mendix `datagrid` columns are declared statically, so a category × month pivot
-is not native. It is tractable **only because the window is fixed at 6 months**:
-build a non-persistent `CashflowRow` with six `CashflowCell` references and render
-it as a gallery/listview whose template contains six cell containers.
+is not native. It is tractable **only because the window is a fixed width** — 12
+months, per §3: build a non-persistent `CashflowRow` with twelve `CashflowCell`
+references and render it as a gallery/listview whose template contains twelve cell
+containers. Width being *fixed* is what matters, not it being small; going from 6
+to 12 doubles the boilerplate but introduces no new technique.
 
 Verified as supported in MDL (`mdl-examples/doctype-tests/`):
 
@@ -122,8 +130,13 @@ Verified as supported in MDL (`mdl-examples/doctype-tests/`):
 - `gallery x (datasource: ..., DesktopColumns: N) { template t { ... } }`
 
 **If the month window ever becomes variable-length, this design breaks** and the
-matrix needs a pluggable widget. Worth confirming 6 months is a fixed requirement
-before building.
+matrix needs a pluggable widget. Twelve is the committed width.
+
+At 12 months the table is 14 columns (category label + 12 months + row total).
+The prototype sets `min-width: 700px` for 6 months; 12 puts it near 1300–1400px.
+The matrix needs a horizontal scroll container with the category label column
+pinned, or it is unusable on anything but a wide desktop. This is a new problem
+that did not exist at 6 months.
 
 ### 5.2 The heatmap must be banded
 
@@ -134,20 +147,50 @@ names, not computed colours, so this becomes ~10 discrete bands
 `dynamicclasses` expression over the variance ratio. Visually near-identical, not
 identical. The 2% dead band and the income/expense sign flip carry over unchanged.
 
-### 5.3 Inline cell editing
+### 5.3 Future months must be suppressed, not zero
+
+A consequence of the calendar-year window that is easy to miss and would silently
+corrupt the report.
+
+August–December have budgets but no actuals. If those cells fall through the
+normal path they compute `actual = 0`, and `tint()` reads a zero actual against a
+full budget as **maximally under budget** — so the entire second half of the year
+paints deep green and the app reports five months of imaginary savings. The same
+zero flows into the KPI rollups (`income`, `spend`, `overCount`) and the
+net-cashflow row.
+
+Required handling, driven by an `IsElapsed` flag on `CashflowCell`:
+
+- **Actual mode** — future cells render empty, not `€ 0`, and are never tinted.
+- **Variance mode** — future cells render empty; variance against a month that has
+  not happened is meaningless.
+- **Budget mode** — future cells render normally. This is the mode where
+  August–December are genuinely useful, and the main reason for choosing a
+  calendar year over a rolling window.
+- **Net cashflow row** — elapsed months only. A projected net from budgets is a
+  different feature; do not conflate it with actuals.
+- **KPI rollups and `overCount`** — elapsed months only.
+- **Row totals** — sum actuals over elapsed months, budgets over all twelve. These
+  two totals are no longer comparable, so the Actual/Budget/Variance mode must
+  drive which total is shown (the prototype already does this in `buildMatrix()`).
+
+`IsElapsed` should be derived from the current date at row-build time, not
+hardcoded to July, so the app stays correct as 2026 progresses.
+
+### 5.4 Inline cell editing
 
 The Budgets screen commits on Enter, cancels on Escape, and commits on blur.
 Reproducing that exactly in Mendix is fiddly; a per-cell edit popup is far simpler
 but a different interaction. Either way, `commitBudget()` parses Dutch number
 format (`1.480,00` → strip `.`, `,` → `.`), which must be reproduced.
 
-### 5.4 Real CSV import
+### 5.5 Real CSV import
 
 New work: FileDocument upload, Dutch parsing (`DD-MM-YYYY`, comma decimals, an
 `Af`/`Bij` direction column rather than a signed amount), duplicate detection on
 date + amount + account, then rule evaluation over the new rows.
 
-### 5.5 Real rules engine
+### 5.6 Real rules engine
 
 Needs a proper operator model: `contains`, `starts with`, `is one of` over merchant
 or description, plus an amount comparison. Rule 8 in the prototype must be
