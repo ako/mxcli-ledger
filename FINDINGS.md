@@ -631,3 +631,58 @@ visually on all three Ledger pages. Running the real `05-pages-foundation.mdl`
 through the PR build reports 4 such advisories, all benign. Restricting the
 rule to cases where *both* widgets are non-heading would remove the noise.
 Being info-level, it does not block anything.
+
+### Round 2 — PR #52 at `f297447`
+
+`f297447` ("close verification-round gaps in ledger checks (#17/#25/#27)")
+addresses all three gaps reported above. `make test`: **0 failures**.
+`mx check` on this project: **0 errors**.
+
+| Gap reported | Status at `f297447` |
+|---|---|
+| Finding 17 — `$A / $B` uncaught | **Closed.** MDL045 now fires on `$Dec / $Dec2`. The microflow probe now reports MDL045 ×3, i.e. all three division forms, where `537137b` reported ×2 |
+| MDL047 only covered microflow `retrieve` | **Closed.** Now fires on page datasources: "widget `dgProbe` datasource constraint tests association …" |
+| MDL-WIDGET15 false positives on heading pairs | **Closed.** Narrowed to "adjacent **inline** dynamictext widgets (RenderMode Text)". `05-pages-foundation.mdl` went from 4 advisories to 0 |
+
+All five `mdlsource/*.mdl` files now pass with no errors and no advisories.
+
+### 29. The MDL-WIDGET15 narrowing treats `Paragraph` as block-level, but Mendix renders it inline
+
+The new advisory ends with:
+
+> …or set a block RenderMode (H1–H6/**Paragraph**).
+
+The `Paragraph` half of that is wrong on Mendix 11.12.1 + Atlas, which has two
+consequences: the advice does not fix the problem, and two adjacent
+`Paragraph` widgets are no longer flagged even though they still fuse.
+
+Measured directly by rendering a probe page and reading the emitted tag and
+computed style:
+
+```
+HEAD-ONE   h4    display=block
+HEAD-TWO   h4    display=block
+PARA-ONE   span  display=inline
+PARA-TWO   span  display=inline
+```
+
+Rendered output of four widgets — two `Paragraph`, then two default `Text`:
+
+```
+PARA-ONEPARA-TWOSPAN-ONESPAN-TWO
+```
+
+The checker flags only the `Text` pair. The `Paragraph` pair fuses identically
+and is silent.
+
+This retro-explains finding 27: the original Account card used
+`rendermode: paragraph` on both widgets and they still ran together — noted at
+the time but not understood.
+
+`H1`–`H6` are genuinely block (`<h4>`, `display: block`), so the heading half of
+the narrowing is correct and the false-positive fix stands.
+
+**Suggested change:** treat only `H1`–`H6` as block for this rule, and drop
+`Paragraph` from the hint text. This project's own
+`Account_Overview` is unaffected only by luck — its `Paragraph` footer happens
+to follow an `H3`.
