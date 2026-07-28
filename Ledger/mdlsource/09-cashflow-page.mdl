@@ -1,0 +1,153 @@
+-- ============================================================================
+-- 09 - Cashflow page
+-- ============================================================================
+-- The matrix is a DataGrid2 with 14 static columns. Static columns are what
+-- makes this work: they align by construction across rows, which a nested
+-- gallery of cells would not (each row would size its own columns).
+--
+-- Every month column carries DynamicCellClass bound to that month's Band
+-- attribute, which is how the prototype's continuous heatmap becomes ten
+-- discrete classes. The classes themselves live in
+-- theme/web/custom/ledger-cashflow.scss.
+-- ============================================================================
+
+/**
+ * Cashflow report: categories by month, with group subtotals and a net line.
+ *
+ * The DataGrid2 sits inside a DataView over a non-persistent ReportContext, so
+ * the mode buttons mutate one object and the grid's microflow datasource picks
+ * the change up on refresh.
+ */
+create or replace page Ledger.Cashflow_Overview
+(
+  title: 'Cashflow',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'cashflow',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgCashflow {
+    row rowMain {
+      column colMenu (desktopwidth: 2) {
+        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
+      }
+      column colBody (desktopwidth: 10) {
+        dataview dvContext (datasource: microflow Ledger.DS_ReportContext) {
+          dynamictext txtHeading (content: 'Cashflow', rendermode: H2)
+          dynamictext txtSub (attribute: Subheading, rendermode: paragraph, class: 'text-muted')
+
+          -- Mode switch
+          container ctnModes (class: 'ledger-modes') {
+            actionbutton btnActual (
+              caption: 'Actual',
+              action: microflow Ledger.ACT_ModeActual(Context: $currentObject))
+            actionbutton btnBudget (
+              caption: 'Budget',
+              action: microflow Ledger.ACT_ModeBudget(Context: $currentObject))
+            actionbutton btnVariance (
+              caption: 'Variance',
+              action: microflow Ledger.ACT_ModeVariance(Context: $currentObject))
+          }
+
+          -- Headline figures, elapsed months only
+          layoutgrid lgKpis {
+            row rowKpis {
+              column colKpiIncome (desktopwidth: 3) {
+                container ctnKpiIncome (class: 'card ledger-kpi') {
+                  dynamictext lblIncome (content: 'Income', rendermode: H6)
+                  dynamictext valIncome (attribute: KpiIncome, rendermode: H3)
+                }
+              }
+              column colKpiSpend (desktopwidth: 3) {
+                container ctnKpiSpend (class: 'card ledger-kpi') {
+                  dynamictext lblSpend (content: 'Spend', rendermode: H6)
+                  dynamictext valSpend (attribute: KpiSpend, rendermode: H3)
+                }
+              }
+              column colKpiNet (desktopwidth: 3) {
+                container ctnKpiNet (class: 'card ledger-kpi') {
+                  dynamictext lblNet (content: 'Net', rendermode: H6)
+                  dynamictext valNet (attribute: KpiNet, rendermode: H3)
+                }
+              }
+              column colKpiOver (desktopwidth: 3) {
+                container ctnKpiOver (class: 'card ledger-kpi') {
+                  dynamictext lblOver (content: 'Over budget', rendermode: H6)
+                  dynamictext valOver (attribute: KpiOver, rendermode: H3)
+                }
+              }
+            }
+          }
+
+          -- The matrix. 14 columns: label, twelve months, row total.
+          datagrid dgMatrix (
+            datasource: microflow Ledger.DS_CashflowRows,
+            PageSize: 40,
+            class: 'ledger-matrix'
+          ) {
+            column colLabel (
+              attribute: Label, caption: 'Category',
+              Sortable: false, Draggable: false,
+              ColumnWidth: manual, Size: 190,
+              DynamicCellClass: 'if $currentObject/RowKind = Ledger.RowKind.Group then ''cf-group'' else if $currentObject/RowKind = Ledger.RowKind.Net then ''cf-net'' else ''cf-cat''')
+            column colM01 (attribute: M01Text, caption: 'Jan', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M01Band')
+            column colM02 (attribute: M02Text, caption: 'Feb', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M02Band')
+            column colM03 (attribute: M03Text, caption: 'Mar', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M03Band')
+            column colM04 (attribute: M04Text, caption: 'Apr', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M04Band')
+            column colM05 (attribute: M05Text, caption: 'May', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M05Band')
+            column colM06 (attribute: M06Text, caption: 'Jun', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M06Band')
+            column colM07 (attribute: M07Text, caption: 'Jul', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M07Band')
+            column colM08 (attribute: M08Text, caption: 'Aug', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M08Band')
+            column colM09 (attribute: M09Text, caption: 'Sep', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M09Band')
+            column colM10 (attribute: M10Text, caption: 'Oct', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M10Band')
+            column colM11 (attribute: M11Text, caption: 'Nov', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M11Band')
+            column colM12 (attribute: M12Text, caption: 'Dec', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M12Band')
+            column colTotal (
+              attribute: TotalText, caption: 'Total', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 150,
+              DynamicCellClass: '''cf-total''')
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+/**
+ * Menu, now including Cashflow.
+ */
+create or replace snippet Ledger.SNIPPET_LedgerMenu
+folder 'Navigation'
+{
+  container ctnMenu (class: 'card') {
+    dynamictext txtMenuTitle (content: 'Ledger', rendermode: H4)
+    actionbutton btnCashflow (
+      caption: 'Cashflow',
+      action: show_page Ledger.Cashflow_Overview,
+      class: 'btn-block')
+    actionbutton btnTransactions (
+      caption: 'Transactions',
+      action: show_page Ledger.Transaction_Overview,
+      class: 'btn-block')
+    actionbutton btnAccounts (
+      caption: 'Accounts',
+      action: show_page Ledger.Account_Overview,
+      class: 'btn-block')
+    actionbutton btnCategories (
+      caption: 'Categories & rules',
+      action: show_page Ledger.Category_Overview,
+      class: 'btn-block')
+  }
+}
+/
+
+create or replace navigation Responsive
+  home page Ledger.Cashflow_Overview
+  menu (
+    menu item 'Cashflow' page Ledger.Cashflow_Overview;
+    menu item 'Transactions' page Ledger.Transaction_Overview;
+    menu item 'Accounts' page Ledger.Account_Overview;
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+  );
+/

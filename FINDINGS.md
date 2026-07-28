@@ -686,3 +686,119 @@ the narrowing is correct and the false-positive fix stands.
 `Paragraph` from the hint text. This project's own
 `Account_Overview` is unaffected only by luck — its `Paragraph` footer happens
 to follow an `H3`.
+
+---
+
+## Phase 3 — cashflow matrix (2026-07-28)
+
+### 30. `not` needs parentheses
+
+```
+if not $IsElapsed then …
+  -> line 231:9 extraneous input '$IsElapsed' expecting THEN
+```
+
+mxcli's error text explains this one outright, which saved a build cycle:
+
+> Mendix requires parentheses around a negated expression — a bare
+> `not <expr>` does not parse: `if not($Cell/IsInvalid) then …` (correct)
+
+### 31. Call-output variables: cannot reuse a declared name, and are scoped to their branch
+
+Two distinct rules, both caught by `mxcli check --references`.
+
+A `call` output variable must be a **new** name — assigning into a variable
+that was already declared is CE0111:
+
+```
+declare $Through integer = 0;
+$Through = call microflow Ledger.CALC_ElapsedThrough ();
+  -> duplicate variable name '$Through' — call microflow output variable is
+     already declared in this scope (CE0111)
+```
+
+**Workaround:** take the call into a fresh name and copy it across:
+
+```
+$ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
+set $Through = $ThroughCalc;
+```
+
+And a variable created by a call inside an `if` branch does **not** exist in
+the sibling branch:
+
+```
+if <variance> then
+  $GTotalText = call microflow Ledger.FMT_Variance (…);   -- created here
+else
+  $GTotalTextB = call microflow Ledger.FMT_Euro (…);
+  set $GTotalText = $GTotalTextB;                          -- 'GTotalText' is not declared
+end if;
+```
+
+**Workaround:** `declare` the target before the `if`, give each branch its own
+call output name, and `set` the target in both branches.
+
+### 32. MDL001 nested-loop advisory does not fit aggregation
+
+`DS_CashflowRows` and `DS_ReportContext` walk groups × categories × months to
+total figures. MDL001 reads any loop-in-loop as an in-memory key match:
+
+> nested loop detected (loop inside a loop). Use FIND($List, <condition>) for
+> in-memory list matching instead of an inner loop (O(N) vs O(N^2)).
+
+`FIND` does not apply — nothing is being looked up by key, every element is
+being visited on purpose. Warning-level, so it does not block, but it is noise
+on any aggregation microflow.
+
+### 33. `designproperties` are validated per widget type
+
+```
+datagrid dgMatrix (designproperties: ['Compact': on, 'Borders': 'Horizontal'])
+  -> [MDL-WIDGET11] sets design property "Borders", which is not defined for this widget type
+     Valid design properties for this widget: Align self, Hide on, Hover style,
+     Row size, Spacing, Style
+```
+
+Useful — it lists the valid set rather than just rejecting.
+
+### 34. Dart Sass `rgba()` will not take a comma-list variable
+
+A pattern that worked in older Sass fails the theme build:
+
+```scss
+$cf-over: 168, 50, 30;
+background-color: rgba($cf-over, 0.1);
+```
+```
+Error: initial build failed: An error occurred while compiling Theme files
+  $color: 168, 50, 30 is not a color.
+```
+
+**Workaround:** store a real colour and let `rgba()` take the alpha:
+
+```scss
+$cf-over: rgb(168, 50, 30);
+background-color: rgba($cf-over, 0.1);
+```
+
+Worth knowing that a theme compile error fails `mxcli run --local` at the
+build step, before the runtime starts — the message is in the run output, not
+in `runtime.log`.
+
+### 35. DataGrid2 is the right host for a fixed-width pivot
+
+Recorded as a design confirmation rather than a bug. The analysis (§5.1)
+sketched twelve associated cell objects rendered through a nested gallery.
+Building it that way would have failed: a gallery sizes its columns per row, so
+nothing would line up across rows. DataGrid2 columns are static and therefore
+align by construction — which is exactly why the twelve months had to be
+attributes on the row (`M01Text`/`M01Band` … `M12Text`/`M12Band`) rather than
+associated objects.
+
+`DynamicCellClass` accepts a plain attribute reference, so the heatmap is
+`'''cf-cell '' + $currentObject/M01Band'` per column — no expression logic in
+the page.
+
+The cost is a 28-attribute non-persistent entity. That is report scaffolding,
+not domain data, but it will trip the DESIGN001 lint rule.

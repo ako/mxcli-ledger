@@ -1,0 +1,85 @@
+-- ============================================================================
+-- 06 - Cashflow report scaffolding (non-persistent)
+-- ============================================================================
+-- The category x month pivot is not a native Mendix control. It is tractable
+-- only because the window is a fixed 12 months (PROTOTYPE-ANALYSIS §5.1): the
+-- matrix is a DataGrid2 with 14 static columns (label + 12 months + total) over
+-- a non-persistent row entity that a microflow builds.
+--
+-- Twelve month values live as attributes on the row rather than as twelve
+-- associated cell objects. The analysis sketched cell objects, but DataGrid2
+-- columns bind to attributes and align by construction, whereas a nested
+-- gallery of cells would size its columns per row and not line up across rows.
+-- The cost is a wide entity; that is report scaffolding, not domain data.
+--
+-- Bands drive the heatmap. tint() in the prototype computed a continuous alpha;
+-- Mendix supplies class names, so the ratio is bucketed into over-1..over-5 /
+-- under-1..under-5 and rendered by theme SCSS (PROTOTYPE-ANALYSIS §5.2).
+-- ============================================================================
+
+/** What a matrix row represents; drives styling and totalling. */
+create or modify enumeration Ledger.RowKind (
+  /** Group subtotal, e.g. Housing */
+  Group 'Group',
+  /** A single category */
+  Category 'Category',
+  /** The net cashflow line */
+  Net 'Net'
+);
+/
+
+/**
+ * One row of the cashflow matrix.
+ *
+ * M01..M12 are January..December. Text is preformatted by the builder because
+ * a cell shows an amount, a variance, or nothing at all depending on the mode
+ * and on whether the month has happened yet.
+ *
+ * Band is a CSS class suffix, empty when the cell should not be tinted.
+ */
+create or modify non-persistent entity Ledger.CashflowRow (
+  /** Row label — group name, category name, or 'Net cashflow' */
+  Label: string(100),
+  /** Group / Category / Net */
+  RowKind: enumeration(Ledger.RowKind),
+  /** Display order across the whole matrix */
+  SortOrder: integer default 0,
+  /** Row total, preformatted */
+  TotalText: string(24),
+
+  M01Text: string(24), M01Band: string(16),
+  M02Text: string(24), M02Band: string(16),
+  M03Text: string(24), M03Band: string(16),
+  M04Text: string(24), M04Band: string(16),
+  M05Text: string(24), M05Band: string(16),
+  M06Text: string(24), M06Band: string(16),
+  M07Text: string(24), M07Band: string(16),
+  M08Text: string(24), M08Band: string(16),
+  M09Text: string(24), M09Band: string(16),
+  M10Text: string(24), M10Band: string(16),
+  M11Text: string(24), M11Band: string(16),
+  M12Text: string(24), M12Band: string(16)
+);
+/
+
+/**
+ * Screen state for the cashflow report: which mode is showing, plus the
+ * headline figures. One object per page instance, built by DS_ReportContext.
+ */
+create or modify non-persistent entity Ledger.ReportContext (
+  /** Actual / Budget / Variance */
+  Mode: enumeration(Ledger.ReportMode),
+  /** Explains what the current mode shows */
+  Subheading: string(200),
+  /** Total income over elapsed months */
+  KpiIncome: string(24),
+  /** Total spend over elapsed months */
+  KpiSpend: string(24),
+  /** Income minus spend */
+  KpiNet: string(24),
+  /** How many elapsed cells are over budget */
+  KpiOver: string(24),
+  /** Last month with actuals, 1-12 */
+  ElapsedThrough: integer default 0
+);
+/

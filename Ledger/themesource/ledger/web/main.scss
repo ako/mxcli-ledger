@@ -1,2 +1,104 @@
 @import '../../../theme/web/custom-variables';
 
+// ===========================================================================
+// Ledger — cashflow matrix
+// ===========================================================================
+// The prototype tinted each cell with a continuous alpha computed from how far
+// the category was over or under budget:
+//
+//   a = (0.06 + ratio * 0.32) * strength
+//   over  -> rgba(168, 50, 30, a)
+//   under -> rgba(44, 110, 74, a * 0.8)
+//
+// Mendix supplies class names rather than computed colours, so CALC_Band
+// buckets the ratio into five levels either side and those become the ten
+// classes below. The alpha steps reproduce the original curve closely enough
+// that the matrix reads the same at a glance.
+//
+// Cells with no band get no class suffix and stay untinted — that covers both
+// the 2% dead band and every future month.
+
+$cf-over: rgb(168, 50, 30); // over budget on an expense, or under on income
+$cf-under: rgb(44, 110, 74); // the favourable direction
+
+.cf-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    // The class lands on an inner element, so this trims rather than replaces
+    // the cell's own padding. Fourteen columns of currency need the room.
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 13px;
+
+    &.over-1 { background-color: rgba($cf-over, 0.1); }
+    &.over-2 { background-color: rgba($cf-over, 0.16); }
+    &.over-3 { background-color: rgba($cf-over, 0.22); }
+    &.over-4 { background-color: rgba($cf-over, 0.29); }
+    &.over-5 { background-color: rgba($cf-over, 0.36); }
+
+    &.under-1 { background-color: rgba($cf-under, 0.08); }
+    &.under-2 { background-color: rgba($cf-under, 0.13); }
+    &.under-3 { background-color: rgba($cf-under, 0.18); }
+    &.under-4 { background-color: rgba($cf-under, 0.23); }
+    &.under-5 { background-color: rgba($cf-under, 0.29); }
+}
+
+// Row kinds. The label column carries these, so the whole row reads as a
+// group subtotal, a category, or the net line.
+.cf-group {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 12px;
+}
+
+.cf-cat {
+    padding-left: 24px;
+}
+
+.cf-net {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 12px;
+}
+
+.cf-total {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+// 14 columns do not fit a laptop, so the grid scrolls sideways. Without this
+// the page body scrolls instead and the whole layout drifts.
+.ledger-matrix {
+    overflow-x: auto;
+
+    th,
+    td {
+        white-space: nowrap;
+    }
+}
+
+.ledger-modes {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0 16px;
+}
+
+.ledger-kpi {
+    padding: 12px 16px;
+
+    h6 {
+        margin: 0 0 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 10.5px;
+        opacity: 0.6;
+    }
+
+    h3 {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+    }
+}
