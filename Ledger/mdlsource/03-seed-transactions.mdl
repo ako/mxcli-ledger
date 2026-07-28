@@ -28,8 +28,6 @@
  * @param $MirrorAccount When set, each booking also creates the receiving half
  *        of an internal transfer on this account, flagged IsMirror
  * @param $TxPerMonth How many bookings per month
- * @param $SharePerTx 1/TxPerMonth as a decimal, passed in because Mendix cannot
- *        divide a Decimal by an Integer (see ../../FINDINGS.md)
  * @param $MerchantCount How many known merchants this category has
  * @param $JitterPercent Spread around the mean booking, 0-100
  * @param $SeedBase Distinct per category, so categories do not correlate
@@ -43,7 +41,6 @@ create or modify microflow Ledger.Seed_CategoryTransactions (
   $AltAccount: Ledger.Account,
   $MirrorAccount: Ledger.Account,
   $TxPerMonth: integer,
-  $SharePerTx: decimal,
   $MerchantCount: integer,
   $JitterPercent: integer,
   $SeedBase: integer,
@@ -96,8 +93,7 @@ begin
     end if;
 
     -- Per-month drift, roughly -13% to +15%, so months differ from each other.
-    -- Kept in permille as an Integer; scaled to a Decimal by multiplying by
-    -- 0.001 at the point of use. Mendix rejects mixed-type division.
+    -- Kept in permille as an Integer and scaled with `div` at the point of use.
     set $Seed = ($Seed * 75 + 74) mod 65537;
     set $DriftPermille = 1000 + (($Seed mod 280) - 126);
 
@@ -117,12 +113,11 @@ begin
         end if;
       end loop;
 
-      -- Amount: baseline share, jittered. All multiplication — see the note on
-      -- drift above.
+      -- Amount: baseline share, jittered.
       set $Seed = ($Seed * 75 + 74) mod 65537;
-      set $FactorPermille = 1000 + (((($Seed mod 1000) - 500) * 2 * $JitterPercent) * 0.01);
-      set $Amount = round($Category/BaselineBudget * $SharePerTx
-        * ($DriftPermille * 0.001) * ($FactorPermille * 0.001), 2);
+      set $FactorPermille = 1000 + ((($Seed mod 1000) - 500) * 2 * $JitterPercent div 100);
+      set $Amount = round(($Category/BaselineBudget div $TxPerMonth)
+        * ($DriftPermille div 1000) * ($FactorPermille div 1000), 2);
 
       if $IsIncome then
         set $Signed = $Amount;

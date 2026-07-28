@@ -529,3 +529,105 @@ pattern that works here is:
 ```
 pkill -f "^\./mxcli run --local"
 ```
+
+---
+
+## Verification against ako/mxcli PR #52 (2026-07-28)
+
+PR #52 (`537137b`, "check-time advisories for Mendix expression/XPath/layout
+gotchas") targets findings 12-27 directly — its bug-test files are named
+`ledger-17-slash-division.fail.mdl`, `ledger-21-datetime-literals.fail.mdl`,
+`ledger-25-xpath-assoc-empty.fail.mdl` and so on.
+
+Tested by building the PR in a separate worktree (`/opt/mxcli-pr52`, installed
+as `mxcli-pr52`) so the SHA-tracked `/opt/mxcli-src` used by
+`scripts/setup-tools.sh` stays untouched. Baseline confirmed first: current
+`main` (`ead8926`) passes every one of these probes silently.
+
+`make test` on the PR: **0 failures**.
+
+### Fixed and verified
+
+| # | Finding | Status under PR #52 |
+|---|---------|---------------------|
+| 12 | `DELETE_CASCADE` | Docs now list `CASCADE` and state "there is **no** `DELETE_CASCADE`" |
+| 13 | Association direction | Table now says `from` = "the entity that **owns the foreign key**"; the misleading example is corrected to `from Sales.Order to Sales.Customer` |
+| 16 | `year()` / `month()` | Rejected at check time — **MDL044** |
+| 18 | `2.0` truncated to `2` | Fixed; `$Dec * 2.0` now round-trips intact |
+| 19 | `0.000001` → `1e-06` | Fixed; the literal survives and `mx check` accepts it |
+| 21 | `dateTime()` with variables | Rejected at check time — **MDL046**, and the hint gives the exact `addDays(addMonths(...))` workaround |
+| 24 | `navigationlist` item names | Fixed at write time. Names are preserved and the generated caption gets a derived name (`text_itemAcc`); `mx check` passes |
+| 25 | XPath `= empty` on an association | Rejected — **MDL047** (but see gap below) |
+| 26 | Expression in `contentparams` | Rejected — **MDL-WIDGET14** |
+| 27 | Consecutive `dynamictext` | Advisory — **MDL-WIDGET15** (info level) |
+
+### Finding 20 was wrong — corrected
+
+My original conclusion ("Mendix division requires BOTH operands to be Decimal")
+was a wrong inference from correct observations. The real rule, which the PR's
+**MDL045** states plainly:
+
+> `/` navigates associations, it does not divide. Use `div` for division.
+
+`div` handles mixed types without complaint. All of these are valid:
+
+```
+set $D2 = $Dec div $I;          -- Decimal div Integer
+set $D3 = $I div 1000;          -- Integer div Integer
+set $D5 = round($Dec div $I, 2);
+```
+
+Division always yields a Decimal, so the target variable must be Decimal —
+that part of the original finding stands.
+
+**Consequence for this project:** the `$SharePerTx` parameter existed only to
+work around a rule that does not exist. `Seed_CategoryTransactions` now divides
+directly (`$Category/BaselineBudget div $TxPerMonth`), the parameter is gone
+from the signature and all 13 call sites, and a re-seed against a dropped
+database produces **identical** output — 334 transactions, same per-month
+counts, same net sums.
+
+### Not fixed: finding 17 is still silent, and now falls through the new check too
+
+This is the one to flag back. `$A / $B` — division by a *variable* — still
+serializes with the `$` sigil eaten:
+
+```
+authored:  set $S1 = $Dec / $Dec2;
+stored:    set $S1 = $Dec/Dec2;
+mx check:  [error] [CE0117] "Error(s) in expression." at Change variable 'S1'
+```
+
+MDL045 fires for `$Dec / 2.0` and `$I / 1000` but **not** for `$Dec / $Dec2`.
+The reason is visible in MDL045's own wording: `/` is association navigation,
+so `$Dec/Dec2` parses as a perfectly well-formed attribute path and never looks
+like a division to the checker. The result is that the most dangerous form —
+the one that silently rewrites your expression — is the only one still not
+caught.
+
+A check for "`/` followed by a `$`-sigilled operand" would close it, since an
+association path never has `$` on its right-hand side.
+
+### Two smaller gaps
+
+**MDL047 only covers microflow `retrieve`.** The PR's test uses
+`retrieve $t from Ledger.Transaction where [Ledger.Transaction_Category = empty]`.
+The same constraint in a *page datasource* is not flagged:
+
+```
+datagrid dgProbe (
+  datasource: database from Ledger.Transaction
+    where [Ledger.Transaction_Category = empty]   -- not flagged
+)
+```
+
+That is exactly where this project originally hit it (finding 25) — a
+`datagrid` on `Transaction_Overview`, not a microflow.
+
+**MDL-WIDGET15 has false positives.** It flags any two adjacent
+`dynamictext` widgets, including heading + subtitle pairs where the first has
+`RenderMode: H2`/`H3`/`H4`. Those render block-level and are fine — verified
+visually on all three Ledger pages. Running the real `05-pages-foundation.mdl`
+through the PR build reports 4 such advisories, all benign. Restricting the
+rule to cases where *both* widgets are non-heading would remove the noise.
+Being info-level, it does not block anything.
