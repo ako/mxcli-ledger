@@ -1089,6 +1089,56 @@ Two details that mattered:
 **Still outstanding:** `DS_ReportContext` computes the four KPIs with its own
 category × month loop (~182 retrieves) and has not been moved onto the views.
 
+### Round 4 — PR #52 at `f53e3e9e` (2026-07-29)
+
+Eight new commits since `c5c724b`. `make test`: **0 failures**. `mx check` on
+this project: **0 errors**.
+
+**Regression first.** All 19 files in `mdlsource/` pass `mxcli check
+--references` under the new binary, and the *fixed* forms this project arrived
+at empirically — the materialised `retrieve $Row from $Edit/…` before a call,
+the hoisted `set $Acct = …` before a format call — pass clean. No false
+positives on a project `mx check` calls valid.
+
+One advisory does fire, correctly: **MDL001** flags the nested loops in
+`DS_CashflowRows`, `ACT_ApplyRules` and `CALC_RulePreview`, and its own text
+says to ignore it when the inner loop is genuine aggregation rather than a key
+lookup. All three here are the former. A hint that names its own false-positive
+case is the right shape for this.
+
+**Each fix verified against the construct that produced the finding:**
+
+| # | Finding | Mechanism | Result |
+|---|---|---|---|
+| 36 | view-entity pass-through string length | reference check | fires, and names the length to use: "change to 'CategoryName: String(100)'" |
+| 39 | orphaned index crash | `exec` | index is now auto-dropped with a warning; the .mpr **loads** |
+| 41 | association to/from a view entity | reference check | fires, cites CE6771, suggests the NP-with-a-reference workaround |
+| 42 | retrieve by id in XPath | MDL048 | fires; correctly notes `[id != $obj]` against an *object* variable stays valid |
+| 44 | association path as a call argument | MDL049 | fires, with the materialise-then-pass fix |
+| 48 | format function + association navigation | MDL050 | fires, with the hoist-then-format fix |
+| 45, 46 | ALTER PAGE limits, DataGrid2 styling | docs | folded into the PR's documentation |
+
+Finding 39 deserves a note: the fix is better than a check. Dropping an indexed
+attribute now emits `Dropped 1 index(es) that referenced removed attribute(s)`
+and the project still loads — `mx check` reports ordinary CE1613s about the
+attribute being gone, which is the true consequence, instead of the
+`KeyNotFoundException` in `StreamingBsonUnitReader` that made the .mpr
+unopenable and undiagnosable.
+
+**Still open**, all reported after these commits were written:
+
+- **52 — `break` writes a dangling reference.** Still reproduces, and this round
+  found a *minimal* case: an eight-line microflow with one loop and one `break`
+  is enough to produce an .mpr that `mx check` cannot load. The most severe of
+  the open items, because nothing warns and the damage is only visible later.
+- **53 — `contains()` is serialized as a List operation.** Confirmed end to end:
+  `$Hit = contains($Hay, $Needle);` passes `mxcli check`, then `mx check` gives
+  `CE0023` / `CE0097` at "List operation activity 'Contains'". There is no
+  spelling of a string `contains()` that works; `find(a, b) >= 0` is the
+  workaround.
+- **54–57** — empty column caption (CE0463), blank required-attribute message,
+  the missing form/layoutgrid advisory, and the reorder refresh.
+
 ## Phase 4 — budgets (2026-07-29)
 
 ### 41. View entities cannot take part in associations — and `mxcli check` says nothing
