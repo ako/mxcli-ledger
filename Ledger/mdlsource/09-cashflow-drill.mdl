@@ -1,44 +1,55 @@
 -- ============================================================================
--- 09 - Cashflow drilldown
+-- 09 - Cashflow inspector
 -- ============================================================================
 -- Clicking a cell in the matrix answers the question the matrix provokes:
--- 'Groceries went €80 over in March — on what?'. The popup lists the
--- transactions the cell was computed from.
+-- 'Groceries went €35 over in March — on what?'. The transactions appear in a
+-- panel beside the matrix, which is where the prototype put them.
 --
--- Only category rows drill. A group subtotal has no single category to list and
--- the net line has none at all, so both leave CashflowRow_Category empty and
--- the opener declines. That is one guard rather than a row-kind check plus a
--- null check, because the association being empty *is* the condition.
+-- Beside, not in a popup, and that is not only a layout choice. The panel is
+-- part of the page, so it is populated on load rather than only after a click,
+-- the matrix stays visible and comparable while the detail is read, and
+-- clicking a second cell just repoints the panel. A popup hides the thing you
+-- are asking questions about.
 --
--- Ordering, learned from the Budgets slice (FINDINGS 45): everything page-free
--- first, then the page, then the microflow that opens it. Wiring a page's
--- buttons or a grid's cells after the fact with ALTER PAGE does not work.
+-- Consequence for the model: the selection lives on the page's ReportContext,
+-- the same object the mode buttons already mutate. Refreshing it re-runs both
+-- the matrix datasource and the list, which is how the selected cell gets its
+-- outline and the panel its contents in one round trip.
+--
+-- Only category rows select. A group subtotal has no single category to list
+-- and the net line has none at all, so both leave CashflowRow_Category empty
+-- and the handler declines. That is one guard rather than a row-kind check plus
+-- a null check, because the association being empty *is* the condition.
 -- ============================================================================
 
 /**
- * The transactions behind one cell: one category, one month, mirrors excluded.
+ * The transactions behind the selected cell: one category, one month, mirrors
+ * excluded.
  *
- * The filter lives here because two callers need the same rows — the grid's
- * datasource and the header figures — and they must not be able to disagree.
- * Mirrors are excluded for the same reason the matrix excludes them: an
- * internal transfer books on both accounts and the cell would not add up to
- * the list underneath it.
+ * The filter lives here because two callers need the same rows — the panel's
+ * list and its header figures — and they must not be able to disagree. Mirrors
+ * are excluded for the same reason the matrix excludes them: an internal
+ * transfer books on both accounts and the cell would not add up to the list
+ * underneath it.
  *
- * @param $Drill The cell being inspected
+ * Returns nothing when no cell is selected: the category association is unset,
+ * so the constraint matches nothing.
+ *
+ * @param $Context The page's report context
  * @returns Transactions, oldest first
  */
-create or modify microflow Ledger.GET_DrillTransactions ($Drill: Ledger.DrillContext)
+create or modify microflow Ledger.GET_DrillTransactions ($Context: Ledger.ReportContext)
 returns list of Ledger.Transaction as $Txs
 folder 'Cashflow'
 begin
   declare $Start datetime = [%CurrentDateTime%];
   declare $End datetime = [%CurrentDateTime%];
 
-  set $Start = addMonths(dateTime(2026, 1, 1), $Drill/MonthIndex - 1);
+  set $Start = addMonths(dateTime(2026, 1, 1), $Context/DrillMonthIndex - 1);
   set $End = addMonths($Start, 1);
 
   @annotation 'XPath cannot compare against an association path, only a variable'
-  retrieve $Cat from $Drill/Ledger.DrillContext_Category;
+  retrieve $Cat from $Context/Ledger.ReportContext_DrillCategory;
 
   retrieve $Txs from Ledger.Transaction
     where Ledger.Transaction_Category = $Cat
@@ -52,29 +63,35 @@ end;
 /
 
 /**
- * The drilldown list, preformatted for display.
+ * The inspector list, preformatted for display.
  *
- * @param $Drill The cell being inspected
+ * @param $Context The page's report context
  * @returns One line per transaction, oldest first
  */
-create or modify microflow Ledger.DS_DrillLines ($Drill: Ledger.DrillContext)
+create or modify microflow Ledger.DS_DrillLines ($Context: Ledger.ReportContext)
 returns list of Ledger.DrillLine as $Lines
 folder 'Cashflow'
 begin
   declare $N integer = 0;
+  declare $Meta string = '';
+  declare $Acct string = '';
 
   $Lines = create list of Ledger.DrillLine;
 
-  $Txs = call microflow Ledger.GET_DrillTransactions (Drill = $Drill);
+  $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
 
   loop $T in $Txs
   begin
     set $N = $N + 1;
     $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
+
+    @annotation 'Crossing an association has to be the whole expression — FINDINGS 48'
+    set $Acct = $T/Ledger.Transaction_Account/Name;
+    set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
+
     $Line = create Ledger.DrillLine (
-      DateText = formatDateTime($T/TxDate, 'd MMM'),
       Merchant = $T/Merchant,
-      Description = $T/Description,
+      MetaText = $Meta,
       AmountText = $Amount,
       SortOrder = $N);
     add $Line to $Lines;
@@ -85,114 +102,37 @@ end;
 /
 
 /**
- * The transactions behind one cell of the cashflow matrix.
+ * Points the inspector at one matrix cell.
  *
- * @param $Drill The cell being inspected, prepared by ACT_DrillCell
- */
-create or replace page Ledger.Cashflow_Drill
-(
-  params: {
-    $Drill: Ledger.DrillContext
-  },
-  title: 'Cell detail',
-  layout: Atlas_Core.PopupLayout,
-  PopupWidth: 720,
-  folder: 'Ledger'
-)
-{
-  dataview dvDrill (datasource: $Drill) {
-    dynamictext txtDrillCaption (attribute: Caption, rendermode: H3)
-
-    layoutgrid lgDrillFigures {
-      row rowDrillFigures {
-        column colDrillActual (desktopwidth: 4) {
-          container ctnDrillActual (class: 'card ledger-kpi') {
-            dynamictext lblDrillActual (content: 'Actual', rendermode: H6)
-            dynamictext valDrillActual (attribute: ActualText, rendermode: H4)
-          }
-        }
-        column colDrillBudget (desktopwidth: 4) {
-          container ctnDrillBudget (class: 'card ledger-kpi') {
-            dynamictext lblDrillBudget (content: 'Budget', rendermode: H6)
-            dynamictext valDrillBudget (attribute: BudgetText, rendermode: H4)
-          }
-        }
-        column colDrillVariance (desktopwidth: 4) {
-          container ctnDrillVariance (class: 'card ledger-kpi') {
-            dynamictext lblDrillVariance (content: 'Variance', rendermode: H6)
-            dynamictext valDrillVariance (attribute: VarianceText, rendermode: H4)
-          }
-        }
-      }
-    }
-
-    dynamictext txtDrillCount (
-      attribute: CountText,
-      rendermode: paragraph,
-      class: 'text-muted')
-
-    datagrid dgDrill (
-      datasource: microflow Ledger.DS_DrillLines,
-      PageSize: 25
-    ) {
-      column colDrillDate (
-        attribute: DateText, caption: 'Date',
-        Sortable: false, ColumnWidth: manual, Size: 70)
-      column colDrillMerchant (
-        attribute: Merchant, caption: 'Merchant',
-        Sortable: false, ColumnWidth: manual, Size: 150)
-      column colDrillDesc (
-        attribute: Description, caption: 'Description',
-        Sortable: false, ColumnWidth: manual, Size: 190)
-      column colDrillAmount (
-        attribute: AmountText, caption: 'Amount', Alignment: right,
-        Sortable: false, ColumnWidth: manual, Size: 110)
-    }
-
-    footer footDrill {
-      actionbutton btnDrillClose (
-        caption: 'Close',
-        action: close_page,
-        buttonstyle: primary)
-    }
-  }
-}
-/
-
-/**
- * Opens the drilldown for one matrix cell.
+ * The figures come from the same three sources the matrix used — the
+ * transaction list for the actual, CALC_Budget for the budget, and the same
+ * elapsed window — so the panel cannot disagree with the cell that selected it.
  *
- * Declines silently on group and net rows: their CashflowRow_Category is empty,
- * because neither has a single category whose transactions could be listed.
- *
- * The figures come back from the same three sources the matrix used — the
- * transaction list for the actual, CALC_Budget for the budget, and the income
- * sign flip for the variance — so the popup cannot disagree with the cell that
- * opened it.
+ * Ends by refreshing the context, which re-runs the matrix datasource as well
+ * as the list. That is what draws the outline on the selected cell: the builder
+ * reads the selection back off the context it was given.
  *
  * @param $Row The matrix row that was clicked
  * @param $MonthIndex 1-12
- * @returns true when a popup was opened
+ * @returns true when the inspector moved
  */
 create or modify microflow Ledger.ACT_DrillCell (
   $Row: Ledger.CashflowRow,
   $MonthIndex: integer
 )
-returns boolean as $Opened
+returns boolean as $Selected
 folder 'Cashflow'
 begin
-  declare $Opened boolean = false;
+  declare $Selected boolean = false;
   declare $MonthKey string = '';
   declare $MonthName string = '';
   declare $Budget decimal = 0;
-  declare $Favourable decimal = 0;
-  declare $IsIncome boolean = false;
   declare $ActualOut string = '';
   declare $BudgetOut string = '';
-  declare $VarianceOut string = '';
   declare $CountOut string = '';
 
   retrieve $Cat from $Row/Ledger.CashflowRow_Category;
+  retrieve $Context from $Row/Ledger.CashflowRow_Context;
 
   if $Cat != empty then
     $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $MonthIndex);
@@ -200,44 +140,35 @@ begin
     $MN = call microflow Ledger.FMT_MonthName (MonthIndex = $MonthIndex);
     set $MonthName = $MN;
 
-    $Drill = create Ledger.DrillContext (
-      MonthIndex = $MonthIndex,
-      MonthKey = $MonthKey,
-      Caption = $Row/Label + ' · ' + $MonthName + ' 2026');
-    change $Drill (Ledger.DrillContext_Category = $Cat);
+    @annotation 'Point the context at the cell before reading its transactions'
+    change $Context (
+      DrillSortKey = $Row/SortOrder,
+      DrillMonthIndex = $MonthIndex,
+      Ledger.ReportContext_DrillCategory = $Cat);
 
-    @annotation 'Same list the grid will show, so the header cannot disagree'
-    $Txs = call microflow Ledger.GET_DrillTransactions (Drill = $Drill);
-    @annotation 'count() and sum() declare their own outputs — see FINDINGS 15'
+    $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
+    @annotation 'count() and sum() declare their own outputs — see FINDINGS 47'
     $Count = count($Txs);
     $Actual = sum($Txs.Amount);
 
     $B = call microflow Ledger.CALC_Budget (Category = $Cat, MonthKey = $MonthKey);
     set $Budget = $B;
 
-    @annotation 'For income, under budget is the unfavourable direction'
-    set $IsIncome = $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.GroupType.Income;
-    set $Favourable = if $IsIncome then $Actual - $Budget else $Budget - $Actual;
-
     $AT = call microflow Ledger.FMT_Euro (Amount = $Actual);
     set $ActualOut = $AT;
     $BT = call microflow Ledger.FMT_Euro (Amount = $Budget);
     set $BudgetOut = $BT;
-    $VT = call microflow Ledger.FMT_Variance (Amount = $Favourable);
-    set $VarianceOut = $VT;
-
     set $CountOut = if $Count = 1 then '1 transaction' else toString($Count) + ' transactions';
 
-    change $Drill (
-      ActualText = $ActualOut,
-      BudgetText = $BudgetOut,
-      VarianceText = $VarianceOut,
-      CountText = $CountOut);
+    change $Context (
+      DrillKicker = $Cat/Ledger.Category_CategoryGroup/Name,
+      DrillTitle = $Row/Label + ' · ' + $MonthName + ' 2026',
+      DrillMeta = $ActualOut + ' of ' + $BudgetOut + ' budget · ' + $CountOut)
+      refresh;
 
-    show page Ledger.Cashflow_Drill ($Drill = $Drill);
-    set $Opened = true;
+    set $Selected = true;
   end if;
 
-  return $Opened;
+  return $Selected;
 end;
 /

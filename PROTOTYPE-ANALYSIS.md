@@ -208,23 +208,37 @@ Two behaviours worth keeping in mind:
 
 ### 5.5 Cell drilldown
 
-**Settled (2026-07-29): a popup over preformatted lines, category rows only.**
+**Settled (2026-07-29): a panel beside the matrix, as in the prototype.**
 
-Clicking a month cell on a category row lists the transactions it was computed
-from, with the cell's own actual, budget and variance in the header. The list
-and the header figures come from one shared retrieve, so they cannot disagree.
+Clicking a month cell on a category row points a panel to the right of the
+matrix at the transactions the cell was computed from, with a kicker, a title
+and a meta line — `€ 655 of € 620 budget · 11 transactions` — above the list.
+The list and the meta line come from one shared retrieve, so they cannot
+disagree.
 
-Two decisions worth recording:
+Beside rather than in a popup, because the matrix is the thing being questioned:
+it stays visible and comparable while the detail is read, the panel is populated
+before the first click, and a second click just repoints it.
 
+Three decisions worth recording:
+
+- **The selection lives on `ReportContext`**, the page-level object the mode
+  buttons already mutate — a panel on the page has nowhere to put an object of
+  its own. Refreshing it re-runs the matrix datasource too, which is what
+  outlines the selected cell. See FINDINGS 51.
 - **Group subtotals and the net line are not drillable.** Neither has a single
   category whose transactions could be listed. This is enforced by the data
   rather than by a check: only category rows get a `CashflowRow_Category`, so
-  the opener finds it empty and declines.
-- **The grid holds non-persistent `DrillLine` rows, not `Transaction` objects.**
-  MDL has no number or date format on a grid column, so a Decimal renders as
-  `-51.3` and a date in the browser's locale. Preformatting in the builder is
-  what CashflowRow already does. The cost: a future "click a line to edit the
-  transaction" would need the association back — see FINDINGS 49.
+  the handler finds it empty and declines.
+- **The list holds non-persistent `DrillLine` rows, not `Transaction` objects.**
+  MDL has no number or date format, so a Decimal renders as `-51.3` and a date
+  in the browser's locale. Preformatting in the builder is what CashflowRow
+  already does. The cost: a future "click a line to edit the transaction" would
+  need the association back — see FINDINGS 49.
+
+The panel costs the matrix a quarter of its width, so 9 of 12 months are visible
+at 1600px rather than all 12. §5.1 anticipated this; the legend under the matrix
+now says the matrix scrolls.
 
 ### 5.7 Real CSV import
 

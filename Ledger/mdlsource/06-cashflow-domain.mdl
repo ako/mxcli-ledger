@@ -80,32 +80,18 @@ create or modify non-persistent entity Ledger.ReportContext (
   /** How many elapsed cells are over budget */
   KpiOver: string(24),
   /** Last month with actuals, 1-12 */
-  ElapsedThrough: integer default 0
-);
-/
+  ElapsedThrough: integer default 0,
 
-/**
- * What a drilled-into cell is showing: one category in one month, with the
- * same three figures the cell itself was built from.
- *
- * The transactions are not held here — they are a microflow datasource on the
- * popup, so the list is retrieved once by the grid rather than carried around.
- */
-create or modify non-persistent entity Ledger.DrillContext (
+  /** Inspector: SortKey of the selected row, 0 when nothing is selected */
+  DrillSortKey: integer default 0,
+  /** Month of the selected cell, 1-12, 0 when nothing is selected */
+  DrillMonthIndex: integer default 0,
+  /** The selected category's group, shown as the panel's kicker */
+  DrillKicker: string(100),
   /** e.g. 'Groceries · March 2026' */
-  Caption: string(160),
-  /** 1-12 */
-  MonthIndex: integer default 1,
-  /** 'YYYY-MM' */
-  MonthKey: string(7),
-  /** Actual for the cell, preformatted */
-  ActualText: string(24),
-  /** Budget for the cell, preformatted */
-  BudgetText: string(24),
-  /** Signed variance, favourable positive */
-  VarianceText: string(24),
-  /** e.g. '9 transactions' */
-  CountText: string(40)
+  DrillTitle: string(160),
+  /** e.g. '€ 655 of € 620 budget · 11 transactions' */
+  DrillMeta: string(200)
 );
 /
 
@@ -113,18 +99,19 @@ create or modify non-persistent entity Ledger.DrillContext (
  * One line of the drilldown list.
  *
  * A preformatted copy of a Transaction rather than the Transaction itself.
- * MDL has no number or date format on a grid column, so a Decimal renders as
- * '-51.3' and a DateTime in the browser's locale — neither of which is what a
- * Dutch bank statement looks like. Formatting in the builder is the same choice
+ * MDL has no number or date format on a list, so a Decimal renders as '-51.3'
+ * and a DateTime in the browser's locale — neither of which is what a Dutch
+ * bank statement looks like. Formatting in the builder is the same choice
  * CashflowRow makes, for the same reason.
+ *
+ * The shape follows the prototype's inspector: merchant on top, date and
+ * account beneath it, amount right-aligned.
  */
 create or modify non-persistent entity Ledger.DrillLine (
-  /** Day and month, e.g. '5 Mar' — the year is in the popup title */
-  DateText: string(16),
-  /** Counterparty */
+  /** Counterparty, the line's headline */
   Merchant: string(200),
-  /** Payment reference */
-  Description: string(500),
+  /** Second line, e.g. '5 Mar · ING Betaalrekening' */
+  MetaText: string(200),
   /** Signed amount with cents, e.g. '-€ 51.30' */
   AmountText: string(24),
   /** Display order */
@@ -146,10 +133,31 @@ create or modify association Ledger.CashflowRow_Category
   delete_behavior DELETE_BUT_KEEP_REFERENCES;
 /
 
-/** The category being drilled into. */
-create or modify association Ledger.DrillContext_Category
-  from Ledger.DrillContext
+/**
+ * The category the inspector is showing.
+ *
+ * On ReportContext rather than on a popup object because the inspector is part
+ * of the page: it sits beside the matrix, is populated on load, and both it and
+ * the matrix read the one object the page's dataview already holds.
+ */
+create or modify association Ledger.ReportContext_DrillCategory
+  from Ledger.ReportContext
   to Ledger.Category
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/
+
+/**
+ * The page context a matrix row was built for.
+ *
+ * A cell's click handler needs the ReportContext to write the selection into,
+ * and a page cannot pass two objects to one microflow. The builder holds both,
+ * so it wires them together.
+ */
+create or modify association Ledger.CashflowRow_Context
+  from Ledger.CashflowRow
+  to Ledger.ReportContext
   type reference
   owner default
   delete_behavior DELETE_BUT_KEEP_REFERENCES;

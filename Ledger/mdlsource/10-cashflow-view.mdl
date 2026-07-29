@@ -326,6 +326,9 @@ begin
       change $Row (RowKind = Ledger.RowKind.Net);
     end if;
 
+    @annotation 'Cells write the selection back onto the context they came from'
+    change $Row (Ledger.CashflowRow_Context = $Context);
+
     @annotation 'Category rows carry their Category so a cell can drill into it'
     if $V/RowKind = 'Category' then
       loop $C in $Cats
@@ -384,6 +387,11 @@ begin
           set $Text = '';
         end if;
         set $Band = '';
+      end if;
+
+      @annotation 'The selected cell is outlined; the band string carries the class'
+      if $V/SortKey = $Context/DrillSortKey and $M = $Context/DrillMonthIndex then
+        set $Band = $Band + ' cf-sel';
       end if;
 
       $Set = call microflow Ledger.SET_RowMonth (

@@ -100,7 +100,12 @@ begin
     KpiSpend = $SpendText,
     KpiNet = $NetText,
     KpiOver = toString($Over) + ' cells',
-    ElapsedThrough = $Through);
+    ElapsedThrough = $Through,
+
+    -- The inspector starts empty and says so
+    DrillKicker = 'Inspector',
+    DrillTitle = 'Select a cell',
+    DrillMeta = 'Click any cell in the matrix to list the transactions behind it.');
 
   return $Context;
 end;

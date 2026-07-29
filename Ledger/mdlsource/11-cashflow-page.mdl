@@ -84,7 +84,14 @@ create or replace page Ledger.Cashflow_Overview
             }
           }
 
-          -- The matrix. 14 columns: label, twelve months, row total.
+          -- The matrix and the inspector, side by side. The panel is where the
+          -- prototype put the drilldown, and being on the page rather than in a
+          -- popup is what lets the matrix stay readable while the detail is
+          -- read. It costs the matrix a quarter of its width, so more of the
+          -- year sits off-scroll — the legend below says the matrix scrolls.
+          layoutgrid lgMatrixRow {
+            row rowMatrix {
+              column colMatrix (desktopwidth: 9) {
           datagrid dgMatrix (
             datasource: microflow Ledger.DS_CashflowRows,
             PageSize: 40,
@@ -243,6 +250,52 @@ create or replace page Ledger.Cashflow_Overview
               attribute: TotalText, caption: 'Total', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 150,
               DynamicCellClass: '''cf-total''')
+          }
+
+                container ctnLegend (class: 'ledger-legend') {
+                  container ctnLegendOver (class: 'ledger-legend-item') {
+                    container swOver (class: 'ledger-swatch ledger-swatch-over') {
+                      dynamictext txtSwOver (content: ' ')
+                    }
+                    dynamictext txtLegendOver (content: 'Over budget')
+                  }
+                  container ctnLegendUnder (class: 'ledger-legend-item') {
+                    container swUnder (class: 'ledger-swatch ledger-swatch-under') {
+                      dynamictext txtSwUnder (content: ' ')
+                    }
+                    dynamictext txtLegendUnder (content: 'Under budget')
+                  }
+                  dynamictext txtLegendHint (
+                    content: 'The matrix scrolls sideways. Click any cell to inspect its transactions.',
+                    class: 'ledger-legend-hint')
+                }
+              }
+
+              -- The inspector.
+              column colInspector (desktopwidth: 3) {
+                container ctnInspector (class: 'card ledger-inspector') {
+                  container ctnInspectorHead (class: 'ledger-inspector-head') {
+                    dynamictext txtDrillKicker (attribute: DrillKicker, class: 'ledger-kicker')
+                    dynamictext txtDrillTitle (attribute: DrillTitle, rendermode: H5)
+                    dynamictext txtDrillMeta (attribute: DrillMeta, class: 'ledger-inspector-meta')
+                  }
+                  listview lvDrill (
+                    datasource: microflow Ledger.DS_DrillLines,
+                    class: 'ledger-inspector-list'
+                  ) {
+                    template tplDrill {
+                      container ctnLine (class: 'ledger-line') {
+                        container ctnLineText (class: 'ledger-line-text') {
+                          dynamictext txtLineMerchant (attribute: Merchant, class: 'ledger-line-merchant')
+                          dynamictext txtLineMeta (attribute: MetaText, class: 'ledger-line-meta')
+                        }
+                        dynamictext txtLineAmount (attribute: AmountText, class: 'ledger-line-amount')
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

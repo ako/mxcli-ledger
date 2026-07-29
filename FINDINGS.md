@@ -1237,7 +1237,11 @@ instinct is to write it everywhere.
 Credit where due: `mxcli check --references` caught this one before `mx check`
 did, with a precise message.
 
-### 48. An expression that navigates an association inside a ternary fails
+### 48. Crossing an association has to be the whole expression
+
+Hit twice, in different shapes, before the pattern was clear.
+
+Inside a ternary:
 
 ```
 set $Favourable = if $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.GroupType.Income
@@ -1245,42 +1249,59 @@ set $Favourable = if $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.Group
   else $Budget - $Actual;
 ```
 
+Inside a concatenation:
+
 ```
-[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Favourable'
+set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $T/Ledger.Transaction_Account/Name;
 ```
 
-Hoisting the test into its own boolean fixes it:
+Both give:
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable …'
+```
+
+Hoisting the navigation into its own assignment fixes both:
 
 ```
 set $IsIncome = $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.GroupType.Income;
 set $Favourable = if $IsIncome then $Actual - $Budget else $Budget - $Actual;
+
+set $Acct = $T/Ledger.Transaction_Account/Name;
+set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
 ```
 
-The same ternary shape works elsewhere in this app when the condition is a plain
-variable, and the same association navigation works elsewhere when it is not
-inside a ternary — it is the combination that breaks. `mxcli check --references`
-passed it: another gap, and the third of this kind (see 41 and 44).
+**The rule, as far as this app has established it:** in a `set` (Change
+variable) or a `create` member assignment, a path that *crosses an association*
+must be the entire expression. Member access on a parameter is fine anywhere —
+`Caption = $Row/Label + ' · ' + $MonthName` works — and so is association
+navigation inside an `if` **condition**: this app has
+`if ($C/Ledger.Category_CategoryGroup/SortOrder * 100 + $C/SortOrder) = $V/SortKey`
+in the matrix builder and it passes. It is specifically an associated value used
+as an operand.
 
-### 49. No number or date format on a grid column
+`mxcli check --references` passed every one of these: another gap, and the third
+of this kind (see 41 and 44).
 
-MDL's page grammar has no `format`, `decimalprecision` or equivalent on a
-`column`. A Decimal renders as Mendix's default — `-51.3`, dropping the trailing
-zero — and a DateTime in the browser's locale, so a Dutch ledger showed
-`3/5/2026`.
+### 49. No number or date format on a grid column or list
+
+MDL's page grammar has no `format`, `decimalprecision` or equivalent. A Decimal
+renders as Mendix's default — `-51.3`, dropping the trailing zero — and a
+DateTime in the browser's locale, so a Dutch ledger showed `3/5/2026`.
 
 The workaround is the one CashflowRow already uses for a different reason:
-preformat in the builder. The drilldown list is a non-persistent `DrillLine`
-with `DateText` and `AmountText` rather than the `Transaction` itself, built by
+preformat in the builder. The inspector list is a non-persistent `DrillLine`
+with `MetaText` and `AmountText` rather than the `Transaction` itself, built by
 a datasource microflow over the same retrieve the header figures use.
 
-The cost is real and worth stating: the grid no longer holds Transaction
+The cost is real and worth stating: the list no longer holds Transaction
 objects, so a future "click a line to edit the transaction" would need the
 association back. For a read-only inspector it is the right trade.
 
-### 50. The drilldown, verified against the database
+### 50. The inspector, verified against the database
 
-Clicking Groceries × March opens a popup showing `€ 655` actual, `€ 620` budget,
-`-€ 35` variance and 11 transactions. Straight from Postgres:
+Clicking Groceries × March fills the panel with `€ 655 of € 620 budget · 11
+transactions`. Straight from Postgres:
 
 ```
 select count(*), sum(t.amount) ... where c.name = 'Groceries'
@@ -1288,11 +1309,44 @@ select count(*), sum(t.amount) ... where c.name = 'Groceries'
    11 | 655.23000000
 ```
 
-The income sign flip holds too: Salary × January is `€ 5,309` against a `€ 5,200`
-budget and reports `+€ 109` — favourable, where the same shortfall on an expense
-row would be unfavourable.
-
 Group subtotals and the net line are not drillable, and this falls out of the
 data rather than being a check: `CashflowRow_Category` is only set on category
-rows, so the opener finds it empty and declines. 156 drillable cells, 72 not —
-13 categories and 6 non-category rows, times twelve months.
+rows, so the handler finds it empty and declines. 156 drillable cells, 72 not —
+13 categories and 6 non-category rows, times twelve months. Clicking a group
+cell leaves the panel exactly as it was.
+
+### 51. Where the detail goes changes the model, not just the layout
+
+The drilldown was first built as a popup and then moved beside the matrix, where
+the prototype had it. That is not a CSS change.
+
+A popup carries its own object: `ACT_DrillCell` created a `DrillContext`, filled
+it, and passed it to `show page`. A panel on the page has nowhere to put one —
+a dataview needs a datasource, and there is no second context object to hand it.
+So the selection moved onto the page's existing `ReportContext`, the same object
+the mode buttons already mutate, and the panel became a plain section of the
+page's dataview.
+
+Three things fell out of that, all of them improvements:
+
+- **The panel exists before the first click.** It carries the prototype's own
+  empty state — "Select a cell" / "Click any cell in the matrix to list the
+  transactions behind it." — instead of the feature being invisible until
+  discovered.
+- **The selected cell can be outlined.** `ACT_DrillCell` ends with
+  `change $Context (…) refresh;`, and because the matrix datasource takes that
+  context as its parameter, Mendix re-runs it. The builder reads the selection
+  back off the context and appends `cf-sel` to the band string, so the class
+  lands on the grid cell rather than the container inside it. This is the same
+  refresh mechanism as the mode buttons — and, from the other direction, the
+  same one the Budgets grid needed in finding 44.
+- **A cell click needs two objects, and a page can pass one.** `$currentObject`
+  in a grid cell is the `CashflowRow`; the ReportContext is not addressable from
+  there. Rather than rely on Mendix's by-type parameter mapping, the builder —
+  which holds both — writes a `CashflowRow_Context` association, and the handler
+  retrieves it. Deterministic, and it costs one reference per row.
+
+The cost is width: the matrix gives up a quarter of the page, so 9 of 12 months
+are visible at 1600px instead of all 12 (934px of a 1442px grid). The prototype
+had the same shape with 6 months. The legend under the matrix now says so — it
+is also from the prototype, and it explains the heatmap while it is there.
