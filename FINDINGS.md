@@ -802,3 +802,51 @@ the page.
 
 The cost is a 28-attribute non-persistent entity. That is report scaffolding,
 not domain data, but it will trip the DESIGN001 lint rule.
+
+### Round 3 — PR #52 at `c5c724b`
+
+`c5c724b` ("MDL-WIDGET15 — Paragraph renders inline, not block (#29)") closes
+finding 29. `make test`: **0 failures**. `mx check` on this project: **0 errors**.
+
+The rule now treats `Paragraph` as inline, and the hint says so outright:
+
+> adjacent inline dynamictext widgets (RenderMode **Text or Paragraph, both
+> `<span>`**) render with no separator… or use a heading RenderMode (H1–H6,
+> which is block-level). **Note: Paragraph does NOT fix this — it also renders
+> inline.**
+
+Verified against a four-case probe:
+
+| Case | Widgets | Renders | Flagged |
+|---|---|---|---|
+| 1 | Paragraph + Paragraph | fuses (measured `<span>`, `display:inline`) | **yes** — was the false negative |
+| 2 | H4 + H4 | separate lines (`<h4>`, `display:block`) | no |
+| 3 | H3 + Paragraph | separate lines | no |
+| 4 | Text + Text | fuses | yes |
+
+Exactly cases 1 and 4 fire; a page containing only cases 2 and 3 passes clean.
+That is the correct partition — it matches the tag and computed-style
+measurements taken in round 2.
+
+### Regression sweep — no drift across three rounds
+
+Every earlier finding still caught, at the same counts:
+
+| Probe | Expected | Result |
+|---|---|---|
+| findings 16–21 | MDL044 ×2, MDL045 ×3, MDL046 ×1 | as expected |
+| finding 17 (serialization) | MDL045 ×1 | as expected |
+| findings 25/26/27 | MDL047, MDL-WIDGET14, MDL-WIDGET15 | as expected |
+
+All nine `mdlsource/*.mdl` pass clean apart from the two known MDL001
+false positives on `08-cashflow-datasources.mdl`.
+
+### Still open
+
+**Finding 32** — MDL001's nested-loop advisory still fires on
+`DS_CashflowRows` and `DS_ReportContext`, which walk groups × categories ×
+months to aggregate. `FIND` does not apply: nothing is looked up by key, every
+element is visited deliberately. Warning-level, so it does not block, but it
+will fire on any aggregation microflow. The other rules learned to distinguish
+their cases (MDL047 by context, MDL-WIDGET15 by render mode); this one has not
+yet.
