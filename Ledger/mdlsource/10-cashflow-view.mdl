@@ -1,0 +1,427 @@
+-- ============================================================================
+-- 10 - Cashflow actuals view
+-- ============================================================================
+-- Replaces the per-cell retrieves in DS_CashflowRows. That builder issued
+-- roughly 936 database round trips per render — 156 category x month pairs for
+-- the group subtotals, 156 for the category rows and 156 for the net line,
+-- each pair being a CALC_Actual plus a CALC_Budget — and computed the same
+-- figures three times over. This view returns all 19 rows in one query.
+--
+-- Three things make it possible, all verified rather than assumed (FINDINGS
+-- 36-38):
+--   * UNION ALL, so group subtotals, category rows and the net line come from
+--     one view rather than being assembled by hand.
+--   * datepart(), so the month comes off TxDate directly and
+--     Transaction.MonthKey is no longer needed.
+--   * A computed SortKey that interleaves each group with its own categories.
+--
+-- Budgets are deliberately NOT joined here. Joining BudgetOverride alongside
+-- Transaction would fan out — a category with 5 overrides and 30 transactions
+-- yields 150 rows and every actual would be multiplied by 5. Budgets are
+-- resolved in the builder instead, from two small retrieves (13 categories,
+-- 5 overrides).
+--
+-- Pass-through string columns must declare their source length; derived ones
+-- (cast, string literal) normalise to string(200). See FINDINGS 36.
+-- ============================================================================
+
+/**
+ * Every row of the cashflow matrix, with actuals per month.
+ *
+ * RowKind is 'Category', 'Group' or 'Net'. GroupTypeName is 'Income' or
+ * 'Expense' ('Net' on the net line) and drives the variance sign flip.
+ *
+ * Mirrors are excluded: an internal transfer books on both accounts and would
+ * otherwise be counted twice.
+ */
+create or modify view entity Ledger.VMatrixActual (
+  SortKey: integer,
+  Label: string(200),
+  RowKind: string(200),
+  GroupTypeName: string(200),
+  M01Actual: decimal,
+  M02Actual: decimal,
+  M03Actual: decimal,
+  M04Actual: decimal,
+  M05Actual: decimal,
+  M06Actual: decimal,
+  M07Actual: decimal,
+  M08Actual: decimal,
+  M09Actual: decimal,
+  M10Actual: decimal,
+  M11Actual: decimal,
+  M12Actual: decimal
+) as (
+  select
+    (g.SortOrder * 100 + c.SortOrder) as SortKey,
+    cast(c.Name as string) as Label,
+    'Category' as RowKind,
+    cast(g.GroupType as string) as GroupTypeName,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 1 and t.IsMirror = false then t.Amount else 0 end) as M01Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 2 and t.IsMirror = false then t.Amount else 0 end) as M02Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 3 and t.IsMirror = false then t.Amount else 0 end) as M03Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 4 and t.IsMirror = false then t.Amount else 0 end) as M04Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 5 and t.IsMirror = false then t.Amount else 0 end) as M05Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 6 and t.IsMirror = false then t.Amount else 0 end) as M06Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 7 and t.IsMirror = false then t.Amount else 0 end) as M07Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 8 and t.IsMirror = false then t.Amount else 0 end) as M08Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 9 and t.IsMirror = false then t.Amount else 0 end) as M09Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 10 and t.IsMirror = false then t.Amount else 0 end) as M10Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 11 and t.IsMirror = false then t.Amount else 0 end) as M11Actual,
+    sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 12 and t.IsMirror = false then t.Amount else 0 end) as M12Actual
+  from Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  left join c/Ledger.Transaction_Category/Ledger.Transaction as t
+  group by g.SortOrder, c.SortOrder, c.Name, g.GroupType
+
+  union all
+
+  select
+    (g2.SortOrder * 100) as SortKey,
+    cast(g2.Name as string) as Label,
+    'Group' as RowKind,
+    cast(g2.GroupType as string) as GroupTypeName,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 1 and t2.IsMirror = false then t2.Amount else 0 end) as M01Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 2 and t2.IsMirror = false then t2.Amount else 0 end) as M02Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 3 and t2.IsMirror = false then t2.Amount else 0 end) as M03Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 4 and t2.IsMirror = false then t2.Amount else 0 end) as M04Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 5 and t2.IsMirror = false then t2.Amount else 0 end) as M05Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 6 and t2.IsMirror = false then t2.Amount else 0 end) as M06Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 7 and t2.IsMirror = false then t2.Amount else 0 end) as M07Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 8 and t2.IsMirror = false then t2.Amount else 0 end) as M08Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 9 and t2.IsMirror = false then t2.Amount else 0 end) as M09Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 10 and t2.IsMirror = false then t2.Amount else 0 end) as M10Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 11 and t2.IsMirror = false then t2.Amount else 0 end) as M11Actual,
+    sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 12 and t2.IsMirror = false then t2.Amount else 0 end) as M12Actual
+  from Ledger.CategoryGroup as g2
+  inner join g2/Ledger.Category_CategoryGroup/Ledger.Category as c2
+  left join c2/Ledger.Transaction_Category/Ledger.Transaction as t2
+  group by g2.SortOrder, g2.Name, g2.GroupType
+
+  union all
+
+  select
+    9999 as SortKey,
+    'Net cashflow' as Label,
+    'Net' as RowKind,
+    'Net' as GroupTypeName,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 1 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M01Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 2 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M02Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 3 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M03Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 4 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M04Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 5 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M05Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 6 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M06Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 7 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M07Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 8 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M08Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 9 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M09Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 10 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M10Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 11 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M11Actual,
+    sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 12 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M12Actual
+  from Ledger.Transaction as t3
+  inner join t3/Ledger.Transaction_Category/Ledger.Category as c3
+  inner join c3/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g3
+);
+/
+
+/**
+ * Budget per category per month, with overrides resolved.
+ *
+ * Separate from VMatrixActual because joining BudgetOverride alongside
+ * Transaction fans out: a category with 5 overrides and 30 transactions yields
+ * 150 rows and every actual would be multiplied by 5.
+ *
+ * Group and net budgets are NOT computed here — summing c.BaselineBudget across
+ * a group would fan out against the override join in exactly the same way. They
+ * are rolled up in the builder from these category rows instead, which is both
+ * correct and free, since the builder already holds all 13.
+ *
+ * SortKey matches VMatrixActual's category rows so the two can be joined in the
+ * builder on a key this code controls, rather than on a display name.
+ */
+create or modify view entity Ledger.VCategoryBudget (
+  SortKey: integer,
+  CategoryName: string(100),
+  GroupSortOrder: integer,
+  GroupTypeName: string(200),
+  M01Budget: decimal,
+  M02Budget: decimal,
+  M03Budget: decimal,
+  M04Budget: decimal,
+  M05Budget: decimal,
+  M06Budget: decimal,
+  M07Budget: decimal,
+  M08Budget: decimal,
+  M09Budget: decimal,
+  M10Budget: decimal,
+  M11Budget: decimal,
+  M12Budget: decimal
+) as (
+  select
+    (g.SortOrder * 100 + c.SortOrder) as SortKey,
+    c.Name as CategoryName,
+    g.SortOrder as GroupSortOrder,
+    cast(g.GroupType as string) as GroupTypeName,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-01' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-01' then 1 else 0 end)) as M01Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-02' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-02' then 1 else 0 end)) as M02Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-03' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-03' then 1 else 0 end)) as M03Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-04' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-04' then 1 else 0 end)) as M04Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-05' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-05' then 1 else 0 end)) as M05Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-06' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-06' then 1 else 0 end)) as M06Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-07' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-07' then 1 else 0 end)) as M07Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-08' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-08' then 1 else 0 end)) as M08Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-09' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-09' then 1 else 0 end)) as M09Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-10' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-10' then 1 else 0 end)) as M10Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-11' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-11' then 1 else 0 end)) as M11Budget,
+    (c.BaselineBudget
+      + sum(case when o.MonthKey = '2026-12' then o.Amount else 0 end)
+      - c.BaselineBudget * sum(case when o.MonthKey = '2026-12' then 1 else 0 end)) as M12Budget
+  from Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  left join c/Ledger.BudgetOverride_Category/Ledger.BudgetOverride as o
+  group by g.SortOrder, c.SortOrder, c.Name, c.BaselineBudget, g.GroupType
+);
+/
+
+-- ============================================================================
+-- Accessors
+-- ============================================================================
+-- Mendix cannot address an attribute by name, so reading month N off a view row
+-- needs a twelve-branch lookup — the read-side counterpart of SET_RowMonth.
+-- Each exists once rather than once per call site.
+
+/**
+ * Actual for one month of a matrix row.
+ *
+ * @param $V View row
+ * @param $MonthIndex 1-12
+ * @returns Actual amount
+ */
+create or modify microflow Ledger.GET_ViewActual ($V: Ledger.VMatrixActual, $MonthIndex: integer)
+returns decimal as $Value
+folder 'Cashflow'
+begin
+  declare $Value decimal = 0;
+  if $MonthIndex = 1 then set $Value = $V/M01Actual; end if;
+  if $MonthIndex = 2 then set $Value = $V/M02Actual; end if;
+  if $MonthIndex = 3 then set $Value = $V/M03Actual; end if;
+  if $MonthIndex = 4 then set $Value = $V/M04Actual; end if;
+  if $MonthIndex = 5 then set $Value = $V/M05Actual; end if;
+  if $MonthIndex = 6 then set $Value = $V/M06Actual; end if;
+  if $MonthIndex = 7 then set $Value = $V/M07Actual; end if;
+  if $MonthIndex = 8 then set $Value = $V/M08Actual; end if;
+  if $MonthIndex = 9 then set $Value = $V/M09Actual; end if;
+  if $MonthIndex = 10 then set $Value = $V/M10Actual; end if;
+  if $MonthIndex = 11 then set $Value = $V/M11Actual; end if;
+  if $MonthIndex = 12 then set $Value = $V/M12Actual; end if;
+  return $Value;
+end;
+/
+
+/**
+ * Budget for one month of a category, overrides already resolved.
+ *
+ * @param $B Budget row
+ * @param $MonthIndex 1-12
+ * @returns Budget amount
+ */
+create or modify microflow Ledger.GET_ViewBudget ($B: Ledger.VCategoryBudget, $MonthIndex: integer)
+returns decimal as $Value
+folder 'Cashflow'
+begin
+  declare $Value decimal = 0;
+  if $MonthIndex = 1 then set $Value = $B/M01Budget; end if;
+  if $MonthIndex = 2 then set $Value = $B/M02Budget; end if;
+  if $MonthIndex = 3 then set $Value = $B/M03Budget; end if;
+  if $MonthIndex = 4 then set $Value = $B/M04Budget; end if;
+  if $MonthIndex = 5 then set $Value = $B/M05Budget; end if;
+  if $MonthIndex = 6 then set $Value = $B/M06Budget; end if;
+  if $MonthIndex = 7 then set $Value = $B/M07Budget; end if;
+  if $MonthIndex = 8 then set $Value = $B/M08Budget; end if;
+  if $MonthIndex = 9 then set $Value = $B/M09Budget; end if;
+  if $MonthIndex = 10 then set $Value = $B/M10Budget; end if;
+  if $MonthIndex = 11 then set $Value = $B/M11Budget; end if;
+  if $MonthIndex = 12 then set $Value = $B/M12Budget; end if;
+  return $Value;
+end;
+/
+
+/**
+ * Builds every row of the cashflow matrix for the context's mode.
+ *
+ * Rewritten to read two view entities instead of issuing a retrieve per cell.
+ * The previous version made roughly 936 database round trips per render and
+ * computed the same figures three times; this makes two queries and does the
+ * rest in memory.
+ *
+ * Group and net budgets are rolled up here rather than in SQL, because summing
+ * a baseline across a group would fan out against the override join.
+ *
+ * Category rows are matched back to their Category on the same SortKey the view
+ * computes, so a cell can drill into its transactions. A view entity cannot
+ * carry an association (CE6771, FINDINGS 41), so the join happens here over one
+ * extra retrieve of thirteen rows. Group and net rows are left without one,
+ * which is what makes them undrillable.
+ *
+ * @param $Context Report context supplying the mode and the elapsed month
+ * @returns Rows in display order
+ */
+create or modify microflow Ledger.DS_CashflowRows ($Context: Ledger.ReportContext)
+returns list of Ledger.CashflowRow as $Rows
+folder 'Cashflow'
+begin
+  declare $Through integer = 0;
+  declare $M integer = 1;
+  declare $IsIncome boolean = false;
+  declare $Elapsed boolean = false;
+  declare $Actual decimal = 0;
+  declare $Budget decimal = 0;
+  declare $RowTotal decimal = 0;
+  declare $Include boolean = false;
+  declare $Sign integer = 1;
+  declare $TotalText string = '';
+
+  $Rows = create list of Ledger.CashflowRow;
+  set $Through = $Context/ElapsedThrough;
+
+  retrieve $ViewRows from Ledger.VMatrixActual sort by SortKey asc;
+  retrieve $Budgets from Ledger.VCategoryBudget sort by SortKey asc;
+
+  @annotation 'For the drilldown: a view row cannot hand back a Category (CE6771)'
+  retrieve $Cats from Ledger.Category;
+
+  loop $V in $ViewRows
+  begin
+    set $IsIncome = $V/GroupTypeName = 'Income';
+
+    $Row = create Ledger.CashflowRow (
+      Label = $V/Label,
+      RowKind = Ledger.RowKind.Category,
+      SortOrder = $V/SortKey);
+    if $V/RowKind = 'Group' then
+      change $Row (RowKind = Ledger.RowKind.Group);
+    end if;
+    if $V/RowKind = 'Net' then
+      change $Row (RowKind = Ledger.RowKind.Net);
+    end if;
+
+    @annotation 'Cells write the selection back onto the context they came from'
+    change $Row (Ledger.CashflowRow_Context = $Context);
+
+    @annotation 'Category rows carry their Category so a cell can drill into it'
+    if $V/RowKind = 'Category' then
+      loop $C in $Cats
+      begin
+        if ($C/Ledger.Category_CategoryGroup/SortOrder * 100 + $C/SortOrder) = $V/SortKey then
+          change $Row (Ledger.CashflowRow_Category = $C);
+        end if;
+      end loop;
+    end if;
+
+    set $RowTotal = 0;
+    set $M = 1;
+    while $M <= 12
+    begin
+      set $Elapsed = $M <= $Through;
+      $ActualM = call microflow Ledger.GET_ViewActual (V = $V, MonthIndex = $M);
+      set $Actual = $ActualM;
+
+      @annotation 'Roll the row budget up from its member categories'
+      set $Budget = 0;
+      loop $B in $Budgets
+      begin
+        set $Include = false;
+        set $Sign = 1;
+        if $V/RowKind = 'Category' then
+          set $Include = $B/SortKey = $V/SortKey;
+        end if;
+        if $V/RowKind = 'Group' then
+          set $Include = ($B/GroupSortOrder * 100) = $V/SortKey;
+        end if;
+        if $V/RowKind = 'Net' then
+          set $Include = true;
+          if $B/GroupTypeName != 'Income' then
+            set $Sign = -1;
+          end if;
+        end if;
+        if $Include then
+          $BudgetM = call microflow Ledger.GET_ViewBudget (B = $B, MonthIndex = $M);
+          set $Budget = $Budget + ($BudgetM * $Sign);
+        end if;
+      end loop;
+
+      $Text = call microflow Ledger.CALC_CellText (Mode = $Context/Mode,
+        Actual = $Actual, Budget = $Budget,
+        IsIncome = $IsIncome, IsElapsed = $Elapsed);
+      $Band = call microflow Ledger.CALC_CellBand (Mode = $Context/Mode,
+        Actual = $Actual, Budget = $Budget,
+        IsIncome = $IsIncome, IsElapsed = $Elapsed);
+
+      @annotation 'The net line is a figure, not a variance, in every mode'
+      if $V/RowKind = 'Net' and $Context/Mode = Ledger.ReportMode.Variance then
+        if $Elapsed then
+          $NetText = call microflow Ledger.FMT_Euro (Amount = $Actual);
+          set $Text = $NetText;
+        else
+          set $Text = '';
+        end if;
+        set $Band = '';
+      end if;
+
+      @annotation 'The selected cell is outlined; the band string carries the class'
+      if $V/SortKey = $Context/DrillSortKey and $M = $Context/DrillMonthIndex then
+        set $Band = $Band + ' cf-sel';
+      end if;
+
+      $Set = call microflow Ledger.SET_RowMonth (
+        Row = $Row, MonthIndex = $M, Text = $Text, Band = $Band);
+
+      if $Context/Mode = Ledger.ReportMode.Budget then
+        set $RowTotal = $RowTotal + $Budget;
+      else
+        if $Elapsed then
+          if $Context/Mode = Ledger.ReportMode.Actual or $V/RowKind = 'Net' then
+            set $RowTotal = $RowTotal + $Actual;
+          else
+            set $RowTotal = $RowTotal + (if $IsIncome then $Actual - $Budget else $Budget - $Actual);
+          end if;
+        end if;
+      end if;
+      set $M = $M + 1;
+    end while;
+
+    if $Context/Mode = Ledger.ReportMode.Variance and $V/RowKind != 'Net' then
+      $TotalV = call microflow Ledger.FMT_Variance (Amount = $RowTotal);
+      set $TotalText = $TotalV;
+    else
+      $TotalE = call microflow Ledger.FMT_Euro (Amount = $RowTotal);
+      set $TotalText = $TotalE;
+    end if;
+    change $Row (TotalText = $TotalText);
+    add $Row to $Rows;
+  end loop;
+
+  return $Rows;
+end;
+/

@@ -1,0 +1,160 @@
+-- ============================================================================
+-- 16 - Budgets page
+-- ============================================================================
+-- The same fixed-width matrix idea as Cashflow, but every month cell is a
+-- clickable container inside a custom-content column rather than a plain
+-- attribute column. That is what buys per-cell editing: the container carries
+-- both the click target and the override marking, and still shows the value.
+--
+-- Overridden months are marked rather than merely coloured differently — the
+-- point of this screen is seeing where the household deviated from its own
+-- baseline.
+-- ============================================================================
+
+/**
+ * Budgets: one amount per category per month, editable per cell.
+ */
+create or replace page Ledger.Budgets_Overview
+(
+  title: 'Budgets',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'budgets',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgBudgets {
+    row rowMain {
+      column colBody (desktopwidth: 12) {
+        dynamictext txtHeading (content: 'Budgets', rendermode: H2)
+        dynamictext txtSub (
+          content: 'One amount per category per month. Click a cell to change it. Months that override the category baseline are marked.',
+          rendermode: paragraph,
+          class: 'text-muted')
+
+        datagrid dgBudgets (
+          datasource: microflow Ledger.DS_BudgetRows,
+          PageSize: 20,
+          class: 'ledger-matrix'
+        ) {
+          column colLabel (
+            attribute: Label, caption: 'Category',
+            Sortable: false, Draggable: false,
+            ColumnWidth: manual, Size: 190,
+            DynamicCellClass: '''bg-label''')
+            column colM01 (caption: 'Jan', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM01 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 1),
+                dynamicclasses: 'if $currentObject/M01IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM01 (attribute: M01Text)
+              }
+            }
+            column colM02 (caption: 'Feb', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM02 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 2),
+                dynamicclasses: 'if $currentObject/M02IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM02 (attribute: M02Text)
+              }
+            }
+            column colM03 (caption: 'Mar', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM03 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 3),
+                dynamicclasses: 'if $currentObject/M03IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM03 (attribute: M03Text)
+              }
+            }
+            column colM04 (caption: 'Apr', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM04 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 4),
+                dynamicclasses: 'if $currentObject/M04IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM04 (attribute: M04Text)
+              }
+            }
+            column colM05 (caption: 'May', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM05 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 5),
+                dynamicclasses: 'if $currentObject/M05IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM05 (attribute: M05Text)
+              }
+            }
+            column colM06 (caption: 'Jun', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM06 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 6),
+                dynamicclasses: 'if $currentObject/M06IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM06 (attribute: M06Text)
+              }
+            }
+            column colM07 (caption: 'Jul', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM07 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 7),
+                dynamicclasses: 'if $currentObject/M07IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM07 (attribute: M07Text)
+              }
+            }
+            column colM08 (caption: 'Aug', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM08 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 8),
+                dynamicclasses: 'if $currentObject/M08IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM08 (attribute: M08Text)
+              }
+            }
+            column colM09 (caption: 'Sep', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM09 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 9),
+                dynamicclasses: 'if $currentObject/M09IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM09 (attribute: M09Text)
+              }
+            }
+            column colM10 (caption: 'Oct', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM10 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 10),
+                dynamicclasses: 'if $currentObject/M10IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM10 (attribute: M10Text)
+              }
+            }
+            column colM11 (caption: 'Nov', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM11 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 11),
+                dynamicclasses: 'if $currentObject/M11IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM11 (attribute: M11Text)
+              }
+            }
+            column colM12 (caption: 'Dec', Alignment: right, ColumnWidth: manual, Size: 132) {
+              container cellM12 (
+                onclick: microflow Ledger.ACT_EditBudgetCell(Row: $currentObject, MonthIndex: 12),
+                dynamicclasses: 'if $currentObject/M12IsOverride then ''bg-cell bg-override'' else ''bg-cell'''
+              ) {
+                dynamictext txtM12 (attribute: M12Text)
+              }
+            }
+          column colTotal (
+            attribute: TotalText, caption: 'Year', Alignment: right,
+            Sortable: false, ColumnWidth: manual, Size: 140,
+            DynamicCellClass: '''cf-total''')
+        }
+      }
+    }
+  }
+}
+/
+
+create or replace navigation Responsive
+  home page Ledger.Cashflow_Overview
+  menu (
+    menu item 'Cashflow' page Ledger.Cashflow_Overview;
+    menu item 'Budgets' page Ledger.Budgets_Overview;
+    menu item 'Transactions' page Ledger.Transaction_Overview;
+    menu item 'Accounts' page Ledger.Account_Overview;
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+  );
+/

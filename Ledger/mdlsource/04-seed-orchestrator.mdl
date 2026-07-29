@@ -1,0 +1,160 @@
+-- ============================================================================
+-- 04 - Demo data: orchestration and startup wiring
+-- ============================================================================
+-- Seed_DemoData is guarded: it does nothing when accounts already exist, so it
+-- is safe to run on every application start.
+--
+-- The per-category numbers (bookings per month, jitter, which accounts) come
+-- from the prototype's CATS table.
+-- ============================================================================
+
+/**
+ * Seeds the demo dataset, once.
+ *
+ * Does nothing when data already exists, so it is safe as an after-startup
+ * microflow. Transactions are only generated up to the current month — later
+ * months of 2026 carry budgets but no actuals.
+ *
+ * @returns Number of transactions created, 0 when seeding was skipped
+ */
+create or modify microflow Ledger.Seed_DemoData ()
+returns integer as $Created
+folder 'Demo data'
+begin
+  declare $Created integer = 0;
+  declare $ThroughMonth integer = 12;
+  declare $Year integer = 0;
+
+  retrieve $ExistingAccount from Ledger.Account limit 1;
+
+  @annotation 'Guard: seed only into an empty database'
+  if $ExistingAccount != empty then
+    log info node 'LedgerSeed' 'Demo data already present, skipping seed';
+    return 0;
+  end if;
+
+  $Ok = call microflow Ledger.Seed_ReferenceData ();
+
+  -- Only generate actuals for months that have happened.
+  set $Year = parseInteger(formatDateTime([%CurrentDateTime%], 'yyyy'));
+  if $Year < 2026 then
+    set $ThroughMonth = 0;
+  else
+    if $Year = 2026 then
+      set $ThroughMonth = parseInteger(formatDateTime([%CurrentDateTime%], 'M'));
+    end if;
+  end if;
+
+  retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' limit 1;
+  retrieve $AccSpaar from Ledger.Account where Name = 'ING Spaarrekening' limit 1;
+  retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' limit 1;
+  retrieve $AccRev from Ledger.Account where Name = 'Revolut' limit 1;
+
+  retrieve $CatSalary from Ledger.Category where Name = 'Salary' limit 1;
+  retrieve $CatFreelance from Ledger.Category where Name = 'Freelance' limit 1;
+  retrieve $CatRent from Ledger.Category where Name = 'Rent' limit 1;
+  retrieve $CatUtilities from Ledger.Category where Name = 'Utilities' limit 1;
+  retrieve $CatInternet from Ledger.Category where Name = 'Internet & phone' limit 1;
+  retrieve $CatGroceries from Ledger.Category where Name = 'Groceries' limit 1;
+  retrieve $CatRestaurants from Ledger.Category where Name = 'Restaurants & cafes' limit 1;
+  retrieve $CatTransport from Ledger.Category where Name = 'Transport' limit 1;
+  retrieve $CatSubs from Ledger.Category where Name = 'Subscriptions' limit 1;
+  retrieve $CatShopping from Ledger.Category where Name = 'Shopping' limit 1;
+  retrieve $CatHealth from Ledger.Category where Name = 'Health & sport' limit 1;
+  retrieve $CatInsurance from Ledger.Category where Name = 'Insurance' limit 1;
+  retrieve $CatSavings from Ledger.Category where Name = 'Savings transfer' limit 1;
+
+  -- Income
+  $N1 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatSalary, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 1, MerchantCount = 1,
+    JitterPercent = 1, SeedBase = 1013, IsIncome = true, ThroughMonth = $ThroughMonth);
+  $N2 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatFreelance, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 2, MerchantCount = 2,
+    JitterPercent = 55, SeedBase = 2027, IsIncome = true, ThroughMonth = $ThroughMonth);
+
+  -- Housing
+  $N3 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatRent, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 1, MerchantCount = 1,
+    JitterPercent = 0, SeedBase = 3041, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N4 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatUtilities, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 2, MerchantCount = 2,
+    JitterPercent = 30, SeedBase = 4051, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N5 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatInternet, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 2, MerchantCount = 2,
+    JitterPercent = 5, SeedBase = 5077, IsIncome = false, ThroughMonth = $ThroughMonth);
+
+  -- Daily living
+  $N6 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatGroceries, PrimaryAccount = $AccIng, AltAccount = $AccRev,
+    MirrorAccount = empty, TxPerMonth = 11, MerchantCount = 4,
+    JitterPercent = 40, SeedBase = 6089, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N7 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatRestaurants, PrimaryAccount = $AccAbn, AltAccount = $AccRev,
+    MirrorAccount = empty, TxPerMonth = 6, MerchantCount = 4,
+    JitterPercent = 60, SeedBase = 7103, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N8 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatTransport, PrimaryAccount = $AccIng, AltAccount = $AccAbn,
+    MirrorAccount = empty, TxPerMonth = 5, MerchantCount = 4,
+    JitterPercent = 50, SeedBase = 8117, IsIncome = false, ThroughMonth = $ThroughMonth);
+
+  -- Lifestyle
+  $N9 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatSubs, PrimaryAccount = $AccAbn, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 4, MerchantCount = 4,
+    JitterPercent = 10, SeedBase = 9131, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N10 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatShopping, PrimaryAccount = $AccAbn, AltAccount = $AccIng,
+    MirrorAccount = empty, TxPerMonth = 4, MerchantCount = 4,
+    JitterPercent = 85, SeedBase = 10141, IsIncome = false, ThroughMonth = $ThroughMonth);
+  $N11 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatHealth, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 3, MerchantCount = 3,
+    JitterPercent = 30, SeedBase = 11149, IsIncome = false, ThroughMonth = $ThroughMonth);
+
+  -- Financial
+  $N12 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatInsurance, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = empty, TxPerMonth = 3, MerchantCount = 3,
+    JitterPercent = 2, SeedBase = 12157, IsIncome = false, ThroughMonth = $ThroughMonth);
+
+  @annotation 'Savings also books the receiving half onto the savings account'
+  $N13 = call microflow Ledger.Seed_CategoryTransactions (
+    Category = $CatSavings, PrimaryAccount = $AccIng, AltAccount = empty,
+    MirrorAccount = $AccSpaar, TxPerMonth = 1, MerchantCount = 1,
+    JitterPercent = 20, SeedBase = 13163, IsIncome = false, ThroughMonth = $ThroughMonth);
+
+  $N14 = call microflow Ledger.Seed_UncategorisedTransactions (
+    AccIng = $AccIng, AccAbn = $AccAbn, ThroughMonth = $ThroughMonth);
+
+  set $Created = $N1 + $N2 + $N3 + $N4 + $N5 + $N6 + $N7 + $N8 + $N9 + $N10 + $N11 + $N12 + $N13 + $N14;
+
+  log info node 'LedgerSeed' 'Demo data seeded: {1} transactions through month {2}'
+    with ({1} = toString($Created), {2} = toString($ThroughMonth));
+
+  return $Created;
+end;
+/
+
+/**
+ * After-startup entry point. Seeds demo data on first run.
+ *
+ * @returns true once startup work has completed
+ */
+create or modify microflow Ledger.ASU_Startup ()
+returns boolean as $Done
+folder 'Demo data'
+begin
+  declare $Done boolean = false;
+  $Count = call microflow Ledger.Seed_DemoData ();
+  set $Done = true;
+  return $Done;
+end;
+/
+
+alter settings model AfterStartupMicroflow = 'Ledger.ASU_Startup';
+/

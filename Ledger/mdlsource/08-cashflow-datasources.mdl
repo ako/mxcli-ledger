@@ -1,0 +1,172 @@
+-- ============================================================================
+-- 08 - Cashflow datasources
+-- ============================================================================
+-- DS_ReportContext builds the screen state and headline figures.
+-- DS_CashflowRows builds the matrix rows for the current mode.
+--
+-- Both walk categories x months and call the CALC_* helpers, so the elapsed
+-- rule is applied in exactly one place per concern.
+-- ============================================================================
+
+/**
+ * Current month within 2026, clamped to the calendar year.
+ *
+ * Derived from the clock rather than hardcoded so the report stays correct as
+ * 2026 progresses — August's actuals appear in August without a code change.
+ *
+ * @returns 0 before 2026, 1-12 during 2026, 12 after
+ */
+create or modify microflow Ledger.CALC_ElapsedThrough ()
+returns integer as $Through
+folder 'Cashflow'
+begin
+  declare $Through integer = 12;
+  declare $Year integer = 0;
+
+  set $Year = parseInteger(formatDateTime([%CurrentDateTime%], 'yyyy'));
+  if $Year < 2026 then
+    set $Through = 0;
+  else
+    if $Year = 2026 then
+      set $Through = parseInteger(formatDateTime([%CurrentDateTime%], 'M'));
+    end if;
+  end if;
+  return $Through;
+end;
+/
+
+/**
+ * Builds the report context: mode, subheading and the four headline figures.
+ *
+ * KPIs cover elapsed months only. Including future months would add their
+ * zero actuals to spend and count every future cell as massively under
+ * budget.
+ *
+ * @returns A fresh ReportContext in Actual mode
+ */
+create or modify microflow Ledger.DS_ReportContext ()
+returns Ledger.ReportContext as $Context
+folder 'Cashflow'
+begin
+  declare $Through integer = 0;
+  declare $Income decimal = 0;
+  declare $Spend decimal = 0;
+  declare $Over integer = 0;
+  declare $M integer = 1;
+  declare $IsIncome boolean = false;
+
+  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
+  set $Through = $ThroughCalc;
+
+  retrieve $Groups from Ledger.CategoryGroup sort by SortOrder asc;
+  loop $G in $Groups
+  begin
+    set $IsIncome = $G/GroupType = Ledger.GroupType.Income;
+    retrieve $Cats from Ledger.Category
+      where Ledger.Category_CategoryGroup = $G
+      sort by SortOrder asc;
+    loop $C in $Cats
+    begin
+      set $M = 1;
+      while $M <= $Through
+      begin
+        $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $M);
+        $A = call microflow Ledger.CALC_Actual (Category = $C, MonthIndex = $M);
+        $B = call microflow Ledger.CALC_Budget (Category = $C, MonthKey = $MK);
+        if $IsIncome then
+          set $Income = $Income + $A;
+          if $B - $A > $B * 0.02 then
+            set $Over = $Over + 1;
+          end if;
+        else
+          set $Spend = $Spend + $A;
+          if $A - $B > $B * 0.02 then
+            set $Over = $Over + 1;
+          end if;
+        end if;
+        set $M = $M + 1;
+      end while;
+    end loop;
+  end loop;
+
+  $IncomeText = call microflow Ledger.FMT_Euro (Amount = $Income);
+  $SpendText = call microflow Ledger.FMT_Euro (Amount = $Spend);
+  $NetText = call microflow Ledger.FMT_Euro (Amount = $Income - $Spend);
+
+  $Context = create Ledger.ReportContext (
+    Mode = Ledger.ReportMode.Actual,
+    Subheading = 'Twelve months of actuals against budget. Cell colour shows how far each category is over or under its monthly budget.',
+    KpiIncome = $IncomeText,
+    KpiSpend = $SpendText,
+    KpiNet = $NetText,
+    KpiOver = toString($Over) + ' cells',
+    ElapsedThrough = $Through,
+
+    -- The inspector starts empty and says so
+    DrillKicker = 'Inspector',
+    DrillTitle = 'Select a cell',
+    DrillMeta = 'Click any cell in the matrix to list the transactions behind it.');
+
+  return $Context;
+end;
+/
+
+-- DS_CashflowRows now lives in 10-cashflow-view.mdl, rewritten on top of the
+-- VMatrixActual / VCategoryBudget view entities.
+
+/**
+ * Switches the report to Actual and refreshes the matrix.
+ *
+ * @param $Context Context to mutate
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ModeActual ($Context: Ledger.ReportContext)
+returns boolean as $Done
+folder 'Cashflow'
+begin
+  declare $Done boolean = true;
+  change $Context (
+    Mode = Ledger.ReportMode.Actual,
+    Subheading = 'Twelve months of actuals against budget. Cell colour shows how far each category is over or under its monthly budget.')
+    refresh;
+  return $Done;
+end;
+/
+
+/**
+ * Switches the report to Budget and refreshes the matrix.
+ *
+ * @param $Context Context to mutate
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ModeBudget ($Context: Ledger.ReportContext)
+returns boolean as $Done
+folder 'Cashflow'
+begin
+  declare $Done boolean = true;
+  change $Context (
+    Mode = Ledger.ReportMode.Budget,
+    Subheading = 'One amount per category per month. Months after the current one carry a budget but no actuals yet.')
+    refresh;
+  return $Done;
+end;
+/
+
+/**
+ * Switches the report to Variance and refreshes the matrix.
+ *
+ * @param $Context Context to mutate
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ModeVariance ($Context: Ledger.ReportContext)
+returns boolean as $Done
+folder 'Cashflow'
+begin
+  declare $Done boolean = true;
+  change $Context (
+    Mode = Ledger.ReportMode.Variance,
+    Subheading = 'Budget minus actual, sign-corrected per group: positive is favourable. Future months are blank.')
+    refresh;
+  return $Done;
+end;
+/

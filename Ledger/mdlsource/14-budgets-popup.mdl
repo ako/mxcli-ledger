@@ -1,0 +1,58 @@
+-- ============================================================================
+-- 14 - Budgets: the cell edit popup
+-- ============================================================================
+-- Must come after 13, whose save and reset microflows its buttons call, and
+-- before 15, whose ACT_EditBudgetCell opens it.
+--
+-- The prototype edited a cell inline: click, type, Enter commits, Escape
+-- cancels, blur commits. That is fiddly to reproduce faithfully in Mendix and
+-- buys little — a popup is unambiguous about what is being edited, and it has
+-- room to show the baseline and offer a reset, which the inline version could
+-- not.
+--
+-- Amount is a plain decimal input, so Mendix parses it per the user's locale.
+-- The prototype hand-parsed '1.480,00'; reimplementing that here would be
+-- reinventing something the platform already does.
+-- ============================================================================
+
+/**
+ * Edits the budget for one category in one month.
+ *
+ * @param $Edit The cell being edited, prepared by ACT_EditBudgetCell
+ */
+create or replace page Ledger.BudgetCell_Edit
+(
+  params: {
+    $Edit: Ledger.BudgetEdit
+  },
+  title: 'Edit budget',
+  layout: Atlas_Core.PopupLayout,
+  folder: 'Ledger'
+)
+{
+  dataview dvEdit (datasource: $Edit) {
+    dynamictext txtCaption (attribute: Caption, rendermode: H3)
+
+    textbox txtAmount (label: 'Budget for this month', attribute: Amount)
+
+    dynamictext txtBaseline (
+      content: 'Category baseline is € {1} per month.',
+      contentparams: [{1} = BaselineBudget],
+      rendermode: paragraph,
+      class: 'text-muted')
+
+    footer footEdit {
+      actionbutton btnSave (
+        caption: 'Save',
+        action: microflow Ledger.ACT_SaveBudget(Edit: $currentObject),
+        buttonstyle: primary)
+      actionbutton btnReset (
+        caption: 'Reset to baseline',
+        action: microflow Ledger.ACT_ResetBudget(Edit: $currentObject))
+      actionbutton btnCancel (
+        caption: 'Cancel',
+        action: close_page)
+    }
+  }
+}
+/

@@ -1,0 +1,168 @@
+-- ============================================================================
+-- 18 - Rule editor
+-- ============================================================================
+-- The prototype's '+ Add rule' re-navigated to the same screen and nothing
+-- else. Rules are the one part of a ledger that a household actually maintains
+-- — a new subscription, a shop that changed its name — so editing them has to
+-- be real.
+--
+-- The page edits the persistent CategoryRule directly, with save_changes /
+-- cancel_changes, rather than through a non-persistent draft. A rule is four
+-- fields and a reference; a draft object would buy nothing and would need
+-- copying both ways.
+-- ============================================================================
+
+/**
+ * Commits a rule and returns to the overview.
+ *
+ * A rule with no value would match nothing and sit in the list looking broken,
+ * so it is refused rather than saved.
+ *
+ * @param $Rule The rule being edited
+ * @returns true when it was saved
+ */
+create or modify microflow Ledger.ACT_SaveRule ($Rule: Ledger.CategoryRule)
+returns boolean as $Saved
+folder 'Rules'
+begin
+  declare $Saved boolean = false;
+
+  if trim($Rule/MatchValue) = '' then
+    validation feedback $Rule/MatchValue message 'Give the rule something to match on.';
+  else
+    commit $Rule;
+    $Sync = call microflow Ledger.SYNC_RuleCounts ();
+    set $Saved = true;
+    close page;
+    show page Ledger.Category_Overview;
+  end if;
+
+  return $Saved;
+end;
+/
+
+/**
+ * Create or edit one categorisation rule.
+ *
+ * @param $Rule The rule being edited; new ones arrive uncommitted from
+ *        NEW_CategoryRule
+ */
+create or replace page Ledger.CategoryRule_Edit
+(
+  params: {
+    $Rule: Ledger.CategoryRule
+  },
+  title: 'Rule',
+  layout: Atlas_Core.PopupLayout,
+  PopupWidth: 560,
+  folder: 'Ledger'
+)
+{
+  -- The form fields sit inside a layoutgrid, one per full-width row. Without a
+  -- grid the label column has nothing to size against and every label is
+  -- truncated ('Operator' renders as 'Opera…'); in a half-width column the
+  -- label gets three twelfths of *that* column and truncates again. Nothing
+  -- warns about either: mxcli check and mx check both pass, and the page only
+  -- looks wrong once it is running.
+  dataview dvRule (datasource: $Rule) {
+    dynamictext txtRuleHint (
+      content: 'Rules run in order and the first match wins, so a narrow rule belongs above a broad one. A rule only ever fills in a category that is still empty.',
+      rendermode: paragraph,
+      class: 'text-muted')
+
+    layoutgrid lgRule {
+      row rowRuleField {
+        column colRuleField (desktopwidth: 12) {
+          combobox cbRuleField (label: 'Field', attribute: RuleField)
+        }
+      }
+      row rowRuleOperator {
+        column colRuleOperator (desktopwidth: 12) {
+          combobox cbRuleOperator (label: 'Operator', attribute: RuleOperator)
+        }
+      }
+      row rowRuleValue {
+        column colRuleValue (desktopwidth: 12) {
+          textbox txtRuleValue (
+            label: 'Value',
+            attribute: MatchValue,
+            placeholder: 'Albert Heijn')
+          dynamictext txtRuleValueHint (
+            content: 'For "is one of", separate the alternatives with commas: Spotify,Netflix,iCloud',
+            rendermode: paragraph,
+            class: 'text-muted')
+        }
+      }
+      row rowRuleCategory {
+        column colRuleCategoryCol (desktopwidth: 12) {
+          combobox cbRuleCategory (
+            label: 'Assign category',
+            attribute: Ledger.CategoryRule_Category,
+            datasource: database Ledger.Category,
+            CaptionAttribute: Name)
+        }
+      }
+      row rowRuleOrder {
+        column colRuleOrderCol (desktopwidth: 12) {
+          textbox txtRuleOrder (label: 'Order', attribute: SortOrder)
+        }
+      }
+    }
+
+    footer footRule {
+      actionbutton btnRuleSave (
+        caption: 'Save',
+        action: microflow Ledger.ACT_SaveRule(Rule: $currentObject),
+        buttonstyle: primary)
+      actionbutton btnRuleCancel (
+        caption: 'Cancel',
+        action: cancel_changes)
+    }
+  }
+}
+/
+
+/**
+ * Opens the editor for a brand-new rule.
+ *
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_NewRule ()
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+
+  $Rule = call microflow Ledger.NEW_CategoryRule ();
+  show page Ledger.CategoryRule_Edit ($Rule = $Rule);
+
+  return $Done;
+end;
+/
+
+/**
+ * Deletes a rule and re-derives the counts.
+ *
+ * The transactions it categorised keep their category — undoing somebody's
+ * categorisation because a rule was tidied away would be a surprise. Their
+ * rule link goes empty with the rule, which is what the association's
+ * delete behaviour is for.
+ *
+ * @param $Rule The rule to remove
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_DeleteRule ($Rule: Ledger.CategoryRule)
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+
+  delete $Rule;
+  $Sync = call microflow Ledger.SYNC_RuleCounts ();
+
+  @annotation 'Re-show so the panel above the list recomputes — see FINDINGS 44'
+  show page Ledger.Category_Overview;
+
+  return $Done;
+end;
+/

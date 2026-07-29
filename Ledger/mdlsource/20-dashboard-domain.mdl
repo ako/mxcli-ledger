@@ -1,0 +1,139 @@
+-- ============================================================================
+-- 20 - Dashboard: spend sunburst
+-- ============================================================================
+-- A multi-level donut of spend, three rings deep: category group, category,
+-- merchant. Clicking any segment lists the transactions behind it.
+--
+-- No custom widget was needed. The project already ships Charts.mpk, whose
+-- CustomChart ("any chart") widget takes raw Plotly JSON — and Plotly's
+-- `sunburst` trace *is* a multi-level donut, with `hole` making it a ring
+-- rather than a filled pie. It also exposes onClick plus an event-data
+-- attribute, which is the drilldown hook. Writing a pluggable widget would
+-- have meant reimplementing arc geometry, hit testing and label placement for
+-- no gain.
+--
+-- Mapping to this domain: the prototype's "category / subcategory / merchant"
+-- is CategoryGroup / Category / Transaction.Merchant here. Income groups are
+-- excluded — this is a spend chart, and mixing income into it would make the
+-- ring totals meaningless.
+-- ============================================================================
+
+/**
+ * Spend per merchant, with its category and group.
+ *
+ * One query for the whole chart. The three rings are rollups of this single
+ * grain, computed in the builder rather than by three separate queries, so the
+ * rings cannot disagree about a total.
+ *
+ * Mirrors are excluded for the same reason the cashflow matrix excludes them:
+ * an internal transfer books on both accounts.
+ *
+ * Pass-through string columns must declare their source's exact length
+ * (FINDINGS 36): Name is string(50) on CategoryGroup, string(100) on Category,
+ * and Merchant is string(200) on Transaction.
+ */
+create or modify view entity Ledger.VMerchantSpend (
+  GroupName: string(50),
+  CategoryName: string(100),
+  Merchant: string(200),
+  Total: decimal
+) as (
+  select
+    g.Name as GroupName,
+    c.Name as CategoryName,
+    t.Merchant as Merchant,
+    sum(t.Amount) as Total
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  where t.IsMirror = false
+    and g.GroupType = 'Expense'
+    and datepart(YEAR, t.TxDate) = 2026
+  group by g.Name, c.Name, t.Merchant
+);
+/
+
+/**
+ * The decoded selection, rebuilt on every click.
+ *
+ * A separate object from SunburstContext because it is produced by a *datasource*
+ * rather than written by a handler — see the note on SunburstContext.EventData.
+ */
+create or modify non-persistent entity Ledger.SunburstSelection (
+  /** Which ring was clicked */
+  Kicker: string(60),
+  /** The segment's own label */
+  Title: string(200),
+  /** Amount, share and transaction count */
+  Meta: string(200)
+);
+/
+
+/**
+ * Everything the dashboard page binds to: the chart's JSON, the raw click
+ * event, and the current selection.
+ *
+ * ChartData and ChartLayout are unlimited strings because the Plotly payload
+ * for ~60 nodes runs past any sane fixed length, and EventData because Plotly
+ * hands back the whole point object.
+ */
+create or modify non-persistent entity Ledger.SunburstContext (
+  /** Plotly `data` array */
+  ChartData: string,
+  /** Plotly `layout` object */
+  ChartLayout: string,
+  /**
+   * Raw Plotly click event, written by the widget.
+   *
+   * This attribute is the entire interaction. CustomChart also has an onClick
+   * action property, but MDL cannot set it — an `action`-typed property on a
+   * pluggable widget is accepted by the parser and then silently dropped from
+   * the model (FINDINGS 67). So nothing runs on click; instead the widget's
+   * write to this attribute refreshes the object, and every microflow
+   * datasource parameterised on it re-runs. The panel is derived from this
+   * string rather than assigned by a handler.
+   */
+  EventData: string,
+  /** Total spend the chart covers */
+  TotalText: string(40),
+  /**
+   * The selected node id, e.g. 'M:Housing|Rent|Woonstad'.
+   *
+   * Written by ACT_SelectNode and refreshed, which is what re-runs the panel's
+   * datasources. EventData cannot do this job — see the note above.
+   */
+  SelId: string(400)
+);
+/
+
+/**
+ * One row of the clickable breakdown beside the chart.
+ *
+ * The chart cannot be the click target (FINDINGS 67-69), so the same hierarchy
+ * is also rendered as a list, where a container's onclick *does* work — the
+ * mechanism the cashflow matrix and the budgets grid already use.
+ */
+create or modify non-persistent entity Ledger.SunburstRow (
+  /** Group, category or merchant name */
+  Label: string(200),
+  /** Node id, the same scheme the chart uses */
+  NodeId: string(400),
+  /** 'G', 'C' or 'M' — drives the indent */
+  Kind: string(1),
+  /** Spend at this node */
+  AmountText: string(24),
+  /** Display order */
+  SortOrder: integer default 0,
+  /** True when this row is the current selection */
+  IsSelected: boolean default false
+);
+/
+
+/** The page context a breakdown row belongs to, so a click can write to it. */
+create or modify association Ledger.SunburstRow_Context
+  from Ledger.SunburstRow
+  to Ledger.SunburstContext
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/

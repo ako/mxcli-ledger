@@ -1,0 +1,148 @@
+-- ============================================================================
+-- 22 - Dashboard page
+-- ============================================================================
+-- The chart is Charts.mpk's CustomChart, reached through MDL's PLUGGABLEWIDGET
+-- escape hatch — the shorthand widget list has no entry for it, and it needs
+-- three properties the shorthands do not expose: dataAttribute, layoutAttribute
+-- and eventDataAttribute.
+--
+-- The detail panel sits beside the chart rather than in a popup, the same
+-- arrangement as the cashflow inspector and for the same reason: the chart is
+-- the thing being questioned, so it has to stay on screen while the answer is
+-- read, and a second click just repoints the panel.
+--
+-- The chart is not the click target, and cannot be. MDL silently drops an
+-- `action` property on a pluggable widget (FINDINGS 67); the fallback of
+-- deriving the panel from `eventDataAttribute` fails too, because writing an
+-- attribute does not re-run a datasource over its object (68) and because
+-- CustomChart hands back the segment's bounding box rather than the point (69).
+--
+-- So the same hierarchy is rendered a second time as a clickable breakdown
+-- beside the chart, using the container-onclick mechanism the cashflow matrix
+-- and budgets grid already rely on. The chart shows the shape; the list is
+-- where the drilling happens.
+-- ============================================================================
+
+/**
+ * Dashboard: where the money went, three rings deep.
+ */
+create or replace page Ledger.Dashboard
+(
+  title: 'Dashboard',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'dashboard',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgDash {
+    row rowDashMain {
+      column colDashBody (desktopwidth: 12) {
+        dataview dvDash (datasource: microflow Ledger.DS_SunburstContext) {
+          dynamictext txtDashHeading (content: 'Dashboard', rendermode: H2)
+          dynamictext txtDashSub (
+            content: 'Spend for 2026, by category group, category and merchant. Click any ring to list the transactions behind it.',
+            rendermode: paragraph,
+            class: 'text-muted')
+
+          layoutgrid lgDashRow {
+            row rowDashSplit {
+              column colChart (desktopwidth: 7) {
+                container ctnChartCard (class: 'card ledger-chart-card') {
+                  container ctnChartHead (class: 'ledger-chart-head') {
+                    dynamictext lblChart (content: 'Total spend', class: 'ledger-kicker')
+                    dynamictext valChart (attribute: TotalText, rendermode: H3)
+                  }
+
+                  pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSunburst (
+                    dataAttribute: ChartData,
+                    layoutAttribute: ChartLayout,
+                    eventDataAttribute: EventData,
+                    widthUnit: percentage,
+                    width: 100,
+                    -- OverflowY is deliberately absent: MDL-WIDGET10 points out
+                    -- it is ignored unless maxHeightUnit is set.
+                    heightUnit: pixels,
+                    height: 520,
+                    minHeightUnit: none,
+                    maxHeightUnit: none,
+                    showPlaygroundSlot: false,
+                    configurationOptions: '{"displayModeBar":false,"responsive":true}'
+                  )
+                }
+              }
+
+              column colDashBreakdown (desktopwidth: 2) {
+                container ctnBreakdown (class: 'card ledger-inspector') {
+                  container ctnBreakdownHead (class: 'ledger-inspector-head') {
+                    dynamictext lblBreakdown (content: 'Breakdown', class: 'ledger-kicker')
+                    dynamictext subBreakdown (
+                      content: 'Click a level to drill in.',
+                      class: 'ledger-inspector-meta')
+                  }
+                  -- All levels at once: a paged breakdown would hide the very
+                  -- rows the chart is inviting you to click.
+                  listview lvBreakdown (
+                    datasource: microflow Ledger.DS_SunburstRows,
+                    PageSize: 200,
+                    class: 'ledger-inspector-list'
+                  ) {
+                    template tplBreakdown {
+                      container ctnNode (
+                        onclick: microflow Ledger.ACT_SelectNode(Row: $currentObject),
+                        dynamicclasses: '''sb-node sb-'' + $currentObject/Kind + (if $currentObject/IsSelected then '' sb-on'' else '''')'
+                      ) {
+                        dynamictext txtNodeLabel (attribute: Label, class: 'sb-node-label')
+                        dynamictext txtNodeAmount (attribute: AmountText, class: 'sb-node-amount')
+                      }
+                    }
+                  }
+                }
+              }
+
+              column colDashDetail (desktopwidth: 3) {
+                container ctnDashPanel (class: 'card ledger-inspector') {
+                  dataview dvDashSel (
+                    datasource: microflow Ledger.DS_SunburstSelection,
+                    class: 'ledger-inspector-head'
+                  ) {
+                    dynamictext txtDashKicker (attribute: Kicker, class: 'ledger-kicker')
+                    dynamictext txtDashTitle (attribute: Title, rendermode: H5)
+                    dynamictext txtDashMeta (attribute: Meta, class: 'ledger-inspector-meta')
+                  }
+                  listview lvDash (
+                    datasource: microflow Ledger.DS_SunburstLines,
+                    PageSize: 200,
+                    class: 'ledger-inspector-list'
+                  ) {
+                    template tplDash {
+                      container ctnDashLine (class: 'ledger-line') {
+                        container ctnDashLineText (class: 'ledger-line-text') {
+                          dynamictext txtDashMerchant (attribute: Merchant, class: 'ledger-line-merchant')
+                          dynamictext txtDashLineMeta (attribute: MetaText, class: 'ledger-line-meta')
+                        }
+                        dynamictext txtDashAmount (attribute: AmountText, class: 'ledger-line-amount')
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+create or replace navigation Responsive
+  home page Ledger.Dashboard
+  menu (
+    menu item 'Dashboard' page Ledger.Dashboard;
+    menu item 'Cashflow' page Ledger.Cashflow_Overview;
+    menu item 'Budgets' page Ledger.Budgets_Overview;
+    menu item 'Transactions' page Ledger.Transaction_Overview;
+    menu item 'Accounts' page Ledger.Account_Overview;
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+  );
+/

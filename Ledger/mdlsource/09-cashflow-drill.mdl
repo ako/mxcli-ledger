@@ -1,0 +1,174 @@
+-- ============================================================================
+-- 09 - Cashflow inspector
+-- ============================================================================
+-- Clicking a cell in the matrix answers the question the matrix provokes:
+-- 'Groceries went €35 over in March — on what?'. The transactions appear in a
+-- panel beside the matrix, which is where the prototype put them.
+--
+-- Beside, not in a popup, and that is not only a layout choice. The panel is
+-- part of the page, so it is populated on load rather than only after a click,
+-- the matrix stays visible and comparable while the detail is read, and
+-- clicking a second cell just repoints the panel. A popup hides the thing you
+-- are asking questions about.
+--
+-- Consequence for the model: the selection lives on the page's ReportContext,
+-- the same object the mode buttons already mutate. Refreshing it re-runs both
+-- the matrix datasource and the list, which is how the selected cell gets its
+-- outline and the panel its contents in one round trip.
+--
+-- Only category rows select. A group subtotal has no single category to list
+-- and the net line has none at all, so both leave CashflowRow_Category empty
+-- and the handler declines. That is one guard rather than a row-kind check plus
+-- a null check, because the association being empty *is* the condition.
+-- ============================================================================
+
+/**
+ * The transactions behind the selected cell: one category, one month, mirrors
+ * excluded.
+ *
+ * The filter lives here because two callers need the same rows — the panel's
+ * list and its header figures — and they must not be able to disagree. Mirrors
+ * are excluded for the same reason the matrix excludes them: an internal
+ * transfer books on both accounts and the cell would not add up to the list
+ * underneath it.
+ *
+ * Returns nothing when no cell is selected: the category association is unset,
+ * so the constraint matches nothing.
+ *
+ * @param $Context The page's report context
+ * @returns Transactions, oldest first
+ */
+create or modify microflow Ledger.GET_DrillTransactions ($Context: Ledger.ReportContext)
+returns list of Ledger.Transaction as $Txs
+folder 'Cashflow'
+begin
+  declare $Start datetime = [%CurrentDateTime%];
+  declare $End datetime = [%CurrentDateTime%];
+
+  set $Start = addMonths(dateTime(2026, 1, 1), $Context/DrillMonthIndex - 1);
+  set $End = addMonths($Start, 1);
+
+  @annotation 'XPath cannot compare against an association path, only a variable'
+  retrieve $Cat from $Context/Ledger.ReportContext_DrillCategory;
+
+  retrieve $Txs from Ledger.Transaction
+    where Ledger.Transaction_Category = $Cat
+      and TxDate >= $Start
+      and TxDate < $End
+      and IsMirror = false
+    sort by TxDate asc;
+
+  return $Txs;
+end;
+/
+
+/**
+ * The inspector list, preformatted for display.
+ *
+ * @param $Context The page's report context
+ * @returns One line per transaction, oldest first
+ */
+create or modify microflow Ledger.DS_DrillLines ($Context: Ledger.ReportContext)
+returns list of Ledger.DrillLine as $Lines
+folder 'Cashflow'
+begin
+  declare $N integer = 0;
+  declare $Meta string = '';
+  declare $Acct string = '';
+
+  $Lines = create list of Ledger.DrillLine;
+
+  $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
+
+  loop $T in $Txs
+  begin
+    set $N = $N + 1;
+    $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
+
+    @annotation 'Crossing an association has to be the whole expression — FINDINGS 48'
+    set $Acct = $T/Ledger.Transaction_Account/Name;
+    set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
+
+    $Line = create Ledger.DrillLine (
+      Merchant = $T/Merchant,
+      MetaText = $Meta,
+      AmountText = $Amount,
+      SortOrder = $N);
+    add $Line to $Lines;
+  end loop;
+
+  return $Lines;
+end;
+/
+
+/**
+ * Points the inspector at one matrix cell.
+ *
+ * The figures come from the same three sources the matrix used — the
+ * transaction list for the actual, CALC_Budget for the budget, and the same
+ * elapsed window — so the panel cannot disagree with the cell that selected it.
+ *
+ * Ends by refreshing the context, which re-runs the matrix datasource as well
+ * as the list. That is what draws the outline on the selected cell: the builder
+ * reads the selection back off the context it was given.
+ *
+ * @param $Row The matrix row that was clicked
+ * @param $MonthIndex 1-12
+ * @returns true when the inspector moved
+ */
+create or modify microflow Ledger.ACT_DrillCell (
+  $Row: Ledger.CashflowRow,
+  $MonthIndex: integer
+)
+returns boolean as $Selected
+folder 'Cashflow'
+begin
+  declare $Selected boolean = false;
+  declare $MonthKey string = '';
+  declare $MonthName string = '';
+  declare $Budget decimal = 0;
+  declare $ActualOut string = '';
+  declare $BudgetOut string = '';
+  declare $CountOut string = '';
+
+  retrieve $Cat from $Row/Ledger.CashflowRow_Category;
+  retrieve $Context from $Row/Ledger.CashflowRow_Context;
+
+  if $Cat != empty then
+    $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $MonthIndex);
+    set $MonthKey = $MK;
+    $MN = call microflow Ledger.FMT_MonthName (MonthIndex = $MonthIndex);
+    set $MonthName = $MN;
+
+    @annotation 'Point the context at the cell before reading its transactions'
+    change $Context (
+      DrillSortKey = $Row/SortOrder,
+      DrillMonthIndex = $MonthIndex,
+      Ledger.ReportContext_DrillCategory = $Cat);
+
+    $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
+    @annotation 'count() and sum() declare their own outputs — see FINDINGS 47'
+    $Count = count($Txs);
+    $Actual = sum($Txs.Amount);
+
+    $B = call microflow Ledger.CALC_Budget (Category = $Cat, MonthKey = $MonthKey);
+    set $Budget = $B;
+
+    $AT = call microflow Ledger.FMT_Euro (Amount = $Actual);
+    set $ActualOut = $AT;
+    $BT = call microflow Ledger.FMT_Euro (Amount = $Budget);
+    set $BudgetOut = $BT;
+    set $CountOut = if $Count = 1 then '1 transaction' else toString($Count) + ' transactions';
+
+    change $Context (
+      DrillKicker = $Cat/Ledger.Category_CategoryGroup/Name,
+      DrillTitle = $Row/Label + ' · ' + $MonthName + ' 2026',
+      DrillMeta = $ActualOut + ' of ' + $BudgetOut + ' budget · ' + $CountOut)
+      refresh;
+
+    set $Selected = true;
+  end if;
+
+  return $Selected;
+end;
+/

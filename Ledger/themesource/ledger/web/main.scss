@@ -1,0 +1,664 @@
+@import '../../../theme/web/custom-variables';
+
+// ===========================================================================
+// Ledger — shell and surfaces
+// ===========================================================================
+// The palette and type live in theme/web/custom-variables.scss as Atlas tokens.
+// This file is the part Atlas has no token for: where the prototype uses a
+// monospace face for figures, a serif for titles, and a flat card with a hair
+// rule instead of a shadow.
+//
+// Mono on every number is the single biggest fidelity win. A fourteen-column
+// matrix of currency only scans if the digits line up, which is why the
+// prototype set it and why tabular-nums appears throughout below.
+
+// ---------------------------------------------------------------------------
+// Shell: topbar and sidebar
+// ---------------------------------------------------------------------------
+// The prototype has no coloured topbar — the page opens straight onto its
+// title. Atlas' layout always renders one, so it is dressed down to the paper
+// colour with a hair rule, which turns a band of brand colour into the top
+// edge of the page.
+.region-topbar {
+    background: var(--ledger-paper) !important;
+    border-bottom: 1px solid var(--ledger-rule);
+
+    // Everything in the bar was drawn for a dark brand background, so it all
+    // needs re-darkening — not just the pieces with their own colour rule, and
+    // with !important because several of Atlas' own are.
+    * {
+        color: var(--ledger-ink-2) !important;
+    }
+}
+
+// The sidebar's wordmark. The prototype sets it in serif over a mono kicker;
+// Atlas has no slot for one, so it is drawn on the navigation container. Pure
+// decoration, so it is hidden from assistive tech by construction — generated
+// content is not in the accessibility tree.
+.mx-navigationtree {
+    padding: 0;
+
+    &::before {
+        content: 'Ledger';
+        display: block;
+        font-family: var(--ledger-serif);
+        font-size: 19px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        color: #FFFFFF;
+        padding: 22px 20px 0;
+    }
+
+    // The kicker rides on the inner wrapper, not on ::after: ::before and
+    // ::after bracket the element's children, so an ::after here would land
+    // below the last menu item rather than under the wordmark.
+    .navbar-inner {
+        padding: 0 10px;
+
+        &::before {
+            content: 'Household finances';
+            display: block;
+            font-family: var(--ledger-mono);
+            font-size: 10px;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: #82868A;
+            padding: 5px 10px 18px;
+            border-bottom: 1px solid var(--ledger-sidebar-line);
+            margin: 0 -10px 12px;
+            padding-left: 20px;
+        }
+    }
+
+    // Atlas sizes nav rows for a 48px icon slot. This app has no glyphs, so the
+    // rows are all whitespace; the prototype's are 8px/10px.
+    li {
+        margin-bottom: 2px;
+    }
+
+    li a {
+        padding: 8px 10px !important;
+        min-height: 0 !important;
+        height: auto !important;
+        line-height: 1.35;
+        border-radius: 3px;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Density
+// ---------------------------------------------------------------------------
+// Atlas' default row height is generous; the prototype is 8px/14px, which is
+// what lets a thirteen-row matrix and its inspector share one screen.
+[role='gridcell'] {
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+[role='columnheader'] {
+    padding-top: 11px;
+    padding-bottom: 11px;
+}
+
+// Every grid outside the matrix is a bordered panel too.
+.mx-datagrid-widget,
+.mx-name-dgCategories,
+.mx-name-dgRules,
+.mx-name-dgTransactions,
+.mx-name-dgAccounts {
+    background: var(--ledger-card);
+    border: 1px solid var(--ledger-rule);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+// Section headings need air above them; Atlas' default header margin is 0 0 8px.
+h4.mx-text {
+    margin-top: 26px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+// Page titles carry the prototype's serif; everything else stays sans.
+h2.mx-text,
+.mx-name-txtHeading {
+    font-family: var(--ledger-serif);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    margin: 0 0 6px;
+}
+
+// Sub-heads under a title: the prototype's 13px secondary line.
+.text-muted {
+    color: var(--ledger-ink-2);
+}
+
+// Flat cards with a hair rule, as in the prototype. Atlas' default card is a
+// shadowed surface; the shadow tokens are already zeroed, this squares it off.
+.card {
+    background: var(--ledger-card);
+    border: 1px solid var(--ledger-rule);
+    border-radius: 4px;
+}
+
+// Every grid is a bordered panel, and every header row is the wash colour with
+// small uppercase mono labels.
+.mx-datagrid,
+.mx-name-dgTransactions,
+[role='grid'] {
+    font-size: 13px;
+}
+
+[role='columnheader'] {
+    font-family: var(--ledger-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ledger-label);
+}
+
+[role='gridcell'] {
+    border-bottom: 1px solid var(--ledger-divider);
+}
+
+// Figures are mono and tabular everywhere they appear in a grid.
+.align-column-right [role='gridcell'],
+[role='gridcell'].align-column-right {
+    font-family: var(--ledger-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+// The sidebar's wordmark area. Atlas puts the app title at the top of the
+// navigation; the prototype sets it in serif over a mono kicker.
+.mx-navigationtree {
+    padding: 8px 10px;
+}
+
+// ===========================================================================
+// Ledger — cashflow matrix
+// ===========================================================================
+// The prototype tinted each cell with a continuous alpha computed from how far
+// the category was over or under budget:
+//
+//   a = (0.06 + ratio * 0.32) * strength
+//   over  -> rgba(168, 50, 30, a)
+//   under -> rgba(44, 110, 74, a * 0.8)
+//
+// Mendix supplies class names rather than computed colours, so CALC_Band
+// buckets the ratio into five levels either side and those become the ten
+// classes below. The alpha steps reproduce the original curve closely enough
+// that the matrix reads the same at a glance.
+//
+// Cells with no band get no class suffix and stay untinted — that covers both
+// the 2% dead band and every future month.
+
+// Kept as SCSS values because rgba() needs them at compile time; they are the
+// same two colours as --ledger-over / --ledger-under.
+$cf-over: rgb(168, 50, 30); // over budget on an expense, or under on income
+$cf-under: rgb(44, 110, 74); // the favourable direction
+
+.cf-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    // The class lands on an inner element, so this trims rather than replaces
+    // the cell's own padding. Fourteen columns of currency need the room.
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 13px;
+
+    &.over-1 { background-color: rgba($cf-over, 0.1); }
+    &.over-2 { background-color: rgba($cf-over, 0.16); }
+    &.over-3 { background-color: rgba($cf-over, 0.22); }
+    &.over-4 { background-color: rgba($cf-over, 0.29); }
+    &.over-5 { background-color: rgba($cf-over, 0.36); }
+
+    &.under-1 { background-color: rgba($cf-under, 0.08); }
+    &.under-2 { background-color: rgba($cf-under, 0.13); }
+    &.under-3 { background-color: rgba($cf-under, 0.18); }
+    &.under-4 { background-color: rgba($cf-under, 0.23); }
+    &.under-5 { background-color: rgba($cf-under, 0.29); }
+}
+
+// Cell figures: the prototype's 12.5px mono, right aligned and tabular.
+.cf-cell,
+.bg-cell {
+    font-family: var(--ledger-mono);
+    font-size: 12.5px;
+}
+
+// Row kinds. The label column carries these, so the whole row reads as a
+// group subtotal, a category, or the net line.
+.cf-group {
+    font-family: var(--ledger-mono);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10.5px;
+    color: var(--ledger-strong);
+}
+
+.cf-cat {
+    padding-left: 24px;
+}
+
+.cf-net {
+    font-family: var(--ledger-mono);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10.5px;
+    color: var(--ledger-ink);
+}
+
+// The total column is a separate surface in the prototype, ruled off from the
+// months rather than merely bolder.
+.cf-total {
+    font-family: var(--ledger-mono);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    background-color: #F3F1EC;
+    border-left: 1px solid var(--ledger-rule);
+    color: var(--ledger-strong);
+}
+
+// 14 columns do not fit a laptop, so the grid scrolls sideways. Without this
+// the page body scrolls instead and the whole layout drifts.
+.ledger-matrix {
+    overflow-x: auto;
+
+    // DataGrid2 renders ARIA divs, not a real table, so th/td never match here.
+    // Without nowrap every '€ 5,200' breaks after the symbol and the Year column
+    // ellipsises; the columns' Size values are flex weights, not pixels, so the
+    // only way to give fourteen columns room is a min-width plus this scroller.
+    background: var(--ledger-card);
+    border: 1px solid var(--ledger-rule);
+    border-radius: 4px 4px 0 0;
+
+    [role='grid'] {
+        min-width: 1320px;
+    }
+
+    // The nowrap has to reach the .mx-text span itself: Atlas sets
+    // white-space: pre-line on it, which beats anything inherited from the cell.
+    [role='columnheader'],
+    [role='gridcell'],
+    [role='gridcell'] .mx-text {
+        white-space: nowrap;
+    }
+
+    // Atlas' default cell padding costs ~32px per column. Over fourteen columns
+    // that is most of a month; trimming it is what lets the whole year fit in
+    // one screen-and-a-nudge rather than two.
+    [role='columnheader'],
+    [role='gridcell'] {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+}
+
+// The mode switch is a segmented control, not three buttons: a recessed track
+// with the active mode raised out of it as a white pill. Straight from the
+// prototype, and it reads as one control with three states rather than three
+// independent things to click.
+.ledger-modes {
+    display: flex;
+    width: fit-content;
+    gap: 2px;
+    margin: 4px 0 18px;
+    padding: 2px;
+    background: #EAE7E1;
+    border: 1px solid #DAD6CE;
+    border-radius: 3px;
+
+    .btn {
+        border: none;
+        background: transparent;
+        border-radius: 2px;
+        padding: 6px 11px;
+        font-size: 12.5px;
+        color: var(--ledger-ink-2);
+        box-shadow: none;
+    }
+
+    .btn:hover {
+        background: rgba(255, 255, 255, 0.6);
+        color: var(--ledger-ink);
+    }
+}
+
+// KPI cards: a mono kicker over a large mono figure, both at the prototype's
+// sizes. Nothing here is sans.
+.ledger-kpi {
+    padding: 14px 16px;
+
+    h6 {
+        margin: 0;
+        font-family: var(--ledger-mono);
+        font-weight: 400;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 9.5px;
+        color: var(--ledger-label);
+    }
+
+    h3,
+    h4 {
+        margin: 7px 0 0;
+        font-family: var(--ledger-mono);
+        font-weight: 500;
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ledger-ink);
+    }
+}
+
+// Semantic colour on the two KPIs that carry a verdict, as the prototype does.
+.mx-name-ctnKpiNet h3 { color: var(--ledger-under); }
+.mx-name-ctnKpiOver h3 { color: var(--ledger-over); }
+
+// ===========================================================================
+// Ledger — budgets matrix
+// ===========================================================================
+// Every month cell is a clickable container, so it needs to look operable:
+// a pointer, a hover state, and a visible focus ring for keyboard users.
+//
+// Overridden months carry a left rule rather than a fill. The prototype used
+// the same device, and it reads as "this one was changed" without competing
+// with the cashflow heatmap, which uses fills for a different meaning.
+
+.bg-cell {
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: background-color 90ms ease;
+
+    &:hover {
+        background-color: rgba($cf-under, 0.09);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $cf-under;
+        outline-offset: -2px;
+    }
+}
+
+.bg-override {
+    box-shadow: inset 2px 0 0 $cf-over;
+    background-color: rgba($cf-over, 0.06);
+    font-weight: 600;
+}
+
+.bg-label {
+    padding-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bg-cell { transition: none; }
+}
+
+// ── Cashflow inspector ──────────────────────────────────────────────────────
+// A month cell on a category row points the panel beside the matrix at its
+// transactions. Group subtotals and the net line have no single category, so
+// they are not clickable and must not pretend to be.
+//
+// Both the hover and the selected state are outlines rather than fills: the
+// cell already carries a heatmap tint, and tinting it further would read as a
+// different band.
+
+.cf-drill {
+    cursor: pointer;
+    display: block;
+
+    &:hover {
+        box-shadow: inset 0 0 0 1px rgba($cf-under, 0.55);
+        border-radius: 2px;
+    }
+
+    &:focus-visible {
+        outline: 2px solid $cf-under;
+        outline-offset: -2px;
+    }
+}
+
+.cf-nodrill {
+    cursor: default;
+    display: block;
+}
+
+// Selected cell. The class rides along on the band string, so it lands on the
+// grid cell itself rather than the container inside it — which is what makes
+// the outline enclose the whole tinted cell.
+.cf-sel {
+    box-shadow: inset 0 0 0 2px rgb(27, 77, 75);
+}
+
+// The legend under the matrix, from the prototype: what the colours mean, and
+// the fact that the matrix scrolls.
+// The legend is the prototype's table footer: a wash strip inside the card's
+// bottom edge, not free-floating text under it.
+.ledger-legend {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 11px 16px;
+    font-size: 11.5px;
+    color: var(--ledger-ink-2);
+    background: var(--ledger-wash);
+    border: 1px solid var(--ledger-rule);
+    border-top: 0;
+    border-radius: 0 0 4px 4px;
+}
+
+.ledger-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ledger-swatch {
+    width: 26px;
+    height: 11px;
+    border-radius: 2px;
+}
+
+.ledger-swatch-over {
+    background: linear-gradient(90deg, rgba($cf-over, 0.08), rgba($cf-over, 0.42));
+}
+
+.ledger-swatch-under {
+    background: linear-gradient(90deg, rgba($cf-under, 0.06), rgba($cf-under, 0.34));
+}
+
+.ledger-legend-hint {
+    margin-left: auto;
+    font-family: var(--ledger-mono);
+    font-size: 10.5px;
+    color: var(--ledger-ink-3);
+}
+
+// The panel itself.
+.ledger-inspector {
+    padding: 0;
+    overflow: hidden;
+}
+
+.ledger-inspector-head {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--ledger-rule);
+    background: var(--ledger-wash);
+
+    h5 {
+        margin: 5px 0 0;
+        font-size: 15px;
+        font-weight: 600;
+    }
+}
+
+.ledger-kicker {
+    font-family: var(--ledger-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ledger-label);
+}
+
+.ledger-inspector-meta {
+    display: block;
+    font-size: 12px;
+    color: var(--ledger-ink-2);
+    margin-top: 3px;
+}
+
+.ledger-inspector-list {
+    max-height: 520px;
+    overflow-y: auto;
+}
+
+.ledger-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ledger-divider);
+}
+
+.ledger-line-text {
+    min-width: 0;
+}
+
+.ledger-line-merchant {
+    display: block;
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ledger-line-meta {
+    display: block;
+    font-family: var(--ledger-mono);
+    font-size: 10.5px;
+    color: var(--ledger-ink-3);
+    margin-top: 2px;
+}
+
+.ledger-line-amount {
+    font-family: var(--ledger-mono);
+    font-size: 12.5px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+// ── Rules panel ─────────────────────────────────────────────────────────────
+// The bar above the rule list: what is waiting, what running the rules would
+// do, and the three controls. Laid out as a single row so the promise and the
+// button that keeps it sit together.
+
+.ledger-rules-panel {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+
+.ledger-rules-figures {
+    flex: 1;
+    min-width: 0;
+
+    h5 {
+        margin: 0;
+    }
+}
+
+.ledger-rules-preview {
+    display: block;
+    font-size: 12.5px;
+    color: var(--ledger-ink-2);
+    margin-top: 3px;
+}
+
+// Empty until something has been run, so it must not reserve space when blank.
+.ledger-rules-status {
+    display: block;
+    font-family: var(--ledger-mono);
+    font-size: 11.5px;
+    margin-top: 3px;
+    color: var(--ledger-under);
+}
+
+.ledger-rules-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+// Row controls are secondary to the data, so they get the smaller type.
+.ledger-row-actions {
+    display: flex;
+    gap: 4px;
+
+    .btn {
+        padding: 2px 8px;
+        font-size: 12px;
+    }
+}
+
+// ── Dashboard ───────────────────────────────────────────────────────────────
+// The sunburst sits in the same flat card as everything else, with its total
+// as a kicker above it so the chart does not have to carry a title.
+
+.ledger-chart-card {
+    padding: 14px 16px 8px;
+}
+
+.ledger-chart-head {
+    margin-bottom: 4px;
+
+    h3 {
+        margin: 4px 0 0;
+        font-family: var(--ledger-mono);
+        font-weight: 500;
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+// Plotly draws its own background; the card supplies ours, and the trace is
+// configured with a transparent paper so the two do not fight.
+.ledger-chart-card .js-plotly-plot .plotly .modebar {
+    display: none;
+}
+
+// Breakdown rows: the chart's hierarchy as a clickable list, indented by level.
+.sb-node {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--ledger-divider);
+    font-size: 12px;
+
+    &:hover { background: var(--ledger-wash); }
+    &:focus-visible { outline: 2px solid var(--ledger-accent); outline-offset: -2px; }
+}
+
+.sb-G { font-weight: 600; padding-left: 10px; }
+.sb-C { padding-left: 22px; }
+.sb-M { padding-left: 34px; color: var(--ledger-ink-2); }
+
+.sb-on {
+    background: color-mix(in srgb, var(--ledger-accent) 10%, #FFFFFF);
+    box-shadow: inset 2px 0 0 var(--ledger-accent);
+}
+
+.sb-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-node-amount {
+    font-family: var(--ledger-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
