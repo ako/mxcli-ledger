@@ -606,3 +606,59 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
         font-size: 12px;
     }
 }
+
+// ── Dashboard ───────────────────────────────────────────────────────────────
+// The sunburst sits in the same flat card as everything else, with its total
+// as a kicker above it so the chart does not have to carry a title.
+
+.ledger-chart-card {
+    padding: 14px 16px 8px;
+}
+
+.ledger-chart-head {
+    margin-bottom: 4px;
+
+    h3 {
+        margin: 4px 0 0;
+        font-family: var(--ledger-mono);
+        font-weight: 500;
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+// Plotly draws its own background; the card supplies ours, and the trace is
+// configured with a transparent paper so the two do not fight.
+.ledger-chart-card .js-plotly-plot .plotly .modebar {
+    display: none;
+}
+
+// Breakdown rows: the chart's hierarchy as a clickable list, indented by level.
+.sb-node {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--ledger-divider);
+    font-size: 12px;
+
+    &:hover { background: var(--ledger-wash); }
+    &:focus-visible { outline: 2px solid var(--ledger-accent); outline-offset: -2px; }
+}
+
+.sb-G { font-weight: 600; padding-left: 10px; }
+.sb-C { padding-left: 22px; }
+.sb-M { padding-left: 34px; color: var(--ledger-ink-2); }
+
+.sb-on {
+    background: color-mix(in srgb, var(--ledger-accent) 10%, #FFFFFF);
+    box-shadow: inset 2px 0 0 var(--ledger-accent);
+}
+
+.sb-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-node-amount {
+    font-family: var(--ledger-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

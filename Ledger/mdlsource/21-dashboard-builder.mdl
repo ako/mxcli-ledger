@@ -1,0 +1,490 @@
+-- ============================================================================
+-- 21 - Dashboard: chart payload, click decoding, detail list
+-- ============================================================================
+-- Everything page-free, so the page in 22 can bind its widget straight to
+-- these (FINDINGS 45: wiring a page's actions afterwards does not work).
+--
+-- Node ids encode the path, so one click tells us which ring was hit and what
+-- to filter by without a second lookup:
+--
+--   G:Housing
+--   C:Housing|Rent
+--   M:Housing|Rent|Woonstad
+--
+-- Each loop uses its own iterator name. A loop variable is scoped to the whole
+-- microflow, not to its loop, so a second `loop $R in …` is CE0111 "Duplicate
+-- variable name" — see FINDINGS 64.
+--
+-- '|' and ':' are safe delimiters for this data — no category, group or
+-- merchant name contains either. A real import would need escaping, and so
+-- would the JSON if a merchant name ever contained a quote or a backslash.
+-- ============================================================================
+
+/**
+ * Builds the sunburst payload and the page's chart state.
+ *
+ * One retrieve of VMerchantSpend feeds all three rings; the group and category
+ * rings are rolled up from it in memory rather than queried separately, so the
+ * rings cannot disagree about a total. The inner loops are genuine aggregation
+ * over ~60 rows, which is the case MDL001's own hint says to ignore.
+ *
+ * Amounts are written with formatDecimal('0.00') rather than toString(): a
+ * Decimal stringifies with a long tail, and small values come out in
+ * scientific notation (FINDINGS 19), which is not valid JSON for Plotly.
+ *
+ * @returns The dashboard's context object
+ */
+create or modify microflow Ledger.DS_SunburstContext ()
+returns Ledger.SunburstContext as $Context
+folder 'Dashboard'
+begin
+  declare $Ids string = '';
+  declare $Labels string = '';
+  declare $Parents string = '';
+  declare $Values string = '';
+  declare $Sep string = '';
+  declare $PrevGroup string = '';
+  declare $PrevKey string = '';
+  declare $Key string = '';
+  declare $Sub decimal = 0;
+  declare $Grand decimal = 0;
+  declare $CatId string = '';
+  declare $Data string = '';
+  declare $Layout string = '';
+
+  retrieve $Rows from Ledger.VMerchantSpend
+    sort by GroupName asc, CategoryName asc, Merchant asc;
+
+  @annotation 'Ring 1 — category groups, each rolled up from its rows'
+  loop $G in $Rows
+  begin
+    if $G/GroupName != $PrevGroup then
+      set $PrevGroup = $G/GroupName;
+      set $Sub = 0;
+      loop $GS in $Rows
+      begin
+        if $GS/GroupName = $G/GroupName then
+          set $Sub = $Sub + $GS/Total;
+        end if;
+      end loop;
+      set $Grand = $Grand + $Sub;
+
+      set $Ids = $Ids + $Sep + '"G:' + $G/GroupName + '"';
+      set $Labels = $Labels + $Sep + '"' + $G/GroupName + '"';
+      set $Parents = $Parents + $Sep + '""';
+      set $Values = $Values + $Sep + formatDecimal($Sub, '0.00');
+      set $Sep = ',';
+    end if;
+  end loop;
+
+  @annotation 'Ring 2 — categories, keyed on group+category so names cannot collide'
+  set $PrevKey = '';
+  loop $C in $Rows
+  begin
+    set $Key = $C/GroupName + '|' + $C/CategoryName;
+    if $Key != $PrevKey then
+      set $PrevKey = $Key;
+      set $Sub = 0;
+      loop $CS in $Rows
+      begin
+        if $CS/GroupName = $C/GroupName and $CS/CategoryName = $C/CategoryName then
+          set $Sub = $Sub + $CS/Total;
+        end if;
+      end loop;
+
+      set $Ids = $Ids + $Sep + '"C:' + $Key + '"';
+      set $Labels = $Labels + $Sep + '"' + $C/CategoryName + '"';
+      set $Parents = $Parents + $Sep + '"G:' + $C/GroupName + '"';
+      set $Values = $Values + $Sep + formatDecimal($Sub, '0.00');
+      set $Sep = ',';
+    end if;
+  end loop;
+
+  @annotation 'Ring 3 — merchants, one node per row of the view'
+  loop $M in $Rows
+  begin
+    set $CatId = 'C:' + $M/GroupName + '|' + $M/CategoryName;
+
+    set $Ids = $Ids + $Sep + '"M:' + $M/GroupName + '|' + $M/CategoryName + '|' + $M/Merchant + '"';
+    set $Labels = $Labels + $Sep + '"' + $M/Merchant + '"';
+    set $Parents = $Parents + $Sep + '"' + $CatId + '"';
+    set $Values = $Values + $Sep + formatDecimal($M/Total, '0.00');
+    set $Sep = ',';
+  end loop;
+
+  @annotation 'Four roots rather than one is what leaves the centre hollow'
+  set $Data = '[{"type":"sunburst"'
+    + ',"ids":[' + $Ids + ']'
+    + ',"labels":[' + $Labels + ']'
+    + ',"parents":[' + $Parents + ']'
+    + ',"values":[' + $Values + ']'
+    + ',"branchvalues":"total"'
+    + ',"maxdepth":3'
+    + ',"sort":true'
+    + ',"leaf":{"opacity":0.85}'
+    + ',"marker":{"line":{"color":"#FFFFFF","width":1.5}}'
+    + ',"textinfo":"label"'
+    + ',"insidetextorientation":"radial"'
+    + ',"hovertemplate":"<b>%{label}</b><br>%{value:,.0f} EUR<br>%{percentRoot:.1%} of spend<extra></extra>"'
+    + '}]';
+
+  set $Layout = '{"margin":{"t":8,"l":8,"r":8,"b":8}'
+    + ',"paper_bgcolor":"rgba(0,0,0,0)"'
+    + ',"plot_bgcolor":"rgba(0,0,0,0)"'
+    + ',"font":{"family":"IBM Plex Sans, system-ui, sans-serif","size":12,"color":"#17181A"}'
+    + ',"showlegend":false'
+    + ',"sunburstcolorway":["#2C6E4A","#1B4D4B","#A8321E","#7C6A3F","#4A5A6B","#6E4A5A"]'
+    + ',"extendsunburstcolorway":true}';
+
+  $Total = call microflow Ledger.FMT_Euro (Amount = $Grand);
+
+  $Context = create Ledger.SunburstContext (
+    ChartData = $Data,
+    ChartLayout = $Layout,
+    EventData = '',
+    TotalText = $Total);
+
+  return $Context;
+end;
+/
+
+/**
+ * The node id of the current selection, or '' before the first click.
+ *
+ * A one-line accessor now, but kept as its own microflow because three
+ * datasources need it and the source of the selection has already moved once:
+ * it was the chart's own click event until CustomChart turned out to hand back
+ * a bounding box rather than the point (FINDINGS 69).
+ *
+ * @param $Context The dashboard context
+ * @returns e.g. 'M:Housing|Rent|Woonstad'
+ */
+create or modify microflow Ledger.GET_SunburstId ($Context: Ledger.SunburstContext)
+returns string as $Id
+folder 'Dashboard'
+begin
+  declare $Id string = '';
+
+  @annotation 'The selection comes from the breakdown list, not the chart'
+  set $Id = $Context/SelId;
+
+  return $Id;
+end;
+/
+
+/**
+ * One level of a node id: 1 = group, 2 = category, 3 = merchant.
+ *
+ * Returns '' for a level the id does not reach, which is exactly what the
+ * filters want — an unset level means "do not narrow further".
+ *
+ * @param $Id A node id such as 'C:Housing|Rent'
+ * @param $Level 1, 2 or 3
+ * @returns The level's name, or ''
+ */
+create or modify microflow Ledger.GET_SunburstPart ($Id: string, $Level: integer)
+returns string as $Part
+folder 'Dashboard'
+begin
+  declare $Part string = '';
+  declare $Body string = '';
+  declare $Rest string = '';
+  declare $At integer = 0;
+
+  if length($Id) < 2 then
+    return $Part;
+  end if;
+
+  set $Body = substring($Id, 2);
+
+  set $At = find($Body, '|') + 0;
+  if $At < 0 then
+    if $Level = 1 then set $Part = $Body; end if;
+    return $Part;
+  end if;
+
+  if $Level = 1 then
+    set $Part = substring($Body, 0, $At);
+    return $Part;
+  end if;
+
+  set $Rest = substring($Body, $At + 1);
+  set $At = find($Rest, '|') + 0;
+  if $At < 0 then
+    if $Level = 2 then set $Part = $Rest; end if;
+    return $Part;
+  end if;
+
+  if $Level = 2 then
+    set $Part = substring($Rest, 0, $At);
+  else
+    set $Part = substring($Rest, $At + 1);
+  end if;
+
+  return $Part;
+end;
+/
+
+/**
+ * The transactions behind the current selection.
+ *
+ * XPath walks the association to reach the group name — ordinary XPath, not the
+ * microflow-expression restriction of FINDINGS 43/48. The category and merchant
+ * levels are narrowed in memory, because "constrain only if set" is not
+ * something an XPath constraint against a variable can express.
+ *
+ * @param $Context The dashboard context
+ * @returns Transactions, newest first
+ */
+create or modify microflow Ledger.GET_SunburstTransactions ($Context: Ledger.SunburstContext)
+returns list of Ledger.Transaction as $Txs
+folder 'Dashboard'
+begin
+  declare $Group string = '';
+
+  $Id = call microflow Ledger.GET_SunburstId (Context = $Context);
+  $G = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 1);
+  set $Group = $G;
+
+  retrieve $Txs from Ledger.Transaction
+    where [Ledger.Transaction_Category/Ledger.Category/Ledger.Category_CategoryGroup/Ledger.CategoryGroup/Name = $Group]
+      and [IsMirror = false]
+    sort by TxDate desc;
+
+  return $Txs;
+end;
+/
+
+/**
+ * The detail list, preformatted.
+ *
+ * @param $Context The dashboard context
+ * @returns One line per transaction in the selection
+ */
+create or modify microflow Ledger.DS_SunburstLines ($Context: Ledger.SunburstContext)
+returns list of Ledger.DrillLine as $Lines
+folder 'Dashboard'
+begin
+  declare $N integer = 0;
+  declare $Meta string = '';
+  declare $Acct string = '';
+  declare $Keep boolean = false;
+  declare $CatName string = '';
+  declare $Category string = '';
+  declare $Merchant string = '';
+
+  $Lines = create list of Ledger.DrillLine;
+
+  $Id = call microflow Ledger.GET_SunburstId (Context = $Context);
+  if length($Id) < 2 then
+    return $Lines;
+  end if;
+
+  $C = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 2);
+  set $Category = $C;
+  $M = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 3);
+  set $Merchant = $M;
+
+  $Txs = call microflow Ledger.GET_SunburstTransactions (Context = $Context);
+
+  loop $T in $Txs
+  begin
+    set $Keep = true;
+    set $CatName = $T/Ledger.Transaction_Category/Ledger.Category/Name;
+    if $Category != '' and $CatName != $Category then
+      set $Keep = false;
+    end if;
+    if $Merchant != '' and $T/Merchant != $Merchant then
+      set $Keep = false;
+    end if;
+
+    if $Keep then
+      set $N = $N + 1;
+      $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
+
+      @annotation 'Crossing an association has to be the whole expression — FINDINGS 48'
+      set $Acct = $T/Ledger.Transaction_Account/Name;
+      set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
+
+      $Line = create Ledger.DrillLine (
+        Merchant = $T/Merchant,
+        MetaText = $Meta,
+        AmountText = $Amount,
+        SortOrder = $N);
+      add $Line to $Lines;
+    end if;
+  end loop;
+
+  return $Lines;
+end;
+/
+
+/**
+ * The panel heading for the current selection.
+ *
+ * A datasource rather than a handler: nothing runs on click, so the heading has
+ * to be derived from EventData the same way the list is.
+ *
+ * @param $Context The dashboard context
+ * @returns The decoded selection
+ */
+create or modify microflow Ledger.DS_SunburstSelection ($Context: Ledger.SunburstContext)
+returns Ledger.SunburstSelection as $Sel
+folder 'Dashboard'
+begin
+  declare $Kind string = '';
+  declare $Group string = '';
+  declare $Category string = '';
+  declare $Merchant string = '';
+  declare $Kicker string = '';
+  declare $Title string = '';
+  declare $Amount decimal = 0;
+
+  $Id = call microflow Ledger.GET_SunburstId (Context = $Context);
+
+  @annotation 'length() rather than = empty: an unset String is not equal to empty'
+  if length($Id) < 2 then
+    $Empty = create Ledger.SunburstSelection (
+      Kicker = 'Inspector',
+      Title = 'Select a segment',
+      Meta = 'Click any ring to list the transactions behind it: the inner ring is a category group, then its categories, then the merchants.');
+    return $Empty;
+  end if;
+
+  set $Kind = substring($Id, 0, 1);
+  $G = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 1);
+  set $Group = $G;
+  $C = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 2);
+  set $Category = $C;
+  $M = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 3);
+  set $Merchant = $M;
+
+  set $Kicker = if $Kind = 'G' then 'Category group'
+    else if $Kind = 'C' then 'Category' else 'Merchant';
+  set $Title = if $Merchant != '' then $Merchant
+    else if $Category != '' then $Category else $Group;
+
+  retrieve $Rows from Ledger.VMerchantSpend;
+  loop $V in $Rows
+  begin
+    if $V/GroupName = $Group
+      and ($Category = '' or $V/CategoryName = $Category)
+      and ($Merchant = '' or $V/Merchant = $Merchant) then
+      set $Amount = $Amount + $V/Total;
+    end if;
+  end loop;
+
+  $Lines = call microflow Ledger.DS_SunburstLines (Context = $Context);
+  $Count = count($Lines);
+  $AmountText = call microflow Ledger.FMT_Euro (Amount = $Amount);
+
+  $Sel = create Ledger.SunburstSelection (
+    Kicker = $Kicker,
+    Title = $Title,
+    Meta = $AmountText + ' · ' + toString($Count) + ' transactions');
+
+  return $Sel;
+end;
+/
+
+/**
+ * The clickable breakdown: every node of the chart, in reading order.
+ *
+ * @param $Context The dashboard context
+ * @returns Group, category and merchant rows
+ */
+create or modify microflow Ledger.DS_SunburstRows ($Context: Ledger.SunburstContext)
+returns list of Ledger.SunburstRow as $Rows
+folder 'Dashboard'
+begin
+  declare $N integer = 0;
+  declare $PrevGroup string = '';
+  declare $PrevKey string = '';
+  declare $Key string = '';
+  declare $Sub decimal = 0;
+  declare $NodeId string = '';
+
+  $Rows = create list of Ledger.SunburstRow;
+
+  retrieve $Src from Ledger.VMerchantSpend
+    sort by GroupName asc, CategoryName asc, Merchant asc;
+
+  loop $V in $Src
+  begin
+    if $V/GroupName != $PrevGroup then
+      set $PrevGroup = $V/GroupName;
+      set $Sub = 0;
+      loop $GS in $Src
+      begin
+        if $GS/GroupName = $V/GroupName then
+          set $Sub = $Sub + $GS/Total;
+        end if;
+      end loop;
+      set $N = $N + 1;
+      set $NodeId = 'G:' + $V/GroupName;
+      $GT = call microflow Ledger.FMT_Euro (Amount = $Sub);
+      $GRow = create Ledger.SunburstRow (
+        Label = $V/GroupName, NodeId = $NodeId, Kind = 'G',
+        AmountText = $GT, SortOrder = $N,
+        IsSelected = $NodeId = $Context/SelId);
+      change $GRow (Ledger.SunburstRow_Context = $Context);
+      add $GRow to $Rows;
+    end if;
+
+    set $Key = $V/GroupName + '|' + $V/CategoryName;
+    if $Key != $PrevKey then
+      set $PrevKey = $Key;
+      set $Sub = 0;
+      loop $CS in $Src
+      begin
+        if $CS/GroupName = $V/GroupName and $CS/CategoryName = $V/CategoryName then
+          set $Sub = $Sub + $CS/Total;
+        end if;
+      end loop;
+      set $N = $N + 1;
+      set $NodeId = 'C:' + $Key;
+      $CT = call microflow Ledger.FMT_Euro (Amount = $Sub);
+      $CRow = create Ledger.SunburstRow (
+        Label = $V/CategoryName, NodeId = $NodeId, Kind = 'C',
+        AmountText = $CT, SortOrder = $N,
+        IsSelected = $NodeId = $Context/SelId);
+      change $CRow (Ledger.SunburstRow_Context = $Context);
+      add $CRow to $Rows;
+    end if;
+
+    set $N = $N + 1;
+    set $NodeId = 'M:' + $V/GroupName + '|' + $V/CategoryName + '|' + $V/Merchant;
+    $MT = call microflow Ledger.FMT_Euro (Amount = $V/Total);
+    $MRow = create Ledger.SunburstRow (
+      Label = $V/Merchant, NodeId = $NodeId, Kind = 'M',
+      AmountText = $MT, SortOrder = $N,
+      IsSelected = $NodeId = $Context/SelId);
+    change $MRow (Ledger.SunburstRow_Context = $Context);
+    add $MRow to $Rows;
+  end loop;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Selects one node of the breakdown.
+ *
+ * Ends with an explicit refresh of the context, which is what re-runs the
+ * panel's datasources — an attribute changing does not (FINDINGS 44, 68).
+ *
+ * @param $Row The clicked row
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_SelectNode ($Row: Ledger.SunburstRow)
+returns boolean as $Done
+folder 'Dashboard'
+begin
+  declare $Done boolean = true;
+
+  retrieve $Context from $Row/Ledger.SunburstRow_Context;
+  change $Context (SelId = $Row/NodeId) refresh;
+
+  return $Done;
+end;
+/

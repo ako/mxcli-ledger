@@ -1637,3 +1637,166 @@ kicker in `::after` puts the kicker *below the last menu item* — the two pseud
 elements bracket the element's children, and the children are the whole menu.
 The kicker has to hang off the inner wrapper's `::before` instead. Obvious in
 hindsight, invisible until rendered.
+
+## Phase 8 — dashboard sunburst (2026-07-29)
+
+### 63. `find()` is a list operation too, unless it is part of a larger expression
+
+Finding 53 was about `contains()`. `find()` behaves the same way, but with a
+twist that makes it easy to miss:
+
+```
+declare $At integer = 0;
+set $At = find($Raw, '"id":"');        -- CE0111 duplicate variable name '$At'
+                                       -- "list operation output variable"
+```
+
+Yet this, from the rules engine, is fine:
+
+```
+set $Match = find($Hay, $Needle) >= 0;
+```
+
+The difference is whether the call is the **entire** right-hand side. Alone it
+is parsed as the list operation `Find`; inside any binary expression it stays
+the string function. So the workaround for wanting the index itself is to make
+the expression non-bare:
+
+```
+set $At = find($Raw, '"id":"') + 0;
+```
+
+`+ 0` is not a no-op to the parser, which is the whole point — and is why the
+line carries a comment in `21-dashboard-builder.mdl`. Same root cause as 53:
+mxcli resolves these names to list operations before considering the argument
+types.
+
+### 64. A loop variable is scoped to the microflow, not to its loop
+
+Three sequential loops over the same list, each with `loop $R in $Rows`, is the
+natural way to write a three-pass rollup. Mendix rejects it:
+
+```
+[error] [CE0111] "Duplicate variable name 'R'." at Loop
+[error] [CE0111] "Duplicate variable name 'S'." at Loop
+```
+
+Loop iterators share one flat namespace with everything else in the microflow,
+so every loop in a microflow needs its own iterator name — `$G`, `$C`, `$M`
+here. `mxcli check --references` passes it; `mx check` catches it. Another
+member of the gap family in findings 41, 44 and 48.
+
+**A caution earned the hard way:** the obvious fix — bulk-renaming `$R` to `$G`
+in one block — also rewrites `$Rows`, and renaming `$S` rewrites `$Sub` and
+`$Sep`. That produced a microflow referring to `$Mows` and 24 fresh errors.
+Renames of MDL variables need word boundaries, or a rewrite of the whole flow.
+
+### 65. The multi-level donut needed no custom widget
+
+The obvious reading of "multi-level donut" is that Mendix has no such chart and
+one has to be built. It does have one. `Charts.mpk` was already in this
+project, and its **CustomChart** ("any chart") widget takes raw Plotly `data`
+and `layout` JSON — and Plotly's `sunburst` trace *is* a multi-level donut.
+
+Three properties make it work, none of which the MDL shorthand widgets expose,
+so the page uses the `pluggablewidget '<id>' name (…)` escape hatch:
+
+| Property | Purpose |
+|---|---|
+| `dataAttribute` | String attribute holding the Plotly `data` array |
+| `layoutAttribute` | String attribute holding `layout` |
+| `eventDataAttribute` | String attribute the widget **writes** the clicked point into |
+
+`eventDataAttribute` + `onClick` is the drilldown hook, and it is what makes a
+custom widget unnecessary: the widget hands back the whole Plotly point object,
+so encoding the hierarchy path into each node's `id` (`M:Housing|Rent|Woonstad`)
+means one `find`/`substring` pass recovers which ring was clicked and what to
+filter by. A microflow has no JSON reader; designing the id so that plain string
+functions are enough avoids needing one.
+
+**The hollow centre is a consequence, not a setting.** Plotly's sunburst has no
+`hole` attribute. Emitting the four category groups as *roots* (parent `""`)
+rather than under a single synthetic root leaves the middle empty, which is
+exactly the donut look.
+
+### 67. MDL silently drops an `action` property on a pluggable widget
+
+The dashboard needs `onClick` on CustomChart. MDL accepts it:
+
+```
+pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSunburst (
+  dataAttribute: ChartData,
+  eventDataAttribute: EventData,
+  onClick: microflow Ledger.ACT_SunburstClick(Context: $currentObject),
+  …)
+```
+
+`mxcli check --references` passes. `mxcli exec` reports "Created page". `mx check`
+reports 0 errors. The app builds and runs. And `DESCRIBE PAGE` shows the widget
+with **every property except `onClick`**:
+
+```
+pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSunburst (
+  dataAttribute: ChartData,
+  configurationOptions: …, widthUnit: percentage, width: 100,
+  heightUnit: pixels, height: 520, … , eventDataAttribute: EventData
+)
+```
+
+Tested both `onClick: microflow M(args)` and `onClick: microflow M` — neither
+survives. The BSON writer is not the problem: `sdk/mpr/writer_widgets_custom.go`
+serializes `{Key: "Action", Value: serializeClientAction(val.Action)}` on a
+WidgetValue, so the gap is upstream, where MDL properties are turned into widget
+values.
+
+**Why this one matters more than the earlier gaps.** The others produced an
+error somewhere — `mx check` caught them, or the .mpr failed to load. This
+produces a working app with a dead control. Nothing anywhere says the property
+was ignored.
+
+### 68. Writing a widget attribute does not re-run a datasource over its object
+
+With `onClick` unreachable, the fallback was to derive the panel from
+`eventDataAttribute` instead: the widget writes the attribute, the object
+changes, and the microflow datasources parameterised on it re-run.
+
+They do not. Verified end to end — the widget does write the attribute on every
+click (its code takes that branch whenever `eventDataAttribute` is configured),
+and the two datasources over the same object never re-ran.
+
+Consistent with finding 44 from the other direction: a microflow datasource is
+invalidated by an explicit `refresh`, not by an attribute changing.
+
+### 69. CustomChart's event data is a bounding box, not the clicked point
+
+Even with `onClick` wired, this widget could not drive this drilldown. Its
+handler is:
+
+```js
+eventDataAttribute
+  ? eventDataAttribute.setValue(JSON.stringify(points[0].bbox))
+  : executeAction(onClick)
+```
+
+`points[0].bbox` — the segment's screen rectangle. Not `id`, `label` or `value`.
+The Plotly event itself carries all of those (confirmed in the browser: a click
+on the Albert Heijn segment yields
+`{id: "M:Daily living|Groceries|Albert Heijn", label: "Albert Heijn", value: 1123.56}`),
+but the widget discards them.
+
+So the id-encoding scheme in `21-dashboard-builder.mdl` is correct and useless
+with this widget: the information exists in the browser and never reaches the
+microflow. A pluggable widget that forwarded `points[0].id` — or simply the
+whole point — would make the whole feature work as designed.
+
+### 66. MDL-WIDGET10 caught a property that would have been silently ignored
+
+The chart was authored with `OverflowY: auto` alongside `maxHeightUnit: none`:
+
+> ⚠ page Ledger.Dashboard: widget `chartSunburst` (customchart) property
+> `OverflowY` is hidden when `maxHeightUnit` is "none" — the value will be
+> ignored [MDL-WIDGET10]
+
+Correct, and the sort of thing that is invisible otherwise: the app builds, the
+property is simply dropped. This is the widget-property equivalent of the
+dynamic hide-rules Studio Pro applies in its editor, and it is new in PR #52.
