@@ -1,0 +1,13 @@
+-- Finding 67 repro. Core widget only — no marketplace module required.
+-- Data Grid 2 ships with every Mendix project and declares onClick (action).
+create or replace page Ledger.PROBE_67
+(title: 'Probe 67', layout: Atlas_Core.Atlas_Default, folder: 'Probe')
+{
+  pluggablewidget 'com.mendix.widget.web.datagrid.Datagrid' dg67 (
+    datasource: database Ledger.Category,
+    onClick: microflow Ledger.SYNC_RuleCounts
+  ) {
+    column c1 (attribute: Name, caption: 'Category')
+  }
+}
+/

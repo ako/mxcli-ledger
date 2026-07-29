@@ -1834,6 +1834,27 @@ error somewhere — `mx check` caught them, or the .mpr failed to load. This
 produces a working app with a dead control. Nothing anywhere says the property
 was ignored.
 
+**Root cause, traced on request (2026-07-29).** Not a missing action slot —
+CustomChart declares `<property key="onClick" type="action">` and
+`mxcli widget describe` prints it. The loss happens in the **generated def**:
+`customchart.def.json` carries 18 `propertyMappings` against 22 described
+properties, and `onClick` is not among them. Across all 42 defs in this project
+the only operations emitted are `primitive`, `texttemplate`, `attribute`,
+`datasource` and `selection` — there is no `action` operation at all, and
+**24 of 24** widgets that declare an action property and have a def lose it.
+
+Why MDL-WIDGET01 stays quiet: it is reading a different list. In one widget,
+`bogusPropertyThatDoesNotExist: 42` is rejected while `onClick:` is not — so the
+validator's known-key list includes `onClick` (it comes from the widget
+definition, which knows about actions) while the writer works from
+`propertyMappings`, which does not. Anything in that gap validates and writes
+nothing.
+
+**Reproducible without any marketplace module:** `Data grid 2` ships with every
+project and declares `onClick`, `onSelectionChange` and `onConfigurationChange`.
+Evidence pack, including the generated def and a minimal repro, is in
+[`docs/finding-67/`](./docs/finding-67/).
+
 ### 68. Writing a widget attribute does not re-run a datasource over its object
 
 With `onClick` unreachable, the fallback was to derive the panel from
