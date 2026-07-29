@@ -116,6 +116,12 @@ Notes:
 
 ### 5.1 The pivot matrix is the bulk of the work
 
+**Superseded in part (2026-07-29).** The row *assembly* described below was
+replaced by two view entities — see FINDINGS 36-38. OQL supports `UNION ALL`,
+and `datepart()` reads the month straight off `TxDate`, so the figures now come
+from two queries instead of ~936 retrieves. The DataGrid2 rendering below is
+unchanged and still correct.
+
 MDL/Mendix `datagrid` columns are declared statically, so a category × month pivot
 is not native. It is tractable **only because the window is a fixed width** — 12
 months, per §3: build a non-persistent `CashflowRow` with twelve `CashflowCell`

@@ -112,17 +112,27 @@ end;
  * Mirrors are excluded: an internal transfer books on both accounts, and
  * counting both would double the category total.
  *
+ * Filters on a date range rather than a denormalised month key. TxDate is the
+ * only source of truth for when a transaction happened (FINDINGS 38).
+ *
  * @param $Category Category to total
- * @param $MonthKey 'YYYY-MM'
+ * @param $MonthIndex 1-12
  * @returns Sum of transaction amounts
  */
-create or modify microflow Ledger.CALC_Actual ($Category: Ledger.Category, $MonthKey: string)
+create or modify microflow Ledger.CALC_Actual ($Category: Ledger.Category, $MonthIndex: integer)
 returns decimal as $Total
 folder 'Cashflow'
 begin
+  declare $Start datetime = [%CurrentDateTime%];
+  declare $End datetime = [%CurrentDateTime%];
+
+  set $Start = addMonths(dateTime(2026, 1, 1), $MonthIndex - 1);
+  set $End = addMonths($Start, 1);
+
   retrieve $TxList from Ledger.Transaction
     where Ledger.Transaction_Category = $Category
-      and MonthKey = $MonthKey
+      and TxDate >= $Start
+      and TxDate < $End
       and IsMirror = false;
   $Total = sum($TxList.Amount);
   return $Total;

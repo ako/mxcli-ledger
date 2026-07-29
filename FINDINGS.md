@@ -1013,3 +1013,78 @@ on a localized attribute should re-check it rather than assume.
 `MonthKey` the branches need literals `'2026-01' … '2026-12'`; with `datepart`
 the year appears once per union branch and the month is an integer, so moving
 the window to another year is a one-token change.
+
+### 39. Dropping an indexed attribute leaves an orphaned index that crashes `mx check`
+
+Removing `MonthKey` from the entity in `01-domain-model.mdl` and re-applying it
+works — and warns clearly, which is good:
+
+```
+⚠ create or modify entity Ledger.Transaction drops 1 existing member(s) not
+  listed in this statement: MonthKey
+```
+
+But the **index that referenced it survives, emptied**:
+
+```
+$ ./mxcli -p Ledger.mpr -c "DESCRIBE ENTITY Ledger.Transaction"
+  ...
+)
+index ();
+```
+
+and `mx check` then dies rather than reporting a model error:
+
+```
+ERROR: System.AggregateException: One or more errors occurred.
+  (The given key 'a6cddb2e-265e-4fbd-bfa4-9c3c4b30bfd7' was not present in the dictionary.)
+```
+
+That is an unhandled internal exception with no entity name, no error code and
+no line — considerably harder to diagnose than the CE errors everything else
+produces. The dangling GUID is the dropped attribute, still referenced by the
+index.
+
+**No `DROP INDEX` exists.** `mxcli syntax domain-model.entity.alter` lists
+`ADD INDEX` but no drop, so the orphan cannot be removed directly.
+
+**Workaround:** declare a *different* index in the same `create or modify`
+statement — the index list is replaced wholesale. Here `index (TxDate)` was
+wanted anyway, since `CALC_Actual` now filters on a `TxDate` range. `mx check`
+returned to 0 errors immediately.
+
+**Suggested fix:** when `create or modify entity` drops an attribute, drop any
+index that referenced it, and extend the existing warning to say so. Failing
+that, an `ALTER ENTITY … DROP INDEX` would at least make it recoverable.
+
+### 40. The view-entity rebuild, verified identical
+
+`DS_CashflowRows` now reads `VMatrixActual` (19 rows, all three row kinds via
+`UNION ALL`) and `VCategoryBudget` (13 rows, overrides resolved), instead of
+issuing a retrieve per cell.
+
+**Verified by output equivalence, not by inspection.** Against a dropped and
+re-seeded database, all three modes render *identically* to the pre-refactor
+matrix — every figure, every heatmap band, every total:
+
+- Actual: KPIs €45,118 / €29,566 / €15,552 / 40 cells; Income Jan €6,016,
+  Housing €1,858, Groceries €671, row totals €45,118 / €12,249 / €4,484
+- Budget: all five overrides land (Freelance Jul €1,400, Groceries Jul €700,
+  Restaurants Jun €320, Transport Jun €340, Shopping May €480); totals
+  €73,700 / €21,216 / €12,910
+- Aug–Dec still blank in Actual and Variance, populated in Budget
+
+Two details that mattered:
+
+- **Fan-out.** Budgets cannot be joined into `VMatrixActual`: a category with 5
+  overrides and 30 transactions yields 150 rows and every actual is multiplied
+  by 5. They need their own view.
+- **`CE0174`** — "Column 'c.BaselineBudget' cannot both be aggregated and appear
+  in the GROUP BY clause". The override resolution
+  `baseline + Σoverride − Σ(baseline where overridden)` has to be rewritten as
+  `baseline + Σoverride − baseline × Σ(1 where overridden)` so the baseline sits
+  outside the aggregate. Same arithmetic, and it avoids the `max(case … else
+  baseline end)` form that silently loses a *lower* override.
+
+**Still outstanding:** `DS_ReportContext` computes the four KPIs with its own
+category × month loop (~182 retrieves) and has not been moved onto the views.

@@ -178,15 +178,14 @@ create or modify persistent entity Ledger.Merchant (
  * the savings account. Category totals must exclude mirrors or every transfer
  * is counted twice.
  *
- * MonthKey is denormalised from TxDate so the matrix can group without date
- * arithmetic in every aggregate.
+ * There is deliberately no denormalised month key: OQL's datepart() reads the
+ * month straight off TxDate, so a stored copy would only be a second source of
+ * truth to keep in sync (FINDINGS 38).
  */
 @position(380, 100)
 create or modify persistent entity Ledger.Transaction (
   /** Booking date */
   TxDate: date not null error 'Transaction date is required',
-  /** Denormalised from TxDate, format YYYY-MM */
-  MonthKey: string(7) not null,
   /** Counterparty name as it appeared on the statement */
   Merchant: string(200) not null,
   /** Payment reference / description */
@@ -200,7 +199,7 @@ create or modify persistent entity Ledger.Transaction (
   /** True when the category was assigned by a rule rather than by hand */
   CategorisedByRule: boolean default false
 )
-index (MonthKey);
+index (TxDate);
 /
 
 -- MARK: Rules and import

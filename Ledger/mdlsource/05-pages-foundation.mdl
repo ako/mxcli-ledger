@@ -171,7 +171,6 @@ create or replace page Ledger.Transaction_Overview
           column colDate (attribute: TxDate, caption: 'Date')
           column colMerchant (attribute: Merchant, caption: 'Merchant')
           column colDesc (attribute: Description, caption: 'Description')
-          column colMonth (attribute: MonthKey, caption: 'Month')
           column colAmount (attribute: SignedAmount, caption: 'Amount', Alignment: right)
         }
       }
