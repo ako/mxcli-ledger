@@ -74,9 +74,29 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
 .ledger-matrix {
     overflow-x: auto;
 
-    th,
-    td {
+    // DataGrid2 renders ARIA divs, not a real table, so th/td never match here.
+    // Without nowrap every '€ 5,200' breaks after the symbol and the Year column
+    // ellipsises; the columns' Size values are flex weights, not pixels, so the
+    // only way to give fourteen columns room is a min-width plus this scroller.
+    [role='grid'] {
+        min-width: 1440px;
+    }
+
+    // The nowrap has to reach the .mx-text span itself: Atlas sets
+    // white-space: pre-line on it, which beats anything inherited from the cell.
+    [role='columnheader'],
+    [role='gridcell'],
+    [role='gridcell'] .mx-text {
         white-space: nowrap;
+    }
+
+    // Atlas' default cell padding costs ~32px per column. Over fourteen columns
+    // that is most of a month; trimming it is what lets the whole year fit in
+    // one screen-and-a-nudge rather than two.
+    [role='columnheader'],
+    [role='gridcell'] {
+        padding-left: 10px;
+        padding-right: 10px;
     }
 }
 
@@ -101,4 +121,46 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
         margin: 0;
         font-variant-numeric: tabular-nums;
     }
+}
+
+// ===========================================================================
+// Ledger — budgets matrix
+// ===========================================================================
+// Every month cell is a clickable container, so it needs to look operable:
+// a pointer, a hover state, and a visible focus ring for keyboard users.
+//
+// Overridden months carry a left rule rather than a fill. The prototype used
+// the same device, and it reads as "this one was changed" without competing
+// with the cashflow heatmap, which uses fills for a different meaning.
+
+.bg-cell {
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: background-color 90ms ease;
+
+    &:hover {
+        background-color: rgba($cf-under, 0.09);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $cf-under;
+        outline-offset: -2px;
+    }
+}
+
+.bg-override {
+    box-shadow: inset 2px 0 0 $cf-over;
+    background-color: rgba($cf-over, 0.06);
+    font-weight: 600;
+}
+
+.bg-label {
+    padding-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bg-cell { transition: none; }
 }

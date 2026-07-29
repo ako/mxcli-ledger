@@ -1088,3 +1088,125 @@ Two details that mattered:
 
 **Still outstanding:** `DS_ReportContext` computes the four KPIs with its own
 category × month loop (~182 retrieves) and has not been moved onto the views.
+
+## Phase 4 — budgets (2026-07-29)
+
+### 41. View entities cannot take part in associations — and `mxcli check` says nothing
+
+The natural design for the editable Budgets grid was to reuse `VCategoryBudget`
+and hang an association off it back to `Category`, so a saved cell knew what to
+write against. Mendix 11.12.1 refuses:
+
+```
+[error] [CE6771] "It is not possible to create associations to/from View Entities."
+```
+
+Tested **both** directions — `from Ledger.VCategoryBudget to Ledger.Category`
+and `from Ledger.Category to Ledger.VCategoryBudget` — and both are rejected.
+
+**The check gap is the finding.** `mxcli check … --references` passed both, and
+`mxcli exec` created the association without a murmur; only `mx check` objected.
+An association whose end is a view entity is statically impossible, so this is
+exactly the class of error `check` should be catching.
+
+**Consequence for the app.** The Budgets grid is built on a non-persistent
+`BudgetRow` carrying a real `Category` reference, not on the views. Two small
+retrieves, and the edit has something to write against.
+
+### 42. Retrieving by id from a microflow is not expressible in XPath
+
+Given a stored id, the obvious `retrieve … where [id = $Var]` fails:
+
+```
+[error] [CE0161] ... invalid XPath constraint
+```
+
+— with `$Var` typed as string *and* as Long. `NanoflowCommons` ships
+`GetObjectByGuid`/`FindObjectWithGUID` precisely because this is not native.
+So the "store the persistent id as a string on the view entity and retrieve by
+it" pattern needs a Java action or that marketplace module; it is not something
+a microflow can do on its own.
+
+### 43. XPath cannot compare an attribute against an association path
+
+```
+retrieve $C from Ledger.BudgetOverride where Ledger.BudgetOverride_Category = $Edit/Ledger.BudgetEdit_Category
+```
+
+is rejected: a constraint can compare against an *object variable*, not against
+a path walked from one. And a microflow cannot declare an entity variable to
+park the path in (MDL043/CE0053). The workaround is to constrain on what XPath
+*can* express — here `MonthKey = $Edit/MonthKey`, which is an attribute — and
+match the association in memory over the handful of rows that come back.
+
+### 44. A microflow datasource is not invalidated by committing what it reads
+
+`DS_BudgetRows` reads `Category` and `BudgetOverride`. Saving an edit committed
+a new `BudgetOverride` — verified in the database, 5 rows to 6 — and the grid
+went on showing the old amount. Committing an entity a datasource *reads* does
+not mark that datasource stale.
+
+Two ways out, and the second is much better:
+
+1. `close page; show page Ledger.Budgets_Overview;` — re-runs the datasource by
+   re-entering the page. Works, but it is a full navigation for one changed cell
+   and it rebuilds all thirteen rows.
+2. Refresh the **row object** the grid is already showing. The popup carries an
+   association back to its `BudgetRow`, so the save rebuilds that one row and
+   ends with `change $Row (…) refresh;`. The client re-renders that row in
+   place, the popup just closes, and nothing else is touched.
+
+Verified end to end: Rent March € 1,900 → € 2,100, the override marker appears,
+the row total moves € 18,180 → € 18,380, the URL stays on `/p/budgets`, and the
+popup is gone. Reset, save-equal-to-baseline (which deletes the override rather
+than storing a redundant one), and cancel all behave, and the database ends the
+run back at the seeded five overrides.
+
+**One wrinkle worth writing down.** `Row = $Edit/Ledger.BudgetEdit_Row` as a
+call argument is accepted by `mxcli check` and produces `[error] [CE0117]
+"Error(s) in expression."` in `mx check`. An association path is not a value a
+call argument can take; it has to be materialised first with an association
+retrieve, `retrieve $Row from $Edit/Ledger.BudgetEdit_Row;`. Another check gap.
+
+### 45. Three separate ways `ALTER PAGE` could not rewire a button
+
+The original file order had the save microflows defined *after* the grid page
+(they navigated to it), so the popup's buttons had to be bound afterwards. All
+three attempts failed, each differently:
+
+1. `set Action = microflow Ledger.ACT_SaveBudget(Edit: $currentObject) on btnSave`
+   — parse error. `SET` accepts a fixed property list (caption, class, visible,
+   …) and an action is not on it.
+2. `replace footEdit with { footer footEdit { … } }` — `failed to build
+   replacement widgets: duplicate widget name 'btnSave'`. REPLACE builds the new
+   subtree before removing the old one, so a replacement that reuses the widget
+   names it is replacing always collides. (It then wrote the change anyway —
+   the error was reported after the model had been mutated.)
+3. `drop widget footEdit` — `widget "footEdit" not found`. A footer's
+   author-given name is discarded on serialization; `DESCRIBE` prints back
+   `footer footer1`, and `drop widget footer1` *also* reports not found. The
+   footer is not addressable by any name at all. Same family as finding 24
+   (`navigationlist` items losing their names), but worse: DESCRIBE emits a name
+   that is round-trippable in appearance only.
+
+**Resolution:** stop altering. The save and reset microflows no longer reference
+any page, so they now live in `13-budgets-actions.mdl` ahead of the popup, and
+the popup binds its buttons directly at creation. The dependency ordering that
+made this look necessary — page needs microflow, microflow needs page — was
+only ever between *different* microflows.
+
+### 46. DataGrid2's ARIA DOM defeats table CSS, and `Size` is not pixels
+
+Two related surprises when styling the matrix:
+
+- DataGrid2 renders `role="grid"` / `role="row"` / `role="gridcell"` **divs**,
+  not `table`/`tr`/`td`. `.ledger-matrix th, td { white-space: nowrap }` matched
+  nothing, so every `€ 5,200` broke after the euro sign and the Year column
+  ellipsised. Selectors must target the roles.
+- `ColumnWidth: manual, Size: 132` is a **flex weight**, not a pixel width.
+  Fourteen columns at 132 just divide the available width evenly. Giving the
+  matrix room needs `[role='grid'] { min-width: 1320px }` on top of the
+  `overflow-x: auto` scroller.
+
+The Playwright tests were affected by the same thing: rows are
+`[role="row"]`, not `tr`.

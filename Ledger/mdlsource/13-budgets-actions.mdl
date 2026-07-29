@@ -1,0 +1,239 @@
+-- ============================================================================
+-- 13 - Budgets: cell formatting, row building, and saving
+-- ============================================================================
+-- Everything on the Budgets slice that does not touch a page. Keeping it page-
+-- free is what lets the popup in 14 bind its buttons straight to the save and
+-- reset microflows: a page can reference a microflow, and ACT_EditBudgetCell in
+-- 15 references the page, so the ordering only works in this direction.
+--
+-- Wiring the buttons afterwards with ALTER PAGE is not an option — an action is
+-- not among the properties SET accepts, and the footer that holds the buttons
+-- cannot be addressed at all: its author-given name is dropped on serialization
+-- and the positional name DESCRIBE prints back is not a name DROP can find.
+-- ============================================================================
+
+/**
+ * Month name for a popup caption.
+ *
+ * @param $MonthIndex 1-12
+ * @returns e.g. 'July'
+ */
+create or modify microflow Ledger.FMT_MonthName ($MonthIndex: integer)
+returns string as $Name
+folder 'Budgets'
+begin
+  declare $Name string = '';
+  if $MonthIndex = 1 then set $Name = 'January'; end if;
+  if $MonthIndex = 2 then set $Name = 'February'; end if;
+  if $MonthIndex = 3 then set $Name = 'March'; end if;
+  if $MonthIndex = 4 then set $Name = 'April'; end if;
+  if $MonthIndex = 5 then set $Name = 'May'; end if;
+  if $MonthIndex = 6 then set $Name = 'June'; end if;
+  if $MonthIndex = 7 then set $Name = 'July'; end if;
+  if $MonthIndex = 8 then set $Name = 'August'; end if;
+  if $MonthIndex = 9 then set $Name = 'September'; end if;
+  if $MonthIndex = 10 then set $Name = 'October'; end if;
+  if $MonthIndex = 11 then set $Name = 'November'; end if;
+  if $MonthIndex = 12 then set $Name = 'December'; end if;
+  return $Name;
+end;
+/
+
+/**
+ * Writes a computed budget cell into the right month attribute.
+ *
+ * The write-side twin of GET_ViewBudget; Mendix cannot address an attribute by
+ * name, so twelve branches is the price of a fixed-width matrix.
+ *
+ * @param $Row Row to write into
+ * @param $MonthIndex 1-12
+ * @param $Text Formatted amount
+ * @param $IsOverride True when a BudgetOverride replaced the baseline
+ * @returns true
+ */
+create or modify microflow Ledger.SET_BudgetRowMonth (
+  $Row: Ledger.BudgetRow,
+  $MonthIndex: integer,
+  $Text: string,
+  $IsOverride: boolean
+)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+  if $MonthIndex = 1 then change $Row (M01Text = $Text, M01IsOverride = $IsOverride); end if;
+  if $MonthIndex = 2 then change $Row (M02Text = $Text, M02IsOverride = $IsOverride); end if;
+  if $MonthIndex = 3 then change $Row (M03Text = $Text, M03IsOverride = $IsOverride); end if;
+  if $MonthIndex = 4 then change $Row (M04Text = $Text, M04IsOverride = $IsOverride); end if;
+  if $MonthIndex = 5 then change $Row (M05Text = $Text, M05IsOverride = $IsOverride); end if;
+  if $MonthIndex = 6 then change $Row (M06Text = $Text, M06IsOverride = $IsOverride); end if;
+  if $MonthIndex = 7 then change $Row (M07Text = $Text, M07IsOverride = $IsOverride); end if;
+  if $MonthIndex = 8 then change $Row (M08Text = $Text, M08IsOverride = $IsOverride); end if;
+  if $MonthIndex = 9 then change $Row (M09Text = $Text, M09IsOverride = $IsOverride); end if;
+  if $MonthIndex = 10 then change $Row (M10Text = $Text, M10IsOverride = $IsOverride); end if;
+  if $MonthIndex = 11 then change $Row (M11Text = $Text, M11IsOverride = $IsOverride); end if;
+  if $MonthIndex = 12 then change $Row (M12Text = $Text, M12IsOverride = $IsOverride); end if;
+  return $Done;
+end;
+/
+
+/**
+ * Resolves and formats one row's twelve monthly budgets.
+ *
+ * Baseline unless a BudgetOverride replaces it. Called once per row when the
+ * grid is built, and again for a single row after an edit.
+ *
+ * @param $Row The row to fill; its category association must already be set
+ * @param $Refresh True to refresh the row in the client, which is what makes an
+ *                 edited cell update in place without reloading the page. False
+ *                 while the datasource is building — refreshing a row from
+ *                 inside the datasource that produced it invites a re-entry.
+ * @returns true
+ */
+create or modify microflow Ledger.BUILD_BudgetRow (
+  $Row: Ledger.BudgetRow,
+  $Refresh: boolean
+)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+  declare $M integer = 1;
+  declare $MonthKey string = '';
+  declare $Amount decimal = 0;
+  declare $Baseline decimal = 0;
+  declare $IsOverride boolean = false;
+  declare $RowTotal decimal = 0;
+  declare $Text string = '';
+  declare $TotalOut string = '';
+  declare $BaseOut string = '';
+
+  set $Baseline = $Row/Ledger.BudgetRow_Category/BaselineBudget;
+
+  retrieve $Overrides from Ledger.BudgetOverride;
+
+  while $M <= 12
+  begin
+    $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $M);
+    set $MonthKey = $MK;
+
+    @annotation 'Baseline unless an override says otherwise'
+    set $Amount = $Baseline;
+    set $IsOverride = false;
+    loop $O in $Overrides
+    begin
+      if $O/MonthKey = $MonthKey and $O/Ledger.BudgetOverride_Category = $Row/Ledger.BudgetRow_Category then
+        set $Amount = $O/Amount;
+        set $IsOverride = true;
+      end if;
+    end loop;
+
+    $CellText = call microflow Ledger.FMT_Euro (Amount = $Amount);
+    set $Text = $CellText;
+    $Set = call microflow Ledger.SET_BudgetRowMonth (
+      Row = $Row, MonthIndex = $M, Text = $Text, IsOverride = $IsOverride);
+
+    set $RowTotal = $RowTotal + $Amount;
+    set $M = $M + 1;
+  end while;
+
+  $TotalText = call microflow Ledger.FMT_Euro (Amount = $RowTotal);
+  set $TotalOut = $TotalText;
+  $BaselineText = call microflow Ledger.FMT_Euro (Amount = $Baseline);
+  set $BaseOut = $BaselineText;
+
+  if $Refresh then
+    change $Row (TotalText = $TotalOut, BaselineText = $BaseOut) refresh;
+  else
+    change $Row (TotalText = $TotalOut, BaselineText = $BaseOut);
+  end if;
+
+  return $Done;
+end;
+/
+
+/**
+ * Saves an edited budget cell, then refreshes its row.
+ *
+ * Creates a BudgetOverride when none exists, updates it when one does. Setting
+ * the amount back to the category baseline removes the override instead of
+ * storing a redundant one — an override equal to the baseline is noise, and it
+ * would mark the cell as a deviation when nothing deviated.
+ *
+ * The existing override is found by retrieving the month's overrides and
+ * matching the category in memory: an XPath constraint cannot compare against
+ * an association path, only against an object variable, and a microflow cannot
+ * declare one. The month's list is a handful of rows.
+ *
+ * @param $Edit The popup object
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_SaveBudget ($Edit: Ledger.BudgetEdit)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+  declare $Found boolean = false;
+  declare $BackToBaseline boolean = false;
+
+  set $BackToBaseline = $Edit/Amount = $Edit/BaselineBudget;
+
+  retrieve $Candidates from Ledger.BudgetOverride where MonthKey = $Edit/MonthKey;
+  loop $O in $Candidates
+  begin
+    if $O/Ledger.BudgetOverride_Category = $Edit/Ledger.BudgetEdit_Category then
+      set $Found = true;
+      if $BackToBaseline then
+        delete $O;
+      else
+        change $O (Amount = $Edit/Amount);
+        commit $O;
+      end if;
+    end if;
+  end loop;
+
+  if not($Found) and not($BackToBaseline) then
+    $New = create Ledger.BudgetOverride (
+      MonthKey = $Edit/MonthKey,
+      Amount = $Edit/Amount);
+    change $New (Ledger.BudgetOverride_Category = $Edit/Ledger.BudgetEdit_Category);
+    commit $New;
+  end if;
+
+  @annotation 'Rebuild just this row and push it to the client'
+  retrieve $Row from $Edit/Ledger.BudgetEdit_Row;
+  $Rebuilt = call microflow Ledger.BUILD_BudgetRow (Row = $Row, Refresh = true);
+
+  close page;
+  return $Done;
+end;
+/
+
+/**
+ * Drops the override for this cell, returning it to the category baseline,
+ * then refreshes its row.
+ *
+ * @param $Edit The popup object
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ResetBudget ($Edit: Ledger.BudgetEdit)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+
+  retrieve $Candidates from Ledger.BudgetOverride where MonthKey = $Edit/MonthKey;
+  loop $O in $Candidates
+  begin
+    if $O/Ledger.BudgetOverride_Category = $Edit/Ledger.BudgetEdit_Category then
+      delete $O;
+    end if;
+  end loop;
+
+  retrieve $Row from $Edit/Ledger.BudgetEdit_Row;
+  $Rebuilt = call microflow Ledger.BUILD_BudgetRow (Row = $Row, Refresh = true);
+
+  close page;
+  return $Done;
+end;
+/

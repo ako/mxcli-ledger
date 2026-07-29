@@ -1,0 +1,95 @@
+-- ============================================================================
+-- 15 - Budgets: builder and cell opener
+-- ============================================================================
+-- Two small retrieves and in-memory work. The cashflow views are deliberately
+-- not used: budgets need no transaction aggregation, and — decisively — editing
+-- a cell has to write against a real Category, which a view entity cannot hand
+-- back. Mendix 11.12.1 rejects an association to or from a view entity outright
+-- (CE6771, both directions), so the row carries the reference itself.
+--
+-- The per-row build and the save live in 13: they must be defined before the
+-- popup page in 14, which binds its buttons to them, while the two microflows
+-- here reference that page and so have to come after it.
+-- ============================================================================
+
+/**
+ * Builds the editable budget matrix: one row per category, twelve resolved
+ * monthly budgets, with the overridden months flagged.
+ *
+ * @returns Rows in display order
+ */
+create or modify microflow Ledger.DS_BudgetRows ()
+returns list of Ledger.BudgetRow as $Rows
+folder 'Budgets'
+begin
+  $Rows = create list of Ledger.BudgetRow;
+
+  retrieve $Cats from Ledger.Category sort by SortOrder asc;
+
+  loop $C in $Cats
+  begin
+    $Row = create Ledger.BudgetRow (
+      Label = $C/Name,
+      SortOrder = $C/SortOrder);
+    change $Row (Ledger.BudgetRow_Category = $C);
+
+    $Built = call microflow Ledger.BUILD_BudgetRow (Row = $Row, Refresh = false);
+
+    add $Row to $Rows;
+  end loop;
+
+  return $Rows;
+end;
+/
+
+/**
+ * Prepares and opens the edit popup for one budget cell.
+ *
+ * @param $Row The category row that was clicked
+ * @param $MonthIndex 1-12
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_EditBudgetCell (
+  $Row: Ledger.BudgetRow,
+  $MonthIndex: integer
+)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+  declare $MonthKey string = '';
+  declare $Amount decimal = 0;
+  declare $IsOverride boolean = false;
+
+  $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $MonthIndex);
+  set $MonthKey = $MK;
+  $MonthName = call microflow Ledger.FMT_MonthName (MonthIndex = $MonthIndex);
+
+  set $Amount = $Row/Ledger.BudgetRow_Category/BaselineBudget;
+
+  retrieve $Candidates from Ledger.BudgetOverride where MonthKey = $MonthKey;
+  loop $O in $Candidates
+  begin
+    if $O/Ledger.BudgetOverride_Category = $Row/Ledger.BudgetRow_Category then
+      set $Amount = $O/Amount;
+      set $IsOverride = true;
+    end if;
+  end loop;
+
+  $Edit = create Ledger.BudgetEdit (
+    MonthIndex = $MonthIndex,
+    MonthKey = $MonthKey,
+    Caption = $Row/Label + ' · ' + $MonthName + ' 2026',
+    Amount = $Amount,
+    BaselineBudget = $Row/Ledger.BudgetRow_Category/BaselineBudget,
+    IsOverridden = $IsOverride);
+
+  @annotation 'The row travels with the edit so the save can refresh it'
+  change $Edit (
+    Ledger.BudgetEdit_Category = $Row/Ledger.BudgetRow_Category,
+    Ledger.BudgetEdit_Row = $Row);
+
+  show page Ledger.BudgetCell_Edit ($Edit = $Edit);
+  return $Done;
+end;
+/

@@ -185,10 +185,26 @@ hardcoded to July, so the app stays correct as 2026 progresses.
 
 ### 5.4 Inline cell editing
 
-The Budgets screen commits on Enter, cancels on Escape, and commits on blur.
-Reproducing that exactly in Mendix is fiddly; a per-cell edit popup is far simpler
-but a different interaction. Either way, `commitBudget()` parses Dutch number
-format (`1.480,00` → strip `.`, `,` → `.`), which must be reproduced.
+**Settled (2026-07-29): a per-cell popup.**
+
+The prototype commits on Enter, cancels on Escape, and commits on blur.
+Reproducing that exactly in Mendix is fiddly and buys little; the popup is
+unambiguous about what is being edited and has room to show the category
+baseline and offer a reset, which the inline version could not.
+
+The Dutch number parsing in `commitBudget()` (`1.480,00` → strip `.`, `,` → `.`)
+is not reimplemented: the amount is a Decimal bound to a normal input, so Mendix
+parses it per the user's locale. That is the same job, done by the platform.
+
+Two behaviours worth keeping in mind:
+
+- Saving an amount equal to the category baseline **removes** the override
+  rather than storing a redundant one. An override equal to the baseline would
+  mark the cell as a deviation when nothing deviated.
+- The grid updates in place. A microflow datasource is not invalidated by
+  committing what it reads, so the popup carries a reference back to its row and
+  the save rebuilds that one row and refreshes it in the client — see FINDINGS
+  44 for why the obvious alternative (re-navigating to the page) was rejected.
 
 ### 5.5 Real CSV import
 

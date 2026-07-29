@@ -1,0 +1,100 @@
+-- ============================================================================
+-- 12 - Budgets screen scaffolding
+-- ============================================================================
+-- The Budgets grid deliberately does NOT read VMatrixActual/VCategoryBudget.
+--
+-- Two reasons. Budgets need no transaction aggregation — they are Category plus
+-- BudgetOverride, which is two small retrieves — so the views buy nothing here.
+-- More importantly, editing a cell has to write a BudgetOverride against a real
+-- Category, and a view entity has no association to hand back. A non-persistent
+-- row with a proper reference does.
+-- ============================================================================
+
+/**
+ * One editable row of the Budgets matrix: a category and its twelve monthly
+ * budgets, already resolved and formatted.
+ *
+ * MnnIsOverride marks the months where a BudgetOverride replaced the baseline,
+ * so the grid can show where the household deviated — the prototype drew a left
+ * border on those cells.
+ */
+create or modify non-persistent entity Ledger.BudgetRow (
+  /** Category name */
+  Label: string(100),
+  /** Display order, group then category */
+  SortOrder: integer default 0,
+  /** Baseline, for the popup to offer as a reset */
+  BaselineText: string(24),
+  /** Sum across the twelve months */
+  TotalText: string(24),
+
+  M01Text: string(24), M01IsOverride: boolean default false,
+  M02Text: string(24), M02IsOverride: boolean default false,
+  M03Text: string(24), M03IsOverride: boolean default false,
+  M04Text: string(24), M04IsOverride: boolean default false,
+  M05Text: string(24), M05IsOverride: boolean default false,
+  M06Text: string(24), M06IsOverride: boolean default false,
+  M07Text: string(24), M07IsOverride: boolean default false,
+  M08Text: string(24), M08IsOverride: boolean default false,
+  M09Text: string(24), M09IsOverride: boolean default false,
+  M10Text: string(24), M10IsOverride: boolean default false,
+  M11Text: string(24), M11IsOverride: boolean default false,
+  M12Text: string(24), M12IsOverride: boolean default false
+);
+/
+
+/**
+ * The object behind the edit popup for a single budget cell.
+ *
+ * Amount is a Decimal bound to a normal input, so Mendix parses it per the
+ * user's locale. The prototype hand-parsed '1.480,00'; there is no reason to
+ * reimplement that here.
+ */
+create or modify non-persistent entity Ledger.BudgetEdit (
+  /** 1-12 */
+  MonthIndex: integer default 1,
+  /** 'YYYY-MM', the key a BudgetOverride is stored under */
+  MonthKey: string(7),
+  /** Shown in the popup title, e.g. 'Groceries · July 2026' */
+  Caption: string(160),
+  /** The amount being edited */
+  Amount: decimal default 0,
+  /** The category baseline, offered as a reset */
+  BaselineBudget: decimal default 0,
+  /** True when a BudgetOverride already exists for this cell */
+  IsOverridden: boolean default false
+);
+/
+
+/** The row's category, so an edit can write a BudgetOverride against it. */
+create or modify association Ledger.BudgetRow_Category
+  from Ledger.BudgetRow
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/
+
+/**
+ * The grid row the edit came from.
+ *
+ * Carrying it lets the save rebuild that one row and refresh it in the client,
+ * so the grid updates in place. Without it the only way to get the new figure
+ * on screen is to re-run the whole datasource by re-navigating to the page.
+ */
+create or modify association Ledger.BudgetEdit_Row
+  from Ledger.BudgetEdit
+  to Ledger.BudgetRow
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/
+
+/** The category whose budget is being edited. */
+create or modify association Ledger.BudgetEdit_Category
+  from Ledger.BudgetEdit
+  to Ledger.Category
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/

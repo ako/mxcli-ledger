@@ -29624,9 +29624,18 @@ Do not change this file because it is core styling. Customizing core files will 
 .ledger-matrix {
   overflow-x: auto;
 }
-.ledger-matrix th,
-.ledger-matrix td {
+.ledger-matrix [role=grid] {
+  min-width: 1440px;
+}
+.ledger-matrix [role=columnheader],
+.ledger-matrix [role=gridcell],
+.ledger-matrix [role=gridcell] .mx-text {
   white-space: nowrap;
+}
+.ledger-matrix [role=columnheader],
+.ledger-matrix [role=gridcell] {
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .ledger-modes {
@@ -29650,6 +29659,37 @@ Do not change this file because it is core styling. Customizing core files will 
   font-variant-numeric: tabular-nums;
 }
 
+.bg-cell {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 2px 4px;
+  border-radius: 2px;
+  transition: background-color 90ms ease;
+}
+.bg-cell:hover {
+  background-color: rgba(44, 110, 74, 0.09);
+}
+.bg-cell:focus-visible {
+  outline: 2px solid rgb(44, 110, 74);
+  outline-offset: -2px;
+}
+
+.bg-override {
+  box-shadow: inset 2px 0 0 rgb(168, 50, 30);
+  background-color: rgba(168, 50, 30, 0.06);
+  font-weight: 600;
+}
+
+.bg-label {
+  padding-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-cell {
+    transition: none;
+  }
+}
 :root {
   /* Brand Colors */
   --brand-primary: #264ae5;
