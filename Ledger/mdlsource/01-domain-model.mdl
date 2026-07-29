@@ -195,9 +195,7 @@ create or modify persistent entity Ledger.Transaction (
   /** Signed amount: negative for spending, positive for income */
   SignedAmount: decimal default 0,
   /** True for the receiving half of an internal transfer — excluded from totals */
-  IsMirror: boolean default false,
-  /** True when the category was assigned by a rule rather than by hand */
-  CategorisedByRule: boolean default false
+  IsMirror: boolean default false
 )
 index (TxDate);
 /
@@ -220,8 +218,15 @@ create or modify persistent entity Ledger.CategoryRule (
   RuleField: enumeration(Ledger.RuleField) not null,
   /** How to compare */
   RuleOperator: enumeration(Ledger.RuleOperator) not null,
-  /** Value to compare against; comma-separated for IsOneOf */
-  MatchValue: string(200) not null,
+  /**
+   * Value to compare against; comma-separated for IsOneOf.
+   *
+   * Deliberately not `not null`: a rule is created empty and filled in on the
+   * edit page, and a required attribute with no error message pops a blank
+   * 'MatchValue has an issue:' dialog before the page can even open.
+   * ACT_SaveRule refuses an empty value with a message that says something.
+   */
+  MatchValue: string(200),
   /** Running count of transactions this rule has categorised */
   MatchCount: integer default 0
 );

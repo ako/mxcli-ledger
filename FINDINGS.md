@@ -1350,3 +1350,176 @@ The cost is width: the matrix gives up a quarter of the page, so 9 of 12 months
 are visible at 1600px instead of all 12 (934px of a 1442px grid). The prototype
 had the same shape with 6 months. The legend under the matrix now says so — it
 is also from the prototype, and it explains the heatmap while it is there.
+
+## Phase 6 — rules engine (2026-07-29)
+
+### 52. `break` inside a loop writes a dangling reference
+
+`ACT_ApplyRules` is a nested loop with `break` on first match — the whole point
+of a first-match-wins engine. `mxcli check --references` passed; `mx check` did
+not load the project at all:
+
+```
+ERROR: System.AggregateException: One or more errors occurred.
+ (The given key '0299365f-d79b-4487-bd0d-4930ee045b47' was not present in the dictionary.)
+   at Mendix.Modeler.Storage.Operations.StreamingBsonUnitReader.ResolvePostponedProperties()
+```
+
+Same failure mode as finding 39 (the orphaned index): not an error message about
+the model, but the loader falling over on a reference to something that was
+never written. Locating it needed a byte scan of `mprcontents/` for the GUID —
+it appeared in exactly one unit, `CALC_RulePreview`, one of the two microflows
+using `break`.
+
+**Workaround:** a guard variable.
+
+```
+set $Caught = false;
+loop $R in $Rules
+begin
+  if not($Caught) then
+    …
+    set $Caught = true;
+  end if;
+end loop;
+```
+
+Uglier and it keeps iterating, but the lists here are 8 rules × 12 transactions.
+Both `break` uses removed; `mx check` loaded the project immediately.
+
+**Suggested fix:** `break` (and presumably `continue`, untested) needs to emit
+the sequence flow to the loop's exit. Until then it should be rejected by
+`mxcli check` rather than silently producing an unloadable .mpr.
+
+### 53. `contains()` is serialized as a LIST operation, so string contains is unavailable
+
+The rules engine needs a substring test. `contains($Haystack, $Needle)` is a
+Mendix string function, and it is what any Mendix developer would write.
+
+`mxcli check --references` refused it first:
+
+```
+duplicate variable name '$Match' — list operation output variable is already
+declared in this scope (CE0111)
+```
+
+Working around *that* — assigning to an undeclared name — hit a parse error,
+because the form expects a variable as the first argument:
+
+```
+$InList = contains(',' + $Needle + ',', ',' + $Hay + ',');
+                   ^ mismatched input '','' expecting VARIABLE
+```
+
+Hoisting both sides into variables got it past mxcli, and then `mx check`
+explained what had really happened:
+
+```
+[error] [CE0023] "Selected variable 'Needle' must be of type Object or List." at List operation activity 'Contains'
+[error] [CE0097] "The selected 'Hay' variable must be of type List."          at List operation activity 'Contains'
+```
+
+mxcli parses `contains(a, b)` as the **list** operation `Contains` — the one
+that asks whether a list holds an object — not as the string function. There is
+no spelling of a string `contains()` that survives.
+
+**Workaround:** `find($Hay, $Needle) >= 0`, which serializes as an ordinary
+expression and means the same thing.
+
+### 54. An empty column caption reports as a changed widget definition
+
+A grid column of row buttons wants no header. `caption: ''` produced:
+
+```
+[error] [CE0463] "The definition of this widget has changed. Update this widget
+        by right-clicking it and selecting 'Update widget'…" at Data grid 2 'dgRules'
+```
+
+which points at the widget version, not at the caption, and suggests a fix that
+has nothing to do with the cause. Found by bisecting the page: dropping the
+column cleared it, dropping the nested dataview in a *different* column did not,
+and setting `caption: 'Actions'` cleared it with the column intact.
+
+### 55. A required attribute with no error message blocks the page that would fix it
+
+`MatchValue: string(200) not null` on CategoryRule. A new rule is created empty
+and filled in on the edit page — but clicking 'New rule' popped a modal reading
+
+```
+MatchValue has an issue:
+```
+
+with nothing after the colon, and the edit page never opened. The required
+validation has no message because `not null` was written without one, so the
+dialog has nothing to say, and it fires before the user can reach the field it
+is complaining about.
+
+Dropped the `not null` and moved the check into the save microflow, where it can
+say something useful ("Give the rule something to match on."). mxcli's own lint
+rule MPR004 covers exactly this — an empty validation message, CE0091 — so it
+would have been caught by `mxcli lint` had that been run before the UI.
+
+### 56. Form fields need a layoutgrid, and nothing says so
+
+The rule editor's labels rendered truncated — 'Operator' as 'Opera…', 'Value' as
+'Val…' — with the fields dropped straight into the dataview:
+
+```
+dataview dvRule (datasource: $Rule) {
+  combobox cbRuleField (label: 'Field', attribute: RuleField)
+  combobox cbRuleOperator (label: 'Operator', attribute: RuleOperator)
+  ...
+}
+```
+
+The cause is the missing layoutgrid: the label column has no grid to size
+against. Wrapping the fields in `layoutgrid / row / column` renders them
+properly. `FormOrientation: Vertical` also hides the symptom, by removing the
+label column entirely — which is why it looked like a fix and was not.
+
+A half measure is still wrong: with two fields sharing a row at
+`desktopwidth: 6`, the label takes three twelfths of *that column*, and
+'Operator' truncates again. In a popup this narrow, one field per full-width
+row is what works.
+
+Neither `mxcli check` nor `mx check` says anything. The page is valid; it just
+looks broken once it runs, which is the worst kind of defect to find in a
+headless workflow.
+
+**Suggested fix:** an advisory lint rule — input widgets with labels directly
+under a dataview, with no layoutgrid between, should be flagged. It is a
+mechanical check over the widget tree and would have caught this before the
+first screenshot.
+
+### 57. A reorder commits but the grid keeps the old order
+
+`ACT_MoveRuleUp` swaps SortOrder between two rules and commits both. The engine
+picked up the new order immediately — a re-run categorised the transaction
+through the *promoted* rule — while the grid went on displaying the old numbers
+against the new counts, which reads as the engine ignoring the order.
+
+`commit $Rule refresh;` on both sides fixes it. Worth noting because the grid is
+a **database** datasource, not the microflow datasource of finding 44: a plain
+commit refreshes a row's *values*, but re-sorting the list needs the explicit
+refresh.
+
+The trap is that the wrong-looking screen is the correct engine. Believing the
+grid here would have meant "fixing" a rules engine that was already right.
+
+### 58. What the engine actually does
+
+Semantics, all verified against the running app:
+
+- Rules run in `SortOrder`, first match wins.
+- Only transactions with **no** category are considered, so a rule never
+  overwrites a hand-assigned category.
+- Matching is case-insensitive and trimmed. `is one of` wraps both sides in
+  commas so `Netflix` matches `Spotify,Netflix,iCloud` and `Net` does not.
+- `MatchCount` is **derived**, recomputed from `Transaction_CategoryRule` after
+  every run rather than incremented. An in-place counter drifts the first time
+  anything is reset, re-run, or deleted.
+- The `CategorisedByRule` boolean is gone. It recorded *that* a rule fired, not
+  which one, so two rules pointing at Groceries could never be told apart. The
+  association carries the same fact and more. This also removed a lie in the
+  seed, which set `CategorisedByRule = true` on transactions the generator had
+  categorised.

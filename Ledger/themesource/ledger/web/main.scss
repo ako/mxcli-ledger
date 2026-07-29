@@ -304,3 +304,57 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
+
+// ── Rules panel ─────────────────────────────────────────────────────────────
+// The bar above the rule list: what is waiting, what running the rules would
+// do, and the three controls. Laid out as a single row so the promise and the
+// button that keeps it sit together.
+
+.ledger-rules-panel {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+
+.ledger-rules-figures {
+    flex: 1;
+    min-width: 0;
+
+    h5 {
+        margin: 0;
+    }
+}
+
+.ledger-rules-preview {
+    display: block;
+    font-size: 12.5px;
+    opacity: 0.7;
+    margin-top: 3px;
+}
+
+// Empty until something has been run, so it must not reserve space when blank.
+.ledger-rules-status {
+    display: block;
+    font-size: 12.5px;
+    margin-top: 3px;
+    font-weight: 600;
+}
+
+.ledger-rules-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+// Row controls are secondary to the data, so they get the smaller type.
+.ledger-row-actions {
+    display: flex;
+    gap: 4px;
+
+    .btn {
+        padding: 2px 8px;
+        font-size: 12px;
+    }
+}

@@ -248,12 +248,31 @@ date + amount + account, then rule evaluation over the new rows.
 
 ### 5.8 Real rules engine
 
-Needs a proper operator model: `contains`, `starts with`, `is one of` over merchant
-or description, plus an amount comparison. Rule 8 in the prototype must be
-redesigned — a rule with both an amount and a merchant condition implies either
-multiple conditions per rule or a compound-condition entity. Simplest workable
-model: ordered rules, first match wins, one field/operator/value per rule, and
-split rule 8 into a dedicated savings-transfer rule.
+**Built (2026-07-29).**
+
+Ordered rules, first match wins, one field/operator/value per rule. Rule 8 in the
+prototype (`{field:'amount', op:'= −700,00', value:'and merchant Spaarrekening'}`)
+was a display sentence rather than evaluable data; it is replaced by a
+merchant-contains rule for the savings transfer.
+
+Semantics settled during the build:
+
+- **Only uncategorised transactions are considered.** A rule never overwrites a
+  category assigned by hand — that would undo the review work the rules exist to
+  reduce.
+- **`MatchCount` is derived, not incremented.** Every run recomputes it from a
+  new `Transaction_CategoryRule` association. An in-place counter drifts the
+  first time anything is reset, re-run, or deleted.
+- **`CategorisedByRule` is gone.** It recorded *that* a rule fired, not which
+  one, so two rules assigning Groceries could never be told apart. It also
+  carried a lie: the seed set it `true` on transactions the generator had
+  categorised, not the rules.
+- **The screen states what a run would do before it does it**, using the same
+  evaluation the run uses. The prototype's "N matched" counter looked like the
+  engine worked when it never ran; the honest number starts at zero.
+
+The twelve seeded review transactions still match no rule, deliberately — that
+is the review queue. Adding a rule and running it is the demonstration.
 
 ## 6. Suggested phasing
 

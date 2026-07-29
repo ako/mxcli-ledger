@@ -1,0 +1,485 @@
+-- ============================================================================
+-- 17 - Rules engine
+-- ============================================================================
+-- The prototype's rule list never ran. RULES was a static display array, the
+-- categories came from the generator, and the "N matched" counter counted
+-- transactions whose *seeded* category equalled the rule's — it never evaluated
+-- the rule's own condition. PROTOTYPE-ANALYSIS §2 called this out; this file is
+-- the part that makes it real.
+--
+-- Semantics, chosen to be the least surprising thing a household ledger can do:
+--
+--   * Rules run in SortOrder, first match wins. A transaction is categorised
+--     once and the remaining rules are skipped.
+--   * Only transactions with no category are considered. A rule never
+--     overwrites a category somebody assigned by hand — that would silently
+--     undo the review work the rules exist to reduce.
+--   * Matching is case-insensitive and trimmed, because bank statements are
+--     not consistent about either.
+--
+-- MatchCount is stored on the rule but derived from the data: it is recomputed
+-- from Transaction_CategoryRule after every run, never incremented in place.
+-- An in-place counter drifts the moment anything is reset, re-run, or deleted.
+-- ============================================================================
+
+/**
+ * The rule that categorised a transaction.
+ *
+ * This is what makes MatchCount honest — and it replaces the CategorisedByRule
+ * boolean, which said only *that* a rule had fired, not which one. Two rules
+ * pointing at Groceries (Albert Heijn, Jumbo) are indistinguishable under a
+ * boolean, so their counts could never be separated. Empty means the category
+ * was assigned by hand, or not at all.
+ */
+create or modify association Ledger.Transaction_CategoryRule
+  from Ledger.Transaction
+  to Ledger.CategoryRule
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+/
+
+/**
+ * Screen state for the rules panel: what is waiting, and what the last action
+ * did. One object per page instance, refreshed by the actions.
+ */
+create or modify non-persistent entity Ledger.RulesContext (
+  /** e.g. '12 transactions need review' */
+  ReviewText: string(120),
+  /** What running the rules now would do */
+  PreviewText: string(200),
+  /** Outcome of the last run, empty before the first one */
+  StatusText: string(200)
+);
+/
+
+/**
+ * Does this rule match this transaction?
+ *
+ * Case-insensitive and trimmed throughout. 'is one of' wraps both sides in
+ * delimiters so 'Netflix' matches the list 'Spotify,Netflix,iCloud' but 'Net'
+ * does not — Mendix has no split, and a bare substring test would match
+ * fragments.
+ *
+ * Substring tests use find() >= 0 rather than contains(): mxcli serializes
+ * contains() as a *list* operation, which Mendix rejects on strings
+ * (FINDINGS 53).
+ *
+ * Amount is compared as a number for 'equals' and as text otherwise, on the
+ * absolute amount. A textual 'contains' over an amount is a blunt instrument,
+ * but the field exists in the prototype's model and refusing to evaluate it
+ * would be worse than evaluating it plainly.
+ *
+ * @param $Rule The rule to test
+ * @param $Tx The transaction to test it against
+ * @returns true when the rule matches
+ */
+create or modify microflow Ledger.EVAL_RuleMatch (
+  $Rule: Ledger.CategoryRule,
+  $Tx: Ledger.Transaction
+)
+returns boolean as $Match
+folder 'Rules'
+begin
+  declare $Match boolean = false;
+  declare $Raw string = '';
+  declare $Hay string = '';
+  declare $Needle string = '';
+  declare $IsAmount boolean = false;
+  declare $ListNeedle string = '';
+  declare $ListHay string = '';
+
+  if $Rule/RuleField = Ledger.RuleField.Merchant then
+    set $Raw = $Tx/Merchant;
+  end if;
+  if $Rule/RuleField = Ledger.RuleField.Description then
+    set $Raw = $Tx/Description;
+  end if;
+  if $Rule/RuleField = Ledger.RuleField.Amount then
+    set $Raw = toString($Tx/Amount);
+    set $IsAmount = true;
+  end if;
+
+  set $Hay = toLowerCase(trim($Raw));
+  set $Needle = toLowerCase(trim($Rule/MatchValue));
+
+  if $Needle = '' then
+    return $Match;
+  end if;
+
+  if $Rule/RuleOperator = Ledger.RuleOperator.StartsWith then
+    set $Match = startsWith($Hay, $Needle);
+  end if;
+  if $Rule/RuleOperator = Ledger.RuleOperator.Equals then
+    if $IsAmount then
+      set $Match = $Tx/Amount = parseDecimal($Needle);
+    else
+      set $Match = $Hay = $Needle;
+    end if;
+  end if;
+
+  @annotation 'find() >= 0, because mxcli serializes contains() as a LIST operation'
+  if $Rule/RuleOperator = Ledger.RuleOperator.Contains then
+    set $Match = find($Hay, $Needle) >= 0;
+  end if;
+
+  @annotation 'Delimiter-wrapped so a list entry matches whole, not as a fragment'
+  if $Rule/RuleOperator = Ledger.RuleOperator.IsOneOf then
+    set $ListNeedle = ',' + replaceAll($Needle, ', ', ',') + ',';
+    set $ListHay = ',' + $Hay + ',';
+    set $Match = find($ListNeedle, $ListHay) >= 0;
+  end if;
+
+  return $Match;
+end;
+/
+
+/**
+ * Recomputes every rule's MatchCount from the transactions it categorised.
+ *
+ * Derived rather than incremented: a counter kept in place drifts the first
+ * time anything is reset, re-run, or deleted.
+ *
+ * @returns true
+ */
+create or modify microflow Ledger.SYNC_RuleCounts ()
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+
+  retrieve $Rules from Ledger.CategoryRule;
+  loop $R in $Rules
+  begin
+    retrieve $Hits from Ledger.Transaction where Ledger.Transaction_CategoryRule = $R;
+    $N = count($Hits);
+    change $R (MatchCount = $N);
+    commit $R;
+  end loop;
+
+  return $Done;
+end;
+/
+
+/**
+ * How many of the transactions awaiting review the current rules would catch.
+ *
+ * The same evaluation the run uses, without writing anything — so the number on
+ * screen cannot promise something the run will not deliver.
+ *
+ * @returns Count of uncategorised transactions that match some rule
+ */
+create or modify microflow Ledger.CALC_RulePreview ()
+returns integer as $Would
+folder 'Rules'
+begin
+  declare $Would integer = 0;
+  declare $Matched boolean = false;
+  declare $Caught boolean = false;
+
+  retrieve $Rules from Ledger.CategoryRule sort by SortOrder asc;
+  retrieve $Pending from Ledger.Transaction
+    where [not(Ledger.Transaction_Category/Ledger.Category)];
+
+  loop $T in $Pending
+  begin
+    set $Caught = false;
+    loop $R in $Rules
+    begin
+      if not($Caught) then
+        $M = call microflow Ledger.EVAL_RuleMatch (Rule = $R, Tx = $T);
+        set $Matched = $M;
+        if $Matched then
+          set $Would = $Would + 1;
+          set $Caught = true;
+        end if;
+      end if;
+    end loop;
+  end loop;
+
+  return $Would;
+end;
+/
+
+/**
+ * Screen state for the rules panel.
+ *
+ * @returns The context object the panel binds to
+ */
+create or modify microflow Ledger.DS_RulesContext ()
+returns Ledger.RulesContext as $Context
+folder 'Rules'
+begin
+  declare $Review string = '';
+  declare $Preview string = '';
+
+  retrieve $Pending from Ledger.Transaction
+    where [not(Ledger.Transaction_Category/Ledger.Category)];
+  $Waiting = count($Pending);
+
+  $Would = call microflow Ledger.CALC_RulePreview ();
+
+  set $Review = if $Waiting = 1
+    then '1 transaction needs review'
+    else toString($Waiting) + ' transactions need review';
+
+  set $Preview = if $Would = 0
+    then 'No rule matches any of them. Add a rule, or categorise them by hand.'
+    else 'Running the rules now would categorise ' + toString($Would) + ' of them.';
+
+  $Context = create Ledger.RulesContext (
+    ReviewText = $Review,
+    PreviewText = $Preview,
+    StatusText = '');
+
+  return $Context;
+end;
+/
+
+/**
+ * Refreshes the panel's figures in place.
+ *
+ * Split out because all three actions end the same way, and the panel is a
+ * microflow datasource — committing a Transaction does not invalidate it
+ * (FINDINGS 44), so the context object is rebuilt and refreshed instead.
+ *
+ * @param $Context The panel's context
+ * @param $Status What just happened
+ * @returns true
+ */
+create or modify microflow Ledger.REFRESH_RulesContext (
+  $Context: Ledger.RulesContext,
+  $Status: string
+)
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+  declare $Review string = '';
+  declare $Preview string = '';
+
+  retrieve $Pending from Ledger.Transaction
+    where [not(Ledger.Transaction_Category/Ledger.Category)];
+  $Waiting = count($Pending);
+
+  $Would = call microflow Ledger.CALC_RulePreview ();
+
+  set $Review = if $Waiting = 1
+    then '1 transaction needs review'
+    else toString($Waiting) + ' transactions need review';
+
+  set $Preview = if $Would = 0
+    then 'No rule matches any of them. Add a rule, or categorise them by hand.'
+    else 'Running the rules now would categorise ' + toString($Would) + ' of them.';
+
+  change $Context (
+    ReviewText = $Review,
+    PreviewText = $Preview,
+    StatusText = $Status)
+    refresh;
+
+  return $Done;
+end;
+/
+
+/**
+ * Runs the rules over every transaction that has no category.
+ *
+ * Ordered, first match wins, and only over uncategorised transactions — a rule
+ * never overwrites a category assigned by hand.
+ *
+ * @param $Context The panel's context, refreshed with the outcome
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ApplyRules ($Context: Ledger.RulesContext)
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+  declare $Applied integer = 0;
+  declare $Matched boolean = false;
+  declare $Caught boolean = false;
+  declare $Status string = '';
+
+  retrieve $Rules from Ledger.CategoryRule sort by SortOrder asc;
+  retrieve $Pending from Ledger.Transaction
+    where [not(Ledger.Transaction_Category/Ledger.Category)];
+
+  loop $T in $Pending
+  begin
+    @annotation 'First match wins — once caught, the rest of the rules are skipped'
+    set $Caught = false;
+    loop $R in $Rules
+    begin
+      if not($Caught) then
+        $M = call microflow Ledger.EVAL_RuleMatch (Rule = $R, Tx = $T);
+        set $Matched = $M;
+        if $Matched then
+          change $T (
+            Ledger.Transaction_Category = $R/Ledger.CategoryRule_Category,
+            Ledger.Transaction_CategoryRule = $R);
+          commit $T;
+          set $Applied = $Applied + 1;
+          set $Caught = true;
+        end if;
+      end if;
+    end loop;
+  end loop;
+
+  $Sync = call microflow Ledger.SYNC_RuleCounts ();
+
+  set $Status = if $Applied = 0
+    then 'Ran the rules. Nothing matched.'
+    else if $Applied = 1
+      then 'Ran the rules. 1 transaction categorised.'
+      else 'Ran the rules. ' + toString($Applied) + ' transactions categorised.';
+
+  $Refreshed = call microflow Ledger.REFRESH_RulesContext (
+    Context = $Context, Status = $Status);
+
+  return $Done;
+end;
+/
+
+/**
+ * Undoes every categorisation the rules made, leaving hand-assigned ones alone.
+ *
+ * The association is what makes this safe: only transactions carrying a rule
+ * link are touched, so the twelve seeded review items come back and nothing
+ * anybody categorised themselves is lost.
+ *
+ * @param $Context The panel's context, refreshed with the outcome
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ResetRuleAssignments ($Context: Ledger.RulesContext)
+returns boolean as $Done
+folder 'Rules'
+begin
+  declare $Done boolean = true;
+  declare $Cleared integer = 0;
+  declare $Status string = '';
+
+  retrieve $Assigned from Ledger.Transaction
+    where [Ledger.Transaction_CategoryRule/Ledger.CategoryRule];
+
+  loop $T in $Assigned
+  begin
+    change $T (
+      Ledger.Transaction_Category = empty,
+      Ledger.Transaction_CategoryRule = empty);
+    commit $T;
+    set $Cleared = $Cleared + 1;
+  end loop;
+
+  $Sync = call microflow Ledger.SYNC_RuleCounts ();
+
+  set $Status = if $Cleared = 1
+    then 'Undid 1 rule assignment.'
+    else 'Undid ' + toString($Cleared) + ' rule assignments.';
+
+  $Refreshed = call microflow Ledger.REFRESH_RulesContext (
+    Context = $Context, Status = $Status);
+
+  return $Done;
+end;
+/
+
+/**
+ * Moves a rule one place earlier, swapping SortOrder with its neighbour.
+ *
+ * Order is the whole of a first-match-wins engine, so it has to be editable.
+ * Swapping rather than renumbering keeps the operation local: two rows change,
+ * whatever the list length.
+ *
+ * @param $Rule The rule to promote
+ * @returns true when it moved
+ */
+create or modify microflow Ledger.ACT_MoveRuleUp ($Rule: Ledger.CategoryRule)
+returns boolean as $Moved
+folder 'Rules'
+begin
+  declare $Moved boolean = false;
+  declare $Mine integer = 0;
+
+  set $Mine = $Rule/SortOrder;
+
+  retrieve $Above from Ledger.CategoryRule
+    where SortOrder < $Mine
+    sort by SortOrder desc
+    limit 1;
+
+  if $Above != empty then
+    change $Rule (SortOrder = $Above/SortOrder);
+    change $Above (SortOrder = $Mine);
+    @annotation 'Refresh: without it the grid keeps showing the old order'
+    commit $Rule refresh;
+    commit $Above refresh;
+    set $Moved = true;
+  end if;
+
+  return $Moved;
+end;
+/
+
+/**
+ * Moves a rule one place later, swapping SortOrder with its neighbour.
+ *
+ * @param $Rule The rule to demote
+ * @returns true when it moved
+ */
+create or modify microflow Ledger.ACT_MoveRuleDown ($Rule: Ledger.CategoryRule)
+returns boolean as $Moved
+folder 'Rules'
+begin
+  declare $Moved boolean = false;
+  declare $Mine integer = 0;
+
+  set $Mine = $Rule/SortOrder;
+
+  retrieve $Below from Ledger.CategoryRule
+    where SortOrder > $Mine
+    sort by SortOrder asc
+    limit 1;
+
+  if $Below != empty then
+    change $Rule (SortOrder = $Below/SortOrder);
+    change $Below (SortOrder = $Mine);
+    @annotation 'Refresh: without it the grid keeps showing the old order'
+    commit $Rule refresh;
+    commit $Below refresh;
+    set $Moved = true;
+  end if;
+
+  return $Moved;
+end;
+/
+
+/**
+ * Creates a rule at the end of the list and opens it for editing.
+ *
+ * A new rule goes last on purpose: appending cannot change what any existing
+ * rule catches, whereas inserting at the top silently re-categorises.
+ *
+ * @returns The new rule, uncommitted
+ */
+create or modify microflow Ledger.NEW_CategoryRule ()
+returns Ledger.CategoryRule as $Rule
+folder 'Rules'
+begin
+  declare $Next integer = 1;
+
+  retrieve $Last from Ledger.CategoryRule sort by SortOrder desc limit 1;
+  if $Last != empty then
+    set $Next = $Last/SortOrder + 1;
+  end if;
+
+  $Rule = create Ledger.CategoryRule (
+    SortOrder = $Next,
+    RuleField = Ledger.RuleField.Merchant,
+    RuleOperator = Ledger.RuleOperator.Contains,
+    MatchValue = '',
+    MatchCount = 0);
+
+  return $Rule;
+end;
+/

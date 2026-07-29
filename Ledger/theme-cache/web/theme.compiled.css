@@ -29812,6 +29812,51 @@ Do not change this file because it is core styling. Customizing core files will 
   font-variant-numeric: tabular-nums;
 }
 
+.ledger-rules-panel {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.ledger-rules-figures {
+  flex: 1;
+  min-width: 0;
+}
+.ledger-rules-figures h5 {
+  margin: 0;
+}
+
+.ledger-rules-preview {
+  display: block;
+  font-size: 12.5px;
+  opacity: 0.7;
+  margin-top: 3px;
+}
+
+.ledger-rules-status {
+  display: block;
+  font-size: 12.5px;
+  margin-top: 3px;
+  font-weight: 600;
+}
+
+.ledger-rules-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ledger-row-actions {
+  display: flex;
+  gap: 4px;
+}
+.ledger-row-actions .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
 :root {
   /* Brand Colors */
   --brand-primary: #264ae5;

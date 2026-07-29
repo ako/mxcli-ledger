@@ -151,8 +151,7 @@ begin
           Description = $Description,
           Amount = $Amount,
           SignedAmount = $Signed,
-          IsMirror = false,
-          CategorisedByRule = true);
+          IsMirror = false);
         change $Tx (Ledger.Transaction_Category = $Category);
         if $UseAlt then
           change $Tx (Ledger.Transaction_Account = $AltAccount);
@@ -170,8 +169,7 @@ begin
             Description = 'SEPA overboeking',
             Amount = $Amount,
             SignedAmount = $Amount,
-            IsMirror = true,
-            CategorisedByRule = true);
+            IsMirror = true);
           change $Mirror (Ledger.Transaction_Category = $Category);
           change $Mirror (Ledger.Transaction_Account = $MirrorAccount);
           commit $Mirror;
@@ -248,8 +246,7 @@ begin
       Description = 'iDEAL ' + toString(20000 + ($Index * 137)),
       Amount = $Amount,
       SignedAmount = -$Amount,
-      IsMirror = false,
-      CategorisedByRule = false);
+      IsMirror = false);
     if $Index mod 3 = 0 then
       change $Tx (Ledger.Transaction_Account = $AccAbn);
     else
