@@ -967,3 +967,49 @@ claimed something the tool rejected.
 - document `UNION` / `UNION ALL`, which is the construct that makes a
   multi-row-kind report (subtotals + detail + total line) expressible as one
   view.
+
+### 38. `datepart` makes `Transaction.MonthKey` redundant
+
+OQL has `datepart(part, expr)` returning Integer, with comma syntax
+(`datepart(YEAR, t.TxDate)` — the SQL-standard `DATEPART(YEAR from ...)` form is
+rejected). It works inside a conditional aggregate in a view entity:
+
+```sql
+sum(case when datepart(YEAR, t.TxDate) = 2026
+          and datepart(MONTH, t.TxDate) = 1
+          and t.IsMirror = false then t.Amount else 0 end) as M01Actual
+```
+
+Builds clean.
+
+**Design consequence.** `Transaction.MonthKey` (string(7), plus its index) exists
+only because the original design assumed the matrix had to group without date
+arithmetic — see the comment still in `01-domain-model.mdl`:
+
+> MonthKey is denormalised from TxDate so the matrix can group without date
+> arithmetic in every aggregate.
+
+That premise is false. The attribute is derived data with no independent
+meaning, it must be written correctly by every producer, and it goes stale the
+moment a `TxDate` is edited without it. `datepart` removes the need for it
+entirely.
+
+`BudgetOverride.MonthKey` **stays** — there the month *is* the key. There is no
+date to derive it from; a budget applies to a month, not to a day.
+
+**Verified consistent.** Across all 334 seeded transactions, zero rows where the
+stored `MonthKey` disagrees with `extract(month from TxDate)`, including the 15
+that fall on day 1 — and the earliest value is exactly `2026-01-01 00:00:00`,
+the most timezone-exposed value in the set.
+
+**Caveat worth carrying:** that clean result is partly environmental — this
+container runs UTC. `datepart` against a *localized* DateTime is timezone
+sensitive at a midnight boundary, so a date stored as UTC midnight can report
+the previous month in a UTC-behind zone. MDL's `date` type appears not to
+localize, which is why the boundary held here, but anyone reusing this pattern
+on a localized attribute should re-check it rather than assume.
+
+**Secondary benefit:** the pivot stops hardcoding the year twelve times. With
+`MonthKey` the branches need literals `'2026-01' … '2026-12'`; with `datepart`
+the year appears once per union branch and the month is an integer, so moving
+the window to another year is a one-token change.
