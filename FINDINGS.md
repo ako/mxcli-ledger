@@ -1207,6 +1207,81 @@ weights and similar) because `theme/` and `themesource/` are missing — design
 properties resolve from there. Probing against the real project and dropping the
 probes afterwards is more reliable; `git status` confirms it left no trace.
 
+### Round 6 — PR #52 at `19170acc` (2026-07-29)
+
+Eight new commits. All **22** files in `mdlsource/` pass; `mx check` on this
+project: **0 errors**.
+
+| # | Finding | Result |
+|---|---|---|
+| 67 | `action` property dropped on a pluggable widget | **Fixed**, read path included |
+| 64 | loop iterator reused across loops | **Now caught at check time** (MDL052) |
+| 48 | association navigation in a compound expression | **Root cause fixed; MDL050 correctly withdrawn — but see below** |
+| 63 | bare `find()` parsed as a list operation | **Partly fixed** — see below |
+
+**67 verified end to end**, with a core widget so it needs no marketplace module:
+
+```
+pluggablewidget 'com.mendix.widget.web.datagrid.Datagrid' dg67 (
+  datasource: database Ledger.Category,
+  onClick: microflow Ledger.SYNC_RuleCounts
+) { column c1 (attribute: Name, caption: 'Category') }
+```
+
+```
+datagrid dg67 (DataSource: database from Ledger.Category,
+               onClick: microflow Ledger.SYNC_RuleCounts) { … }
+```
+
+`DESCRIBE` now reads the action back — the write *and* read paths both landed —
+and `mx check` is clean. The gap between "validator's key list" and "writer's
+propertyMappings" is closed.
+
+**Finding 48 was my misdiagnosis, and the withdrawal of MDL050 is right.** I
+recorded it as a *Mendix* rule — "crossing an association has to be the whole
+expression". It was an mxcli serialization bug. The rule I wrote into several
+file comments was wrong, and those comments have been corrected.
+
+**But the fix does not cover this app's actual case.** Every isolated form I
+could build now passes — association navigation in a concatenation, off a
+parameter, off a loop variable, split across lines, after a preceding
+`call microflow` on the same loop variable. Yet removing the workaround in
+`DS_DrillLines` (`09-cashflow-drill.mdl`) reproducibly gives:
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Meta'
+```
+
+I could not reduce it below the real microflow within this session, so the
+workaround stays in place and the repro is: take `09-cashflow-drill.mdl`,
+replace
+
+```
+set $Acct = $T/Ledger.Transaction_Account/Name;
+set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
+```
+
+with the single-expression form, `exec`, then `mx check`.
+
+**63 is fixed for one use per microflow, not two.** `mxcli check` no longer
+false-positives on `set $At = find(…)`, and a single use builds clean. Two uses
+in one microflow still collide, because the call is still serialized as a list
+operation:
+
+```
+[error] [CE0111] "Duplicate variable name 'At'." at List operation activity 'Find by expression'
+```
+
+`GET_SunburstPart` calls `find()` twice, so `+ 0` is still required there. Same
+underlying issue as 53: the name resolves to the list operation before argument
+types are considered.
+
+**A method note.** I twice concluded a fix was complete from an isolated probe,
+and twice the real code disproved it — once for 63, once for 48. Both times the
+probe was a fair-looking reduction that did not reproduce the surrounding
+context. Removing the workaround in place and running `mx check` is the test
+that counts; a green probe is not evidence that the workaround can go.
+
 ## Phase 4 — budgets (2026-07-29)
 
 ### 41. View entities cannot take part in associations — and `mxcli check` says nothing
@@ -1389,7 +1464,15 @@ set $Acct = $T/Ledger.Transaction_Account/Name;
 set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
 ```
 
-**The rule, as far as this app has established it:** in a `set` (Change
+**Superseded (round 6).** This was recorded as a Mendix rule. It was not — it
+was an mxcli serialization bug, fixed at the root in PR #52, and MDL050 (the
+check written against my description) was correctly withdrawn as a false
+positive. The paragraph below is left as originally written, because the
+reasoning it describes is what the evidence available at the time supported;
+treat it as history, not as a rule. Note that the workaround is still needed in
+`DS_DrillLines` — see round 6 for the case the fix does not reach.
+
+**The rule, as far as this app had established it:** in a `set` (Change
 variable) or a `create` member assignment, a path that *crosses an association*
 must be the entire expression. Member access on a parameter is fine anywhere —
 `Caption = $Row/Label + ' · ' + $MonthName` works — and so is association

@@ -85,13 +85,11 @@ create or modify non-persistent entity Ledger.SunburstContext (
   /**
    * Raw Plotly click event, written by the widget.
    *
-   * This attribute is the entire interaction. CustomChart also has an onClick
-   * action property, but MDL cannot set it — an `action`-typed property on a
-   * pluggable widget is accepted by the parser and then silently dropped from
-   * the model (FINDINGS 67). So nothing runs on click; instead the widget's
-   * write to this attribute refreshes the object, and every microflow
-   * datasource parameterised on it re-runs. The panel is derived from this
-   * string rather than assigned by a handler.
+   * Kept for the record rather than used. CustomChart writes the clicked
+   * segment's *bounding box* here, not the point (FINDINGS 69), so it cannot
+   * identify what was clicked; and an attribute write does not re-run a
+   * datasource over its object anyway (68). The selection is driven by the
+   * breakdown list instead — see SelId.
    */
   EventData: string,
   /** Total spend the chart covers */

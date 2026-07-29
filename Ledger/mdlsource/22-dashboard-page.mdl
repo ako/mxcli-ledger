@@ -11,11 +11,12 @@
 -- the thing being questioned, so it has to stay on screen while the answer is
 -- read, and a second click just repoints the panel.
 --
--- The chart is not the click target, and cannot be. MDL silently drops an
--- `action` property on a pluggable widget (FINDINGS 67); the fallback of
--- deriving the panel from `eventDataAttribute` fails too, because writing an
--- attribute does not re-run a datasource over its object (68) and because
--- CustomChart hands back the segment's bounding box rather than the point (69).
+-- The chart is not the click target. FINDINGS 67 — MDL dropping an `action`
+-- property — was fixed in mxcli, so `onClick` can now be set; but two reasons
+-- remain, and both are in the widget rather than the tooling: writing an
+-- attribute does not re-run a datasource over its object (68), and CustomChart
+-- forwards the segment's bounding box rather than the clicked point (69), so a
+-- handler could fire but could not tell which segment was hit.
 --
 -- So the same hierarchy is rendered a second time as a clickable breakdown
 -- beside the chart, using the container-onclick mechanism the cashflow matrix
