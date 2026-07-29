@@ -884,14 +884,25 @@ render**: 156 category×month pairs for group subtotals, 156 for category rows,
 156 for the net line, each pair being `CALC_Actual` + `CALC_Budget`. It computes
 the same figures three times. A view collapses that to one query over 13 rows.
 
-**What a view cannot do**, so this stays a hybrid:
+**Corrected 2026-07-29.** Two claims in the first version of this finding were
+wrong. Both were inferred from the skill doc rather than tested — see 37.
 
-- **No `UNION`** — absent from the entire 726-line OQL skill. Group subtotal
-  rows, category rows and the net line cannot come from one view.
-- **No `ORDER BY`/`LIMIT`** in a view entity (explicit rule) — ordering is the
-  UI's job.
-- Mode, `€` formatting, band classes and future-month blanking are all
-  presentation; a view is a fixed query.
+- **`UNION ALL` works.** It parses, builds clean and round-trips through
+  `DESCRIBE ENTITY` intact. A single view produced category rows *and* group
+  subtotal rows with a computed `SortKey`, multi-hop join chains
+  (`c/Ledger.Transaction_Category/Ledger.Transaction`) and conditional
+  aggregation. Group subtotals verified against the rendered matrix: Income
+  Jan €6,016 / Jul €6,508, Housing €1,858 / €1,961, Daily living €1,047 / €982,
+  Lifestyle €464 / €499, Financial €1,019 / €877 — all exact.
+- **`ORDER BY` works when paired with `LIMIT`.** mxcli enforces exactly that
+  with **MDL030**: "ORDER by without limit: view entity OQL queries that use
+  ORDER by must also specify a limit clause". `ORDER BY` alone is rejected at
+  check time; `ORDER BY … LIMIT 100` builds clean.
+
+So the mixed row kinds *can* come from one view after all. What genuinely stays
+outside the query is only presentation: mode switching, `€` formatting, band
+classes and future-month blanking. In practice a view is usually referenced
+from another query that applies the ordering, rather than ordering itself.
 
 **The trap: pass-through string columns inherit their source length.**
 Declaring `CategoryName: string` against a `string(100)` source fails the build:
@@ -916,3 +927,43 @@ length against its source attribute would close it.
 is wrong in general. It returned correct values here only because all five
 seeded overrides happen to exceed their baseline; a *lower* override would lose
 to `max`. Correct resolution needs a correlated subquery per month.
+
+### 37. `write-oql-queries.md` RULE 2 contradicts mxcli's own MDL030
+
+The skill states, as an absolute:
+
+> **RULE 2: NEVER use ORDER BY or LIMIT in VIEW entity OQL**
+
+with both clauses annotated `-- Remove this` in the example. mxcli disagrees —
+`MDL030` requires only that `ORDER BY` be *paired* with `LIMIT`:
+
+```
+$ mxcli check ...            -- order by, no limit
+  ✗ ORDER by without limit: view entity OQL queries that use ORDER by must
+    also specify a limit clause [MDL030]
+
+$ mxcli check ...            -- order by ... limit 100
+  Check passed!              -- and mx check: 0 errors
+```
+
+The rationale in the doc ("let the UI component handle sorting and limits") is
+sound guidance, but it is written as a prohibition on a construct the tool
+accepts, which is how the wrong claim in finding 36 got made.
+
+`UNION` fares worse: it appears **nowhere** in the 726-line skill, despite
+working end to end. Silence in the doc read as absence of support.
+
+**Lesson, and the reason this is filed as a finding rather than a footnote:**
+the earlier rounds established that `mxcli check` is a syntax gate and `mx check`
+is the authority (finding 22). This adds the mirror of that — the *skill docs*
+are not authoritative either. Every capability claim in this file should come
+from a probe that was executed, not from a document that was read. Findings 12
+and 13 were the same failure mode in the opposite direction: there the docs
+claimed something the tool rejected.
+
+**Suggested fixes**, both cheap:
+- reword RULE 2 to "ORDER BY requires LIMIT; prefer to let the consuming query
+  sort", matching MDL030;
+- document `UNION` / `UNION ALL`, which is the construct that makes a
+  multi-row-kind report (subtotals + detail + total line) expressible as one
+  view.
