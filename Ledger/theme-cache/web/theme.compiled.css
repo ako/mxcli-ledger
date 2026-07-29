@@ -1,4 +1,5 @@
 @charset "UTF-8";
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@500&display=swap");
 @font-face {
   font-family: "Atlas_Core$Atlas_Styling";
   src: url("./fonts/Atlas_Core$Atlas_Styling.ttf") format("truetype");
@@ -3117,12 +3118,95 @@
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -3174,12 +3258,95 @@ Do not change this file because it is core styling. Customizing core files will 
 /* Callouts */
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -3231,12 +3398,95 @@ Do not change this file because it is core styling. Customizing core files will 
 /* Callouts */
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -4296,12 +4546,95 @@ Do not change this file because it is core styling. Customizing core files will 
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -26929,12 +27262,95 @@ html div.dj_ios .widget-switch.auto .widget-switch-btn-wrapper.checked.widget-sw
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -29055,12 +29471,95 @@ input[type=checkbox].three-state-checkbox + .control-label {
 */
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -29447,12 +29946,95 @@ Do not render = "none"
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -29504,12 +30086,95 @@ Do not change this file because it is core styling. Customizing core files will 
 /* Callouts */
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*
@@ -29559,6 +30224,128 @@ Do not change this file because it is core styling. Customizing core files will 
 /* Labels */
 /* Groupbox */
 /* Callouts */
+.region-topbar {
+  background: var(--ledger-paper) !important;
+  border-bottom: 1px solid var(--ledger-rule);
+}
+.region-topbar * {
+  color: var(--ledger-ink-2) !important;
+}
+
+.mx-navigationtree {
+  padding: 0;
+}
+.mx-navigationtree::before {
+  content: "Ledger";
+  display: block;
+  font-family: var(--ledger-serif);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: #FFFFFF;
+  padding: 22px 20px 0;
+}
+.mx-navigationtree .navbar-inner {
+  padding: 0 10px;
+}
+.mx-navigationtree .navbar-inner::before {
+  content: "Household finances";
+  display: block;
+  font-family: var(--ledger-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #82868A;
+  padding: 5px 10px 18px;
+  border-bottom: 1px solid var(--ledger-sidebar-line);
+  margin: 0 -10px 12px;
+  padding-left: 20px;
+}
+.mx-navigationtree li {
+  margin-bottom: 2px;
+}
+.mx-navigationtree li a {
+  padding: 8px 10px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  line-height: 1.35;
+  border-radius: 3px;
+}
+
+[role=gridcell] {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+[role=columnheader] {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.mx-datagrid-widget,
+.mx-name-dgCategories,
+.mx-name-dgRules,
+.mx-name-dgTransactions,
+.mx-name-dgAccounts {
+  background: var(--ledger-card);
+  border: 1px solid var(--ledger-rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+h4.mx-text {
+  margin-top: 26px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+h2.mx-text,
+.mx-name-txtHeading {
+  font-family: var(--ledger-serif);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+}
+
+.text-muted {
+  color: var(--ledger-ink-2);
+}
+
+.card {
+  background: var(--ledger-card);
+  border: 1px solid var(--ledger-rule);
+  border-radius: 4px;
+}
+
+.mx-datagrid,
+.mx-name-dgTransactions,
+[role=grid] {
+  font-size: 13px;
+}
+
+[role=columnheader] {
+  font-family: var(--ledger-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ledger-label);
+}
+
+[role=gridcell] {
+  border-bottom: 1px solid var(--ledger-divider);
+}
+
+.align-column-right [role=gridcell],
+[role=gridcell].align-column-right {
+  font-family: var(--ledger-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mx-navigationtree {
+  padding: 8px 10px;
+}
+
 .cf-cell {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -29597,11 +30384,19 @@ Do not change this file because it is core styling. Customizing core files will 
   background-color: rgba(44, 110, 74, 0.29);
 }
 
+.cf-cell,
+.bg-cell {
+  font-family: var(--ledger-mono);
+  font-size: 12.5px;
+}
+
 .cf-group {
-  font-weight: 600;
+  font-family: var(--ledger-mono);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 12px;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  color: var(--ledger-strong);
 }
 
 .cf-cat {
@@ -29609,23 +30404,31 @@ Do not change this file because it is core styling. Customizing core files will 
 }
 
 .cf-net {
-  font-weight: 600;
+  font-family: var(--ledger-mono);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 12px;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  color: var(--ledger-ink);
 }
 
 .cf-total {
-  font-weight: 600;
+  font-family: var(--ledger-mono);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: #F3F1EC;
+  border-left: 1px solid var(--ledger-rule);
+  color: var(--ledger-strong);
 }
 
 .ledger-matrix {
   overflow-x: auto;
+  background: var(--ledger-card);
+  border: 1px solid var(--ledger-rule);
+  border-radius: 4px 4px 0 0;
 }
 .ledger-matrix [role=grid] {
-  min-width: 1440px;
+  min-width: 1320px;
 }
 .ledger-matrix [role=columnheader],
 .ledger-matrix [role=gridcell],
@@ -29640,23 +30443,56 @@ Do not change this file because it is core styling. Customizing core files will 
 
 .ledger-modes {
   display: flex;
-  gap: 8px;
-  margin: 12px 0 16px;
+  width: fit-content;
+  gap: 2px;
+  margin: 4px 0 18px;
+  padding: 2px;
+  background: #EAE7E1;
+  border: 1px solid #DAD6CE;
+  border-radius: 3px;
+}
+.ledger-modes .btn {
+  border: none;
+  background: transparent;
+  border-radius: 2px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  color: var(--ledger-ink-2);
+  box-shadow: none;
+}
+.ledger-modes .btn:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ledger-ink);
 }
 
 .ledger-kpi {
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
 .ledger-kpi h6 {
-  margin: 0 0 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 10.5px;
-  opacity: 0.6;
-}
-.ledger-kpi h3 {
   margin: 0;
+  font-family: var(--ledger-mono);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  color: var(--ledger-label);
+}
+.ledger-kpi h3,
+.ledger-kpi h4 {
+  margin: 7px 0 0;
+  font-family: var(--ledger-mono);
+  font-weight: 500;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
+  color: var(--ledger-ink);
+}
+
+.mx-name-ctnKpiNet h3 {
+  color: var(--ledger-under);
+}
+
+.mx-name-ctnKpiOver h3 {
+  color: var(--ledger-over);
 }
 
 .bg-cell {
@@ -29716,9 +30552,13 @@ Do not change this file because it is core styling. Customizing core files will 
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 10px 4px 0;
+  padding: 11px 16px;
   font-size: 11.5px;
-  opacity: 0.7;
+  color: var(--ledger-ink-2);
+  background: var(--ledger-wash);
+  border: 1px solid var(--ledger-rule);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
 }
 
 .ledger-legend-item {
@@ -29743,7 +30583,9 @@ Do not change this file because it is core styling. Customizing core files will 
 
 .ledger-legend-hint {
   margin-left: auto;
+  font-family: var(--ledger-mono);
   font-size: 10.5px;
+  color: var(--ledger-ink-3);
 }
 
 .ledger-inspector {
@@ -29753,24 +30595,27 @@ Do not change this file because it is core styling. Customizing core files will 
 
 .ledger-inspector-head {
   padding: 13px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
-  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid var(--ledger-rule);
+  background: var(--ledger-wash);
 }
 .ledger-inspector-head h5 {
   margin: 5px 0 0;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .ledger-kicker {
+  font-family: var(--ledger-mono);
   font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  opacity: 0.55;
+  color: var(--ledger-label);
 }
 
 .ledger-inspector-meta {
   display: block;
   font-size: 12px;
-  opacity: 0.7;
+  color: var(--ledger-ink-2);
   margin-top: 3px;
 }
 
@@ -29784,7 +30629,7 @@ Do not change this file because it is core styling. Customizing core files will 
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--ledger-divider);
 }
 
 .ledger-line-text {
@@ -29801,12 +30646,14 @@ Do not change this file because it is core styling. Customizing core files will 
 
 .ledger-line-meta {
   display: block;
+  font-family: var(--ledger-mono);
   font-size: 10.5px;
-  opacity: 0.55;
+  color: var(--ledger-ink-3);
   margin-top: 2px;
 }
 
 .ledger-line-amount {
+  font-family: var(--ledger-mono);
   font-size: 12.5px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -29831,15 +30678,16 @@ Do not change this file because it is core styling. Customizing core files will 
 .ledger-rules-preview {
   display: block;
   font-size: 12.5px;
-  opacity: 0.7;
+  color: var(--ledger-ink-2);
   margin-top: 3px;
 }
 
 .ledger-rules-status {
   display: block;
-  font-size: 12.5px;
+  font-family: var(--ledger-mono);
+  font-size: 11.5px;
   margin-top: 3px;
-  font-weight: 600;
+  color: var(--ledger-under);
 }
 
 .ledger-rules-actions {
@@ -29859,12 +30707,95 @@ Do not change this file because it is core styling. Customizing core files will 
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 }
 
 /*

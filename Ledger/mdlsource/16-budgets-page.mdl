@@ -24,10 +24,7 @@ create or replace page Ledger.Budgets_Overview
 {
   layoutgrid lgBudgets {
     row rowMain {
-      column colMenu (desktopwidth: 2) {
-        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
-      }
-      column colBody (desktopwidth: 10) {
+      column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Budgets', rendermode: H2)
         dynamictext txtSub (
           content: 'One amount per category per month. Click a cell to change it. Months that override the category baseline are marked.',
@@ -147,38 +144,6 @@ create or replace page Ledger.Budgets_Overview
         }
       }
     }
-  }
-}
-/
-
-/**
- * Menu, now including Budgets.
- */
-create or replace snippet Ledger.SNIPPET_LedgerMenu
-folder 'Navigation'
-{
-  container ctnMenu (class: 'card') {
-    dynamictext txtMenuTitle (content: 'Ledger', rendermode: H4)
-    actionbutton btnCashflow (
-      caption: 'Cashflow',
-      action: show_page Ledger.Cashflow_Overview,
-      class: 'btn-block')
-    actionbutton btnBudgets (
-      caption: 'Budgets',
-      action: show_page Ledger.Budgets_Overview,
-      class: 'btn-block')
-    actionbutton btnTransactions (
-      caption: 'Transactions',
-      action: show_page Ledger.Transaction_Overview,
-      class: 'btn-block')
-    actionbutton btnAccounts (
-      caption: 'Accounts',
-      action: show_page Ledger.Account_Overview,
-      class: 'btn-block')
-    actionbutton btnCategories (
-      caption: 'Categories & rules',
-      action: show_page Ledger.Category_Overview,
-      class: 'btn-block')
   }
 }
 /

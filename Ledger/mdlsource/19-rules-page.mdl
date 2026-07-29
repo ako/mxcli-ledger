@@ -29,10 +29,7 @@ create or replace page Ledger.Category_Overview
 {
   layoutgrid lgCategories {
     row rowMain {
-      column colMenu (desktopwidth: 2) {
-        snippetcall snMenu (snippet: Ledger.SNIPPET_LedgerMenu)
-      }
-      column colBody (desktopwidth: 10) {
+      column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Categories & rules', rendermode: H2)
         dynamictext txtSub (
           content: 'Two-level taxonomy plus the rules that assign categories. Rules run in order and the first match wins.',

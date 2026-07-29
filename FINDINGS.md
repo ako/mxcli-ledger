@@ -1523,3 +1523,67 @@ Semantics, all verified against the running app:
   association carries the same fact and more. This also removed a lie in the
   seed, which set `CategorisedByRule = true` on transactions the generator had
   categorised.
+
+## Phase 7 — matching the prototype's design system (2026-07-29)
+
+### 59. Atlas' tokens are the whole job; the widgets never needed touching
+
+The app looked like stock Atlas. Bringing it to the prototype — warm paper, flat
+hair-ruled cards, dark sidebar, IBM Plex, mono figures — took two files and no
+widget changes:
+
+- `theme/web/custom-variables.scss`, where Atlas exposes ~150 CSS custom
+  properties: `--bg-color`, `--border-color-default`, `--border-radius-s`,
+  `--font-family-base`, `--navsidebar-bg`, `--grid-bg-header`, the lot. Setting
+  those moved the entire app at once, and every control kept its own states,
+  focus rings and dark-mode handling because nothing was overridden at the
+  component level.
+- `themesource/ledger/web/main.scss` for the handful of things Atlas has no
+  token for: monospace figures, a serif page title, the segmented mode switch.
+
+Worth stating because the instinct is to reach for the component CSS first. The
+token layer is both smaller and more durable.
+
+### 60. The webfont hook, and why the fonts are not committed
+
+Atlas self-hosts Poppins from `/resources/fonts/…` and exposes
+`$font-family-import` for anything else. The prototype uses IBM Plex, so:
+
+```
+$font-family-import: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans…';
+```
+
+Self-hosting Plex the way Atlas hosts Poppins would mean committing six font
+binaries, which this project does not do. The trade is a runtime CDN dependency,
+so every stack has a real fallback (`system-ui` for sans, `ui-monospace` for
+mono, Georgia for serif) and the app degrades to system faces rather than
+breaking.
+
+**Verified** the `@import` reaches `theme-cache/web/theme.compiled.css`. It does
+*not* load in this container's headless Chromium, which has no direct network —
+the screenshots here are the fallback stacks. Pointing Playwright at the agent
+proxy (`--proxy-server`) is how to see the real thing.
+
+### 61. Two Atlas shell defaults that fight a dense app
+
+- **The sidebar collapses to 48px** and clips every label to
+  'Cashflo…'. That is why the app grew an in-page menu card on every screen in
+  the first place. `--navsidebar-width-closed: 224px` — equal to the open width
+  — pins it open, which let all five menu cards be deleted and gave the
+  twelve-month matrix back a quarter of the page.
+- **Navigation rows are sized for a 48px icon slot** even with no glyphs, so
+  the rows are mostly empty space. `--navsidebar-icon-height: 0` plus explicit
+  padding brings them to the prototype's density.
+
+One thing that could not be reproduced: Atlas' navigation tree puts no `active`
+class on the current page's item, so the prototype's left-rail highlight on the
+selected screen has no hook to hang on without JavaScript.
+
+### 62. `::before` and `::after` bracket the children, not the element
+
+The sidebar wordmark is drawn on the navigation container, since Atlas has no
+slot for one. Putting the wordmark in `::before` and the 'Household finances'
+kicker in `::after` puts the kicker *below the last menu item* — the two pseudo
+elements bracket the element's children, and the children are the whole menu.
+The kicker has to hang off the inner wrapper's `::before` instead. Obvious in
+hindsight, invisible until rendered.

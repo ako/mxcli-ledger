@@ -71,9 +71,26 @@ port. They are also the two things a real ledger depends on.
 
 ## 3. Decisions taken
 
-- **Visual fidelity: close but Atlas-native.** Keep the layout, the matrix and the
-  heatmap concept; express them in Atlas defaults with light theming rather than
-  reproducing the bespoke IBM Plex / warm-paper / dark-sidebar design system.
+- **Visual fidelity: the prototype's design system, expressed through Atlas
+  tokens.** *(Revised 2026-07-29. The original decision was "close but
+  Atlas-native" — keep the layout and the heatmap, take Atlas' defaults for
+  everything else. That left the app looking like stock Atlas, so it was taken
+  further.)*
+
+  The warm paper, the flat hair-ruled cards, the dark sidebar and the IBM Plex
+  type are all reproduced — but by overriding Atlas' own custom properties in
+  `theme/web/custom-variables.scss`, not by restyling widgets. Every control
+  stays a stock Atlas control and keeps its states, focus rings and dark-mode
+  handling; only the tokens change. `themesource/ledger/web/main.scss` covers
+  the handful of things Atlas has no token for — the monospace figures, the
+  serif page titles, the segmented mode switch.
+
+  Mono on every number is the single largest fidelity win, and it is not
+  decoration: a fourteen-column matrix of currency only scans if the digits line
+  up. Two things from the prototype's shell are deliberately not reproduced: the
+  sidebar's REPORT / DATA / SETUP section kickers, which would need submenu
+  structure the navigation profile does not have, and its "Net this month"
+  footer, which would need a data-bound widget inside the layout.
 - **Rules and import: build both for real.** Ordered rules with first-match-wins
   evaluation applied on import, and real CSV parsing with duplicate detection.
 - **Window: 12 months, calendar year 2026.** Widened from the prototype's 6.

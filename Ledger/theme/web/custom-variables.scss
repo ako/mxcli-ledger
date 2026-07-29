@@ -1,17 +1,145 @@
+// ===========================================================================
+// Ledger — Atlas tokens matched to the prototype
+// ===========================================================================
+// PROTOTYPE-ANALYSIS §3 originally chose "close but Atlas-native": keep the
+// layout and the heatmap, express them in Atlas defaults. This file goes
+// further and matches the prototype's own design system — but by overriding
+// Atlas' tokens rather than fighting its components, so every widget stays a
+// stock Atlas widget and keeps its states, focus rings and dark-mode handling.
+//
+// The prototype's palette, read off Ledger.dc.html:
+//
+//   paper       #F6F4F0   page background
+//   card        #FFFFFF   panels
+//   rule        #E0DDD6   card borders and header underline
+//   wash        #FBFAF8   table header, subtle fills
+//   divider     #F0EEE9   row separators (#E4E1DA for group rows)
+//   ink         #17181A   body text
+//   ink-2       #6E7078   secondary text
+//   ink-3       #93969B   muted
+//   label       #7C7F85   uppercase mono labels
+//   over        #A8321E   over budget
+//   under       #2C6E4A   under budget
+//   accent      #1B4D4B   selection, the one saturated colour
+//   sidebar     #1C1E1F   with #2E3132 dividers and #8FD0A8 as its accent
+//
+// Type is IBM Plex: Sans for text, Mono for every number and label, Serif for
+// the wordmark and page titles. Mono is not decoration here — it is what makes
+// a 14-column matrix of currency line up and stay scannable.
+// ===========================================================================
+
 // Theme options
 $brand-logo: false;
-$font-family-import: false;
+
+// Atlas' own hook for a webfont, and the same source the prototype used. Not
+// self-hosted like Poppins because that would mean committing font binaries,
+// which this project does not do. The stacks below degrade to system faces if
+// the CDN is unreachable, so the app still works offline — it just loses the
+// Plex character.
+$font-family-import: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:wght@500&display=swap';
+
 $form-input-style: default;
 $btn-bordered: false; // Default value false, set to true if you want this effect
 
 :root {
   /* Brand Colors */
-  --brand-primary: #264ae5;
-  --brand-success: #16aa16;
-  --brand-warning: #cd8501;
-  --brand-danger: #EA3337;
-  --brand-default: color-mix(in srgb, var(--brand-primary) 10%, #e7e7e9);
-  --gray: #B8BABF;
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --ledger-serif: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+
+  /* Typography */
+  --font-family-base: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
 
 //   /* Hover Color Variants */
 //   --brand-default-hover: var(--brand-default-100);
