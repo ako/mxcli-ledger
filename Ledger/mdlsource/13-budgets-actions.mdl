@@ -12,32 +12,8 @@
 -- and the positional name DESCRIBE prints back is not a name DROP can find.
 -- ============================================================================
 
-/**
- * Month name for a popup caption.
- *
- * @param $MonthIndex 1-12
- * @returns e.g. 'July'
- */
-create or modify microflow Ledger.FMT_MonthName ($MonthIndex: integer)
-returns string as $Name
-folder 'Budgets'
-begin
-  declare $Name string = '';
-  if $MonthIndex = 1 then set $Name = 'January'; end if;
-  if $MonthIndex = 2 then set $Name = 'February'; end if;
-  if $MonthIndex = 3 then set $Name = 'March'; end if;
-  if $MonthIndex = 4 then set $Name = 'April'; end if;
-  if $MonthIndex = 5 then set $Name = 'May'; end if;
-  if $MonthIndex = 6 then set $Name = 'June'; end if;
-  if $MonthIndex = 7 then set $Name = 'July'; end if;
-  if $MonthIndex = 8 then set $Name = 'August'; end if;
-  if $MonthIndex = 9 then set $Name = 'September'; end if;
-  if $MonthIndex = 10 then set $Name = 'October'; end if;
-  if $MonthIndex = 11 then set $Name = 'November'; end if;
-  if $MonthIndex = 12 then set $Name = 'December'; end if;
-  return $Name;
-end;
-/
+-- FMT_MonthName lives in 07 alongside FMT_MonthKey: the cashflow drilldown
+-- needs it too, and 09 runs long before this file.
 
 /**
  * Writes a computed budget cell into the right month attribute.

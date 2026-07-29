@@ -1210,3 +1210,89 @@ Two related surprises when styling the matrix:
 
 The Playwright tests were affected by the same thing: rows are
 `[role="row"]`, not `tr`.
+
+## Phase 5 — cashflow drilldown (2026-07-29)
+
+### 47. `count()` and `sum()` declare their own output variables
+
+Finding 15 was about `create` outputs. Aggregates behave the same way, which is
+easy to miss because the natural spelling looks like an assignment:
+
+```
+declare $Count integer = 0;
+...
+set $Count = count($Txs);
+```
+
+```
+[error] duplicate variable name '$Count' — aggregate list output variable is
+        already declared in this scope (CE0111)
+```
+
+`$Count = count($Txs);` with no `declare` is the correct form — the aggregate
+introduces the name, exactly as `create` and `call microflow` do. Worth knowing
+because `declare` + `set` is right for every *other* kind of value, so the
+instinct is to write it everywhere.
+
+Credit where due: `mxcli check --references` caught this one before `mx check`
+did, with a precise message.
+
+### 48. An expression that navigates an association inside a ternary fails
+
+```
+set $Favourable = if $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.GroupType.Income
+  then $Actual - $Budget
+  else $Budget - $Actual;
+```
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Favourable'
+```
+
+Hoisting the test into its own boolean fixes it:
+
+```
+set $IsIncome = $Cat/Ledger.Category_CategoryGroup/GroupType = Ledger.GroupType.Income;
+set $Favourable = if $IsIncome then $Actual - $Budget else $Budget - $Actual;
+```
+
+The same ternary shape works elsewhere in this app when the condition is a plain
+variable, and the same association navigation works elsewhere when it is not
+inside a ternary — it is the combination that breaks. `mxcli check --references`
+passed it: another gap, and the third of this kind (see 41 and 44).
+
+### 49. No number or date format on a grid column
+
+MDL's page grammar has no `format`, `decimalprecision` or equivalent on a
+`column`. A Decimal renders as Mendix's default — `-51.3`, dropping the trailing
+zero — and a DateTime in the browser's locale, so a Dutch ledger showed
+`3/5/2026`.
+
+The workaround is the one CashflowRow already uses for a different reason:
+preformat in the builder. The drilldown list is a non-persistent `DrillLine`
+with `DateText` and `AmountText` rather than the `Transaction` itself, built by
+a datasource microflow over the same retrieve the header figures use.
+
+The cost is real and worth stating: the grid no longer holds Transaction
+objects, so a future "click a line to edit the transaction" would need the
+association back. For a read-only inspector it is the right trade.
+
+### 50. The drilldown, verified against the database
+
+Clicking Groceries × March opens a popup showing `€ 655` actual, `€ 620` budget,
+`-€ 35` variance and 11 transactions. Straight from Postgres:
+
+```
+select count(*), sum(t.amount) ... where c.name = 'Groceries'
+  and t.txdate >= '2026-03-01' and t.txdate < '2026-04-01' and t.ismirror = false
+   11 | 655.23000000
+```
+
+The income sign flip holds too: Salary × January is `€ 5,309` against a `€ 5,200`
+budget and reports `+€ 109` — favourable, where the same shortfall on an expense
+row would be unfavourable.
+
+Group subtotals and the net line are not drillable, and this falls out of the
+data rather than being a check: `CashflowRow_Category` is only set on category
+rows, so the opener finds it empty and declines. 156 drillable cells, 72 not —
+13 categories and 6 non-category rows, times twelve months.

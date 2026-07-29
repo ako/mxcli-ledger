@@ -9,6 +9,11 @@
 -- attribute, which is how the prototype's continuous heatmap becomes ten
 -- discrete classes. The classes themselves live in
 -- theme/web/custom/ledger-cashflow.scss.
+--
+-- The month cells are custom content rather than plain attribute columns so the
+-- value can sit inside a clickable container. The band stays on the column's
+-- DynamicCellClass — the tint belongs to the whole cell, not to the container
+-- inside it — and the container only carries the click and the cursor.
 -- ============================================================================
 
 /**
@@ -90,18 +95,150 @@ create or replace page Ledger.Cashflow_Overview
               Sortable: false, Draggable: false,
               ColumnWidth: manual, Size: 190,
               DynamicCellClass: 'if $currentObject/RowKind = Ledger.RowKind.Group then ''cf-group'' else if $currentObject/RowKind = Ledger.RowKind.Net then ''cf-net'' else ''cf-cat''')
-            column colM01 (attribute: M01Text, caption: 'Jan', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M01Band')
-            column colM02 (attribute: M02Text, caption: 'Feb', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M02Band')
-            column colM03 (attribute: M03Text, caption: 'Mar', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M03Band')
-            column colM04 (attribute: M04Text, caption: 'Apr', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M04Band')
-            column colM05 (attribute: M05Text, caption: 'May', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M05Band')
-            column colM06 (attribute: M06Text, caption: 'Jun', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M06Band')
-            column colM07 (attribute: M07Text, caption: 'Jul', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M07Band')
-            column colM08 (attribute: M08Text, caption: 'Aug', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M08Band')
-            column colM09 (attribute: M09Text, caption: 'Sep', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M09Band')
-            column colM10 (attribute: M10Text, caption: 'Oct', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M10Band')
-            column colM11 (attribute: M11Text, caption: 'Nov', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M11Band')
-            column colM12 (attribute: M12Text, caption: 'Dec', Alignment: right, Sortable: false, ColumnWidth: manual, Size: 132, DynamicCellClass: '''cf-cell '' + $currentObject/M12Band')
+            column colM01 (
+              caption: 'Jan', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M01Band'
+            ) {
+              container cellM01 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 1),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM01 (attribute: M01Text)
+              }
+            }
+            column colM02 (
+              caption: 'Feb', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M02Band'
+            ) {
+              container cellM02 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 2),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM02 (attribute: M02Text)
+              }
+            }
+            column colM03 (
+              caption: 'Mar', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M03Band'
+            ) {
+              container cellM03 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 3),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM03 (attribute: M03Text)
+              }
+            }
+            column colM04 (
+              caption: 'Apr', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M04Band'
+            ) {
+              container cellM04 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 4),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM04 (attribute: M04Text)
+              }
+            }
+            column colM05 (
+              caption: 'May', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M05Band'
+            ) {
+              container cellM05 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 5),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM05 (attribute: M05Text)
+              }
+            }
+            column colM06 (
+              caption: 'Jun', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M06Band'
+            ) {
+              container cellM06 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 6),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM06 (attribute: M06Text)
+              }
+            }
+            column colM07 (
+              caption: 'Jul', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M07Band'
+            ) {
+              container cellM07 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 7),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM07 (attribute: M07Text)
+              }
+            }
+            column colM08 (
+              caption: 'Aug', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M08Band'
+            ) {
+              container cellM08 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 8),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM08 (attribute: M08Text)
+              }
+            }
+            column colM09 (
+              caption: 'Sep', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M09Band'
+            ) {
+              container cellM09 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 9),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM09 (attribute: M09Text)
+              }
+            }
+            column colM10 (
+              caption: 'Oct', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M10Band'
+            ) {
+              container cellM10 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 10),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM10 (attribute: M10Text)
+              }
+            }
+            column colM11 (
+              caption: 'Nov', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M11Band'
+            ) {
+              container cellM11 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 11),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM11 (attribute: M11Text)
+              }
+            }
+            column colM12 (
+              caption: 'Dec', Alignment: right,
+              Sortable: false, ColumnWidth: manual, Size: 132,
+              DynamicCellClass: '''cf-cell '' + $currentObject/M12Band'
+            ) {
+              container cellM12 (
+                onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 12),
+                dynamicclasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then ''cf-drill'' else ''cf-nodrill'''
+              ) {
+                dynamictext txtM12 (attribute: M12Text)
+              }
+            }
             column colTotal (
               attribute: TotalText, caption: 'Total', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 150,

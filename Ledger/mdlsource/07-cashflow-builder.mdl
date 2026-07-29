@@ -34,6 +34,33 @@ end;
 /
 
 /**
+ * Month name, for captions.
+ *
+ * @param $MonthIndex 1-12
+ * @returns e.g. 'July'
+ */
+create or modify microflow Ledger.FMT_MonthName ($MonthIndex: integer)
+returns string as $Name
+folder 'Cashflow'
+begin
+  declare $Name string = '';
+  if $MonthIndex = 1 then set $Name = 'January'; end if;
+  if $MonthIndex = 2 then set $Name = 'February'; end if;
+  if $MonthIndex = 3 then set $Name = 'March'; end if;
+  if $MonthIndex = 4 then set $Name = 'April'; end if;
+  if $MonthIndex = 5 then set $Name = 'May'; end if;
+  if $MonthIndex = 6 then set $Name = 'June'; end if;
+  if $MonthIndex = 7 then set $Name = 'July'; end if;
+  if $MonthIndex = 8 then set $Name = 'August'; end if;
+  if $MonthIndex = 9 then set $Name = 'September'; end if;
+  if $MonthIndex = 10 then set $Name = 'October'; end if;
+  if $MonthIndex = 11 then set $Name = 'November'; end if;
+  if $MonthIndex = 12 then set $Name = 'December'; end if;
+  return $Name;
+end;
+/
+
+/**
  * Amount as a euro string. Whole euros — the matrix is a scanning view and
  * cents are noise at this density.
  *
@@ -49,6 +76,31 @@ begin
     set $Text = '-€ ' + formatDecimal(abs($Amount), '#,##0');
   else
     set $Text = '€ ' + formatDecimal($Amount, '#,##0');
+  end if;
+  return $Text;
+end;
+/
+
+/**
+ * Amount as a euro string with cents, for lists of individual transactions.
+ *
+ * The matrix rounds to whole euros because cents are noise at that density;
+ * a transaction list is the opposite case — '-€ 51.30' is what the statement
+ * says, and '-51.3' is what Mendix renders a Decimal as if left alone. There is
+ * no column-level number format in MDL, so the text is built here.
+ *
+ * @param $Amount Value to format, sign preserved
+ * @returns e.g. '-€ 51.30'
+ */
+create or modify microflow Ledger.FMT_EuroCents ($Amount: decimal)
+returns string as $Text
+folder 'Cashflow'
+begin
+  declare $Text string = '';
+  if $Amount < 0 then
+    set $Text = '-€ ' + formatDecimal(abs($Amount), '#,##0.00');
+  else
+    set $Text = '€ ' + formatDecimal($Amount, '#,##0.00');
   end if;
   return $Text;
 end;

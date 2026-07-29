@@ -206,13 +206,33 @@ Two behaviours worth keeping in mind:
   the save rebuilds that one row and refreshes it in the client — see FINDINGS
   44 for why the obvious alternative (re-navigating to the page) was rejected.
 
-### 5.5 Real CSV import
+### 5.5 Cell drilldown
+
+**Settled (2026-07-29): a popup over preformatted lines, category rows only.**
+
+Clicking a month cell on a category row lists the transactions it was computed
+from, with the cell's own actual, budget and variance in the header. The list
+and the header figures come from one shared retrieve, so they cannot disagree.
+
+Two decisions worth recording:
+
+- **Group subtotals and the net line are not drillable.** Neither has a single
+  category whose transactions could be listed. This is enforced by the data
+  rather than by a check: only category rows get a `CashflowRow_Category`, so
+  the opener finds it empty and declines.
+- **The grid holds non-persistent `DrillLine` rows, not `Transaction` objects.**
+  MDL has no number or date format on a grid column, so a Decimal renders as
+  `-51.3` and a date in the browser's locale. Preformatting in the builder is
+  what CashflowRow already does. The cost: a future "click a line to edit the
+  transaction" would need the association back — see FINDINGS 49.
+
+### 5.7 Real CSV import
 
 New work: FileDocument upload, Dutch parsing (`DD-MM-YYYY`, comma decimals, an
 `Af`/`Bij` direction column rather than a signed amount), duplicate detection on
 date + amount + account, then rule evaluation over the new rows.
 
-### 5.6 Real rules engine
+### 5.8 Real rules engine
 
 Needs a proper operator model: `contains`, `starts with`, `is one of` over merchant
 or description, plus an amount comparison. Rule 8 in the prototype must be

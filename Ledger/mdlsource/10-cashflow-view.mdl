@@ -278,6 +278,12 @@ end;
  * Group and net budgets are rolled up here rather than in SQL, because summing
  * a baseline across a group would fan out against the override join.
  *
+ * Category rows are matched back to their Category on the same SortKey the view
+ * computes, so a cell can drill into its transactions. A view entity cannot
+ * carry an association (CE6771, FINDINGS 41), so the join happens here over one
+ * extra retrieve of thirteen rows. Group and net rows are left without one,
+ * which is what makes them undrillable.
+ *
  * @param $Context Report context supplying the mode and the elapsed month
  * @returns Rows in display order
  */
@@ -302,6 +308,9 @@ begin
   retrieve $ViewRows from Ledger.VMatrixActual sort by SortKey asc;
   retrieve $Budgets from Ledger.VCategoryBudget sort by SortKey asc;
 
+  @annotation 'For the drilldown: a view row cannot hand back a Category (CE6771)'
+  retrieve $Cats from Ledger.Category;
+
   loop $V in $ViewRows
   begin
     set $IsIncome = $V/GroupTypeName = 'Income';
@@ -315,6 +324,16 @@ begin
     end if;
     if $V/RowKind = 'Net' then
       change $Row (RowKind = Ledger.RowKind.Net);
+    end if;
+
+    @annotation 'Category rows carry their Category so a cell can drill into it'
+    if $V/RowKind = 'Category' then
+      loop $C in $Cats
+      begin
+        if ($C/Ledger.Category_CategoryGroup/SortOrder * 100 + $C/SortOrder) = $V/SortKey then
+          change $Row (Ledger.CashflowRow_Category = $C);
+        end if;
+      end loop;
     end if;
 
     set $RowTotal = 0;
