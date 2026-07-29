@@ -850,3 +850,69 @@ element is visited deliberately. Warning-level, so it does not block, but it
 will fire on any aggregation microflow. The other rules learned to distinguish
 their cases (MDL047 by context, MDL-WIDGET15 by render mode); this one has not
 yet.
+
+### 36. View entities can carry the matrix aggregation — with one length trap
+
+Investigated whether the display entity behind the cashflow matrix would be
+better as a **view entity** (OQL) than a microflow-built non-persistent one.
+Answer: yes for the figures, no for the whole thing.
+
+**What works.** A single view does the 12-month pivot, excludes mirrors and
+joins the group, in one query:
+
+```sql
+create or modify view entity Ledger.VCategoryMonth (
+  CategoryName: string(100),
+  GroupName: string(50),
+  M01Actual: decimal, ...
+) as (
+  select c.Name as CategoryName, g.Name as GroupName,
+    sum(case when t.MonthKey = '2026-01' and t.IsMirror = false then t.Amount else 0 end) as M01Actual,
+    ...
+  from Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  left join Ledger.Transaction_Category/Ledger.Transaction as t
+  group by c.Name, g.Name
+);
+```
+
+Verified against the seeded data — Groceries Jan €671 / Jul €630, Rent €1,557 /
+€1,680 — matching the rendered matrix exactly.
+
+**The win is real.** `DS_CashflowRows` currently issues **~936 retrieves per
+render**: 156 category×month pairs for group subtotals, 156 for category rows,
+156 for the net line, each pair being `CALC_Actual` + `CALC_Budget`. It computes
+the same figures three times. A view collapses that to one query over 13 rows.
+
+**What a view cannot do**, so this stays a hybrid:
+
+- **No `UNION`** — absent from the entire 726-line OQL skill. Group subtotal
+  rows, category rows and the net line cannot come from one view.
+- **No `ORDER BY`/`LIMIT`** in a view entity (explicit rule) — ordering is the
+  UI's job.
+- Mode, `€` formatting, band classes and future-month blanking are all
+  presentation; a view is a fixed query.
+
+**The trap: pass-through string columns inherit their source length.**
+Declaring `CategoryName: string` against a `string(100)` source fails the build:
+
+```
+[error] [CE6770] "View Entity is out of sync with the OQL Query." at Entity 'Ledger.VProbeA'
+```
+
+Declaring `string(100)` builds clean. Three probes failed this way before the
+cause was clear — including one with no `case when` at all, which is what ruled
+out type inference.
+
+**Gap in PR #52's MDL031.** The PR added MDL031 for exactly this failure, but
+only for *derived* string columns (`cast(...)`, string-returning `case`), which
+Mendix normalises to `string(200)`. A **pass-through** column with a mismatched
+declared length still passes `mxcli check` and fails at build with the same
+cryptic CE6770. Extending MDL031 to compare a pass-through column's declared
+length against its source attribute would close it.
+
+**Caveat on the obvious budget query.** Resolving override → baseline as
+`max(case when o.MonthKey = '2026-01' then o.Amount else c.BaselineBudget end)`
+is wrong in general. It returned correct values here only because all five
+seeded overrides happen to exceed their baseline; a *lower* override would lose
+to `max`. Correct resolution needs a correlated subquery per month.
