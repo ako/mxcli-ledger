@@ -1719,6 +1719,18 @@ functions are enough avoids needing one.
 rather than under a single synthetic root leaves the middle empty, which is
 exactly the donut look.
 
+### 66. MDL-WIDGET10 caught a property that would have been silently ignored
+
+The chart was authored with `OverflowY: auto` alongside `maxHeightUnit: none`:
+
+> ⚠ page Ledger.Dashboard: widget `chartSunburst` (customchart) property
+> `OverflowY` is hidden when `maxHeightUnit` is "none" — the value will be
+> ignored [MDL-WIDGET10]
+
+Correct, and the sort of thing that is invisible otherwise: the app builds, the
+property is simply dropped. This is the widget-property equivalent of the
+dynamic hide-rules Studio Pro applies in its editor, and it is new in PR #52.
+
 ### 67. MDL silently drops an `action` property on a pluggable widget
 
 The dashboard needs `onClick` on CustomChart. MDL accepts it:
@@ -1788,15 +1800,3 @@ So the id-encoding scheme in `21-dashboard-builder.mdl` is correct and useless
 with this widget: the information exists in the browser and never reaches the
 microflow. A pluggable widget that forwarded `points[0].id` — or simply the
 whole point — would make the whole feature work as designed.
-
-### 66. MDL-WIDGET10 caught a property that would have been silently ignored
-
-The chart was authored with `OverflowY: auto` alongside `maxHeightUnit: none`:
-
-> ⚠ page Ledger.Dashboard: widget `chartSunburst` (customchart) property
-> `OverflowY` is hidden when `maxHeightUnit` is "none" — the value will be
-> ignored [MDL-WIDGET10]
-
-Correct, and the sort of thing that is invisible otherwise: the app builds, the
-property is simply dropped. This is the widget-property equivalent of the
-dynamic hide-rules Studio Pro applies in its editor, and it is new in PR #52.
