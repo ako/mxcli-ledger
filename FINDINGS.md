@@ -1139,6 +1139,74 @@ unopenable and undiagnosable.
 - **54–57** — empty column caption (CE0463), blank required-attribute message,
   the missing form/layoutgrid advisory, and the reorder refresh.
 
+### Round 5 — PR #52 at `22d9136f` (2026-07-29)
+
+Four new commits, all aimed at findings this project reported open in round 4.
+`make test`: **0 failures**. All **22** files in `mdlsource/` pass. `mx check` on
+this project: **0 errors**.
+
+| # | Finding | Result |
+|---|---|---|
+| 53 | `contains()` serialized as a list operation | **Fixed.** `set $Hit = contains($Hay, $Needle);` now builds clean — no CE0023/CE0097 |
+| 54 | empty column caption → CE0463 | **Partly fixed** — see below |
+| 52 | `break` writes a dangling reference | **Check added (MDL051), defect not fixed** — see below |
+| 57 | reorder needs `commit … refresh` | Documented |
+
+**54 is fixed for the case it was not reported against.** The fix fills an empty
+caption from the column's bound attribute, and its own note says "a column with
+no bound attribute is left untouched". Verified both shapes against the real
+project:
+
+| Column | `caption: ''` | `mx check` |
+|---|---|---|
+| bound to an attribute | filled with the attribute name | **0 errors** |
+| custom content, no attribute | left empty | **CE0463**, unchanged |
+
+The originating case was a column of row buttons — custom content, no attribute
+— so the shape that produced the finding still fails. A custom-content column
+has no attribute to fall back to, so the fix cannot reach it; it needs a
+different default, or a check that rejects an empty caption there.
+
+**52 is now caught, but only in one shape, and the hint is wrong about the
+other.** MDL051 fires on `break` inside an if/case within a loop, and its text
+says:
+
+> (A break placed directly in the loop body serializes fine.)
+
+It does not. A bare `break` in a loop body still produces an unloadable model —
+`mx check` dies with `KeyNotFoundException` in `StreamingBsonUnitReader`, the
+same crash as before:
+
+```
+create or modify microflow Ledger.PROBE_BreakBare ()
+…
+  loop $C in $Cats
+  begin
+    set $N = $N + 1;
+    break;              -- no conditional; MDL051 does not fire
+  end loop;
+```
+
+So the check has a false negative on the simpler shape, and its parenthetical
+asserts that shape is safe when it is not.
+
+**And `exec` does not enforce the check.** `mxcli-pr52 exec` cheerfully created
+the microflow MDL051 rejects. The guard only helps if `check` is run first —
+which means the unloadable-.mpr outcome is still reachable by the normal
+`exec`-only path. Worth considering whether write-path guards this severe
+should be enforced at exec too.
+
+**Still open:** 52 (both the bare-break false negative and the missing exec
+enforcement), 54 (custom-content columns), 55, 56, and 63–69 from the dashboard
+and styling work — including 67, where MDL silently drops an `action` property
+on a pluggable widget, which is the one currently blocking a feature.
+
+**Test-setup note for future rounds.** Copying only `Ledger.mpr` + `mprcontents`
++ `widgets` to a scratch directory yields **950 phantom errors** (CE0535 column
+weights and similar) because `theme/` and `themesource/` are missing — design
+properties resolve from there. Probing against the real project and dropping the
+probes afterwards is more reliable; `git status` confirms it left no trace.
+
 ## Phase 4 — budgets (2026-07-29)
 
 ### 41. View entities cannot take part in associations — and `mxcli check` says nothing
