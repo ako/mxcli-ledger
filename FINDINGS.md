@@ -2165,15 +2165,28 @@ for one render.
 
 ### 75. Dynamic Text formatting is a Mendix feature MDL cannot reach — and asking for it inline is dropped in silence
 
-Mendix supports formatting on a Dynamic Text content parameter: a parameter
-bound to a Decimal, Integer or Long carries decimal precision and a group-digits
-setting, and a DateTime parameter carries a date format. MDL exposes none of it.
-Its `dynamictext` grammar has `content`, `contentparams`, `rendermode`, `class`
-and `attribute` — the round trip of a decimal-bound one is complete at:
+The [Text widget reference](https://docs.mendix.com/refguide/text/) gives the
+widget three General properties — **Caption**, **Parameters** and **Render
+Mode** — plus Visibility, Common and Design Properties. Each entry under
+Parameters has three settings:
+
+> **Index** – identification number of a parameter
+> **Value** – an attribute or expression value to be displayed
+> **Format** – a format in which the value will be displayed (only for attributes)
+
+MDL covers all of that except the last word of it. `content` is Caption,
+`rendermode` is Render Mode, `class` and bracket-expression visibility cover the
+styling and Visibility sections, and `contentparams: [{1} = Attr]` carries a
+parameter's **Index** and **Value**.
+
+**There is no slot for `Format`.** The round trip of a decimal-bound Text is
+complete at:
 
 ```
 dynamictext txtPlain (Content: '{1}', ContentParams: [{1} = SignedAmount])
 ```
+
+One property, and it is the one that decides whether a number is readable.
 
 That is the whole reason this app preformats. `DrillLine.AmountText`,
 `CashflowRow.M01Text` and every other display string exist because a Decimal
@@ -2210,6 +2223,15 @@ Error: failed to set: failed to set DecimalPrecision on txtPlain:
 ```
 
 So the unknown-property check exists and works on one path and not the other.
-Two separate asks for mxcli: implement the formatting properties, and until
-then, make the inline page path reject an unknown widget property the way
-`ALTER PAGE SET` already does.
+
+Two asks for mxcli, in order:
+
+1. **Give `contentparams` a `Format` slot**, so a parameter can carry the third
+   setting the reference documents alongside Index and Value — something like
+   `contentparams: [{1} = SignedAmount format '#,##0.00']`. It is one property
+   on one widget, and it removes an entire class of workaround: every
+   preformatted string entity in this app exists only because of its absence.
+2. **Reject an unknown widget property on the inline page path**, the way
+   `ALTER PAGE SET` already does. Whatever the answer to (1), silently
+   discarding an authored property is the more expensive bug — the model is not
+   what the source says, and nothing tells you.
