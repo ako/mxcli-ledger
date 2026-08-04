@@ -1207,6 +1207,81 @@ weights and similar) because `theme/` and `themesource/` are missing — design
 properties resolve from there. Probing against the real project and dropping the
 probes afterwards is more reliable; `git status` confirms it left no trace.
 
+### Round 6 — PR #52 at `19170acc` (2026-07-29)
+
+Eight new commits. All **22** files in `mdlsource/` pass; `mx check` on this
+project: **0 errors**.
+
+| # | Finding | Result |
+|---|---|---|
+| 67 | `action` property dropped on a pluggable widget | **Fixed**, read path included |
+| 64 | loop iterator reused across loops | **Now caught at check time** (MDL052) |
+| 48 | association navigation in a compound expression | **Root cause fixed; MDL050 correctly withdrawn — but see below** |
+| 63 | bare `find()` parsed as a list operation | **Partly fixed** — see below |
+
+**67 verified end to end**, with a core widget so it needs no marketplace module:
+
+```
+pluggablewidget 'com.mendix.widget.web.datagrid.Datagrid' dg67 (
+  datasource: database Ledger.Category,
+  onClick: microflow Ledger.SYNC_RuleCounts
+) { column c1 (attribute: Name, caption: 'Category') }
+```
+
+```
+datagrid dg67 (DataSource: database from Ledger.Category,
+               onClick: microflow Ledger.SYNC_RuleCounts) { … }
+```
+
+`DESCRIBE` now reads the action back — the write *and* read paths both landed —
+and `mx check` is clean. The gap between "validator's key list" and "writer's
+propertyMappings" is closed.
+
+**Finding 48 was my misdiagnosis, and the withdrawal of MDL050 is right.** I
+recorded it as a *Mendix* rule — "crossing an association has to be the whole
+expression". It was an mxcli serialization bug. The rule I wrote into several
+file comments was wrong, and those comments have been corrected.
+
+**But the fix does not cover this app's actual case.** Every isolated form I
+could build now passes — association navigation in a concatenation, off a
+parameter, off a loop variable, split across lines, after a preceding
+`call microflow` on the same loop variable. Yet removing the workaround in
+`DS_DrillLines` (`09-cashflow-drill.mdl`) reproducibly gives:
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Meta'
+```
+
+I could not reduce it below the real microflow within this session, so the
+workaround stays in place and the repro is: take `09-cashflow-drill.mdl`,
+replace
+
+```
+set $Acct = $T/Ledger.Transaction_Account/Name;
+set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
+```
+
+with the single-expression form, `exec`, then `mx check`.
+
+**63 is fixed for one use per microflow, not two.** `mxcli check` no longer
+false-positives on `set $At = find(…)`, and a single use builds clean. Two uses
+in one microflow still collide, because the call is still serialized as a list
+operation:
+
+```
+[error] [CE0111] "Duplicate variable name 'At'." at List operation activity 'Find by expression'
+```
+
+`GET_SunburstPart` calls `find()` twice, so `+ 0` is still required there. Same
+underlying issue as 53: the name resolves to the list operation before argument
+types are considered.
+
+**A method note.** I twice concluded a fix was complete from an isolated probe,
+and twice the real code disproved it — once for 63, once for 48. Both times the
+probe was a fair-looking reduction that did not reproduce the surrounding
+context. Removing the workaround in place and running `mx check` is the test
+that counts; a green probe is not evidence that the workaround can go.
+
 ## Phase 4 — budgets (2026-07-29)
 
 ### 41. View entities cannot take part in associations — and `mxcli check` says nothing
@@ -1389,7 +1464,15 @@ set $Acct = $T/Ledger.Transaction_Account/Name;
 set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
 ```
 
-**The rule, as far as this app has established it:** in a `set` (Change
+**Superseded (round 6).** This was recorded as a Mendix rule. It was not — it
+was an mxcli serialization bug, fixed at the root in PR #52, and MDL050 (the
+check written against my description) was correctly withdrawn as a false
+positive. The paragraph below is left as originally written, because the
+reasoning it describes is what the evidence available at the time supported;
+treat it as history, not as a rule. Note that the workaround is still needed in
+`DS_DrillLines` — see round 6 for the case the fix does not reach.
+
+**The rule, as far as this app had established it:** in a `set` (Change
 variable) or a `create` member assignment, a path that *crosses an association*
 must be the entire expression. Member access on a parameter is fine anywhere —
 `Caption = $Row/Label + ' · ' + $MonthName` works — and so is association
@@ -1834,6 +1917,27 @@ error somewhere — `mx check` caught them, or the .mpr failed to load. This
 produces a working app with a dead control. Nothing anywhere says the property
 was ignored.
 
+**Root cause, traced on request (2026-07-29).** Not a missing action slot —
+CustomChart declares `<property key="onClick" type="action">` and
+`mxcli widget describe` prints it. The loss happens in the **generated def**:
+`customchart.def.json` carries 18 `propertyMappings` against 22 described
+properties, and `onClick` is not among them. Across all 42 defs in this project
+the only operations emitted are `primitive`, `texttemplate`, `attribute`,
+`datasource` and `selection` — there is no `action` operation at all, and
+**24 of 24** widgets that declare an action property and have a def lose it.
+
+Why MDL-WIDGET01 stays quiet: it is reading a different list. In one widget,
+`bogusPropertyThatDoesNotExist: 42` is rejected while `onClick:` is not — so the
+validator's known-key list includes `onClick` (it comes from the widget
+definition, which knows about actions) while the writer works from
+`propertyMappings`, which does not. Anything in that gap validates and writes
+nothing.
+
+**Reproducible without any marketplace module:** `Data grid 2` ships with every
+project and declares `onClick`, `onSelectionChange` and `onConfigurationChange`.
+Evidence pack, including the generated def and a minimal repro, is in
+[`docs/finding-67/`](./docs/finding-67/).
+
 ### 68. Writing a widget attribute does not re-run a datasource over its object
 
 With `onClick` unreachable, the fallback was to derive the panel from
@@ -1868,3 +1972,266 @@ So the id-encoding scheme in `21-dashboard-builder.mdl` is correct and useless
 with this widget: the information exists in the browser and never reaches the
 microflow. A pluggable widget that forwarded `points[0].id` — or simply the
 whole point — would make the whole feature work as designed.
+
+## Phase 9 — runtime observability (2026-08-04)
+
+Monitoring the running app with `--metrics` and `--trace-otlp`, per the
+`analyze-runtime` skill. The full report is in
+[`docs/observability.md`](docs/observability.md); the two mxcli defects are here.
+
+### 70. `--trace-otlp` reports success when the OTel agent failed to start
+
+The skill says user-set `OTEL_*` environment wins over what mxcli sets, so I set
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/json` to make the spans easy to parse:
+
+```bash
+OTEL_EXPORTER_OTLP_PROTOCOL=http/json mxcli run --local --ensure-db \
+  --metrics --trace-otlp http://127.0.0.1:4318 --trace-service ledger
+```
+
+mxcli reported:
+
+```
+Metrics (Prometheus): http://127.0.0.1:8090/prometheus
+Tracing enabled (OpenTelemetry, service "ledger"); spans -> OTLP http://127.0.0.1:4318
+Preview available at https://ledger-demo.mxcli.org
+```
+
+The app started and served normally. No spans ever arrived. The reason was only
+in `runtime.log`:
+
+```
+OpenTelemetry Javaagent failed to start
+io.opentelemetry.sdk.autoconfigure.spi.ConfigurationException: Unsupported OTLP traces protocol: http/json
+	at io.opentelemetry.exporter.otlp.internal.OtlpSpanExporterProvider.createExporter(OtlpSpanExporterProvider.java:80)
+```
+
+The bundled agent (2.28.1) ships only the protobuf exporter. Two things went
+wrong independently: the agent aborted, and mxcli announced tracing was on
+anyway. The second is the one that costs time — the observable symptom is an
+empty span file, which reads as "my collector is misconfigured" rather than "the
+agent is dead". A boot-time check for `Javaagent failed to start` in the runtime
+log, surfaced as a warning, would have made this immediate.
+
+Removing the variable and letting the default (`http/protobuf`) stand fixed it —
+14,396 spans in one browsing pass.
+
+### 71. Documented metric names are not the ones served
+
+`analyze-runtime.md` gives:
+
+```bash
+curl -s http://127.0.0.1:8090/prometheus | grep -E 'connectionbus_|handler_requests|sessions_|taskqueue_'
+```
+
+and names the families `connectionbus_{selects,inserts,updates,deletes,transactions}_total`.
+The runtime actually serves them under an `mx_runtime_stats_` prefix:
+
+```
+mx_runtime_stats_connectionbus_selects_total{XASId="a547a678-..."} 2269.0
+mx_runtime_stats_handler_requests_total{XASId="a547a678-...",name="xas/"} 45.0
+mx_runtime_stats_sessions_anonymous_sessions 1.0
+```
+
+The skill's own `grep` still matches (it is unanchored), so this only bites when
+you anchor the pattern or script against the documented name — which is what a
+sampler does. Worth correcting in the skill, since the surrounding text presents
+those as the family names.
+
+Two related traps for anyone scripting against this endpoint, neither an mxcli
+bug but both worth writing down:
+
+- `jvm_memory_used_bytes` has an `id` label containing spaces
+  (`id="G1 Eden Space"`), so the value is `$NF`, not `$2`. Summing `$2` yields
+  zero silently.
+- `handler_requests_total` is per-handler (`name="xas/"`, `name="p/"`, …), so
+  there is no single total to read.
+
+### 72. MDL001's `find()` advice is right, and the syntax is not in the skills
+
+Fixing the N+1 datasources (docs/observability.md) left two nested loops that
+were key lookups rather than aggregation. `mxcli check` flagged both:
+
+```
+⚠ nested loop detected (loop inside a loop). If the inner loop is a key LOOKUP
+  (finding one matching item), replace it with FIND($List, <condition>) for an
+  in-memory match (O(N) vs O(N^2)). [MDL001]
+    at Ledger.DS_CashflowRows
+    → For a lookup: $Match = FIND($List, key = $item/key).
+```
+
+The advice is correct and the distinction it draws — lookup versus genuine
+aggregation — is the right one: the same file's budget rollup is a real
+group × category × month aggregation and the rule says to ignore it there.
+Both lookups converted cleanly:
+
+```
+$Cat = find($Cats, Name = $V/Label);
+if $Cat != empty then
+  change $Row (Ledger.CashflowRow_Category = $Cat);
+end if;
+```
+
+`mxcli check --references` passed and `mx check` reported 0 errors.
+
+Two notes for anyone following the same hint:
+
+- **`find($List, <condition>)` appears nowhere in `.ai-context/skills/`.**
+  `HELP list operations` returns "No syntax help found". The only statement of
+  the syntax is the lint message itself. It is also easy to conflate with the
+  string `find()` of FINDINGS 33, which returns an index and must not be
+  declared — a different function with the same name.
+- It assigns an entity-typed variable without a `declare`, which is the only
+  way to hold one at all (MDL043/CE0053 forbids declaring entity locals). That
+  makes `find()` more than an optimisation: it is the idiomatic way to carry a
+  looked-up object out of a loop.
+
+### 73. Removing an N+1 bought less than expected, and the trace said why
+
+Worth recording because the measurement contradicted the obvious prediction.
+`DS_CashflowRows` went from 173 database queries per render to 4, and got only
+about 60 ms faster (median 270 ms → 209 ms).
+
+The spans explain it: against a loopback Postgres each of those queries cost
+~0.4 ms, so 169 of them were ~68 ms of a ~270 ms flow. The remaining cost is
+interpreter overhead — the flow makes roughly 3,000 nested microflow calls per
+render (`GET_ViewBudget` alone runs 468 times) and 1,611 Change activities.
+
+The lesson is not that the fix was pointless — 169 round trips against a
+database 1.5 ms away is ~250 ms, and it is per concurrent user — but that
+*query count and wall-clock time are separate problems*, and only the trace
+distinguishes them. A lint rule counting retrieves inside loops would have
+flagged this flow correctly and still mispredicted the payoff by 4x.
+
+### 74. A casted id is a usable key; `[id = $Var]` is not
+
+A view entity cannot carry an association (CE6771, finding 41), which had left
+two builders matching view rows back to objects by display name. The question
+was whether an object id could be exposed instead. Three probes, in order.
+
+**`select c.id as CategoryId` is read as an association, not an id.** It
+applies without complaint and then fails validation:
+
+```
+[error] [CE1613] "The selected association 'Ledger.CategoryId' no longer exists."
+        at OQL query 'Ledger.VProbeId'
+```
+
+**`cast(c.id as string)` works, and must be declared `string(200)`.** At
+`string(50)` it is CE6770 "View Entity is out of sync with the OQL Query" — a
+derived column normalises to 200 regardless of the source (finding 36).
+
+**There is no way back to the object.** `retrieve … where id = $Text` is
+rejected by MDL048, which is precise about why and about the alternative:
+
+```
+✗ retrieve '$Cat' constrains the object id against a value ([id = $IdText]),
+  which Mendix XPath does not support (CE0161) — there is no id operator
+  reachable from a microflow expression                              [MDL048]
+  → Retrieve by GUID with a marketplace action (NanoflowCommons GetObjectByGuid
+    / CommunityCommons), or expose the id as a String on a view entity
+    (cast(id as string) as ObjectId) and constrain on that String column.
+```
+
+That second suggestion is the whole trick, and it was worth verifying rather
+than assuming, because it only helps if ids agree across separately defined
+views. They do. Two independent probe views, one over Category and one over
+Transaction joined to Category, and the id-constrained fetch against the
+ordinary association join:
+
+```
+VProbeCat  → Groceries = 5066549580792692
+SELECT CatId, count(*), sum(Amount) FROM VProbeTx WHERE CatId = '5066549580792692'
+  → 77 rows, -4484.06
+SELECT ... FROM Transaction t INNER JOIN t/Transaction_Category/Category c
+  WHERE c.Name = 'Groceries' AND t.IsMirror = false
+  → 77 rows, -4484.06
+```
+
+Same rows, and −4,484 is the Groceries figure both screens display.
+
+So the rule is: **a casted id is a real key between view entities, and never a
+route to a persistent object.** Both drilldowns were rebuilt on it — the
+cashflow inspector no longer retrieves all thirteen categories to name-match
+one, and the sunburst's node ids are `G:<groupId>` / `C:<groupId>|<categoryId>`
+instead of concatenated names. Two associations (`CashflowRow_Category`,
+`ReportContext_DrillCategory`) were dropped outright.
+
+What it does *not* replace: an association between two persistent entities.
+There you would lose referential integrity, delete behaviour, and XPath
+navigation from either side, and gain nothing — the object is already reachable.
+Both associations dropped here were on non-persistent display objects that live
+for one render.
+
+### 75. Dynamic Text formatting is a Mendix feature MDL cannot reach — and asking for it inline is dropped in silence
+
+The [Text widget reference](https://docs.mendix.com/refguide/text/) gives the
+widget three General properties — **Caption**, **Parameters** and **Render
+Mode** — plus Visibility, Common and Design Properties. Each entry under
+Parameters has three settings:
+
+> **Index** – identification number of a parameter
+> **Value** – an attribute or expression value to be displayed
+> **Format** – a format in which the value will be displayed (only for attributes)
+
+MDL covers all of that except the last word of it. `content` is Caption,
+`rendermode` is Render Mode, `class` and bracket-expression visibility cover the
+styling and Visibility sections, and `contentparams: [{1} = Attr]` carries a
+parameter's **Index** and **Value**.
+
+**There is no slot for `Format`.** The round trip of a decimal-bound Text is
+complete at:
+
+```
+dynamictext txtPlain (Content: '{1}', ContentParams: [{1} = SignedAmount])
+```
+
+One property, and it is the one that decides whether a number is readable.
+
+That is the whole reason this app preformats. `DrillLine.AmountText`,
+`CashflowRow.M01Text` and every other display string exist because a Decimal
+rendered through `dynamictext` comes out as `-51.3` and `5068.38000000`. It is
+also the direct cause of the README's "Transactions screen shows raw decimals"
+gap, and it is what stopped the cashflow inspector becoming a plain
+database-datasource list over a view entity: OQL cannot build `#,##0.00`
+either — it has no `substring`, no `abs` and no `floor` (CE0174) — so the one
+column that must stay in a microflow keeps the whole list in one.
+
+**The worse half is how the attempt fails.** Setting the property inline on a
+`create or replace page` is accepted everywhere and then discarded:
+
+```bash
+$ mxcli check probe.mdl -p Ledger.mpr --references
+✓ All references valid
+Check passed!
+$ mxcli exec probe.mdl -p Ledger.mpr
+Created page Ledger.ProbeFmt2                      # no warning
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.ProbeFmt2"
+dynamictext txtFmt (Content: '{1}', ContentParams: [{1} = SignedAmount])
+```
+
+`decimalprecision: 2, groupdigits: true` went in and are simply not there. No
+error, no warning, `mx check` 0 errors — the same silent-drop class as finding
+67, and the same reason it costs time: the model is quietly not what the source
+says.
+
+The `ALTER PAGE` path, by contrast, fails properly:
+
+```
+Error: failed to set: failed to set DecimalPrecision on txtPlain:
+       property "DecimalPrecision" not found (widget has no pluggable Object)
+```
+
+So the unknown-property check exists and works on one path and not the other.
+
+Two asks for mxcli, in order:
+
+1. **Give `contentparams` a `Format` slot**, so a parameter can carry the third
+   setting the reference documents alongside Index and Value — something like
+   `contentparams: [{1} = SignedAmount format '#,##0.00']`. It is one property
+   on one widget, and it removes an entire class of workaround: every
+   preformatted string entity in this app exists only because of its absence.
+2. **Reject an unknown widget property on the inline page path**, the way
+   `ALTER PAGE SET` already does. Whatever the answer to (1), silently
+   discarding an authored property is the more expensive bug — the model is not
+   what the source says, and nothing tells you.

@@ -35,81 +35,6 @@ begin
 end;
 /
 
-/**
- * Builds the report context: mode, subheading and the four headline figures.
- *
- * KPIs cover elapsed months only. Including future months would add their
- * zero actuals to spend and count every future cell as massively under
- * budget.
- *
- * @returns A fresh ReportContext in Actual mode
- */
-create or modify microflow Ledger.DS_ReportContext ()
-returns Ledger.ReportContext as $Context
-folder 'Cashflow'
-begin
-  declare $Through integer = 0;
-  declare $Income decimal = 0;
-  declare $Spend decimal = 0;
-  declare $Over integer = 0;
-  declare $M integer = 1;
-  declare $IsIncome boolean = false;
-
-  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
-  set $Through = $ThroughCalc;
-
-  retrieve $Groups from Ledger.CategoryGroup sort by SortOrder asc;
-  loop $G in $Groups
-  begin
-    set $IsIncome = $G/GroupType = Ledger.GroupType.Income;
-    retrieve $Cats from Ledger.Category
-      where Ledger.Category_CategoryGroup = $G
-      sort by SortOrder asc;
-    loop $C in $Cats
-    begin
-      set $M = 1;
-      while $M <= $Through
-      begin
-        $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $M);
-        $A = call microflow Ledger.CALC_Actual (Category = $C, MonthIndex = $M);
-        $B = call microflow Ledger.CALC_Budget (Category = $C, MonthKey = $MK);
-        if $IsIncome then
-          set $Income = $Income + $A;
-          if $B - $A > $B * 0.02 then
-            set $Over = $Over + 1;
-          end if;
-        else
-          set $Spend = $Spend + $A;
-          if $A - $B > $B * 0.02 then
-            set $Over = $Over + 1;
-          end if;
-        end if;
-        set $M = $M + 1;
-      end while;
-    end loop;
-  end loop;
-
-  $IncomeText = call microflow Ledger.FMT_Euro (Amount = $Income);
-  $SpendText = call microflow Ledger.FMT_Euro (Amount = $Spend);
-  $NetText = call microflow Ledger.FMT_Euro (Amount = $Income - $Spend);
-
-  $Context = create Ledger.ReportContext (
-    Mode = Ledger.ReportMode.Actual,
-    Subheading = 'Twelve months of actuals against budget. Cell colour shows how far each category is over or under its monthly budget.',
-    KpiIncome = $IncomeText,
-    KpiSpend = $SpendText,
-    KpiNet = $NetText,
-    KpiOver = toString($Over) + ' cells',
-    ElapsedThrough = $Through,
-
-    -- The inspector starts empty and says so
-    DrillKicker = 'Inspector',
-    DrillTitle = 'Select a cell',
-    DrillMeta = 'Click any cell in the matrix to list the transactions behind it.');
-
-  return $Context;
-end;
-/
 
 -- DS_CashflowRows now lives in 10-cashflow-view.mdl, rewritten on top of the
 -- VMatrixActual / VCategoryBudget view entities.
@@ -170,3 +95,7 @@ begin
   return $Done;
 end;
 /
+
+-- DS_ReportContext moved to 10-cashflow-view.mdl: it now reads VMatrixActual
+-- and VCategoryBudget instead of aggregating per cell, so it has to be defined
+-- after those view entities and their month getters.

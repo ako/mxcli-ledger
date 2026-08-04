@@ -5,11 +5,24 @@
 -- these (FINDINGS 45: wiring a page's actions afterwards does not work).
 --
 -- Node ids encode the path, so one click tells us which ring was hit and what
--- to filter by without a second lookup:
+-- to filter by without a second lookup. The group and category levels are the
+-- entities' own casted ids, not their names:
 --
---   G:Housing
---   C:Housing|Rent
---   M:Housing|Rent|Woonstad
+--   G:5066549580792100
+--   C:5066549580792100|5066549580792692
+--   M:5066549580792100|5066549580792692|Woonstad
+--
+-- Names were the key until it became clear they need not be: a view entity
+-- cannot carry an association (CE6771), but it can expose `cast(id as string)`,
+-- and a view constrained on that column returns exactly what an association
+-- join returns (FINDINGS 74). Two categories sharing a name can no longer
+-- collapse into one segment. Labels are still names — ids identify, names
+-- display.
+--
+-- The merchant level stays a name: Transaction.Merchant is a string column, not
+-- an entity, so there is no id to use. It is scoped by the two ids above it, so
+-- the only ambiguity left is two identical merchant names inside one category,
+-- where the name IS the identity.
 --
 -- Each loop uses its own iterator name. A loop variable is scoped to the whole
 -- microflow, not to its loop, so a second `loop $R in …` is CE0111 "Duplicate
@@ -58,18 +71,18 @@ begin
   @annotation 'Ring 1 — category groups, each rolled up from its rows'
   loop $G in $Rows
   begin
-    if $G/GroupName != $PrevGroup then
-      set $PrevGroup = $G/GroupName;
+    if $G/GroupId != $PrevGroup then
+      set $PrevGroup = $G/GroupId;
       set $Sub = 0;
       loop $GS in $Rows
       begin
-        if $GS/GroupName = $G/GroupName then
+        if $GS/GroupId = $G/GroupId then
           set $Sub = $Sub + $GS/Total;
         end if;
       end loop;
       set $Grand = $Grand + $Sub;
 
-      set $Ids = $Ids + $Sep + '"G:' + $G/GroupName + '"';
+      set $Ids = $Ids + $Sep + '"G:' + $G/GroupId + '"';
       set $Labels = $Labels + $Sep + '"' + $G/GroupName + '"';
       set $Parents = $Parents + $Sep + '""';
       set $Values = $Values + $Sep + formatDecimal($Sub, '0.00');
@@ -77,24 +90,24 @@ begin
     end if;
   end loop;
 
-  @annotation 'Ring 2 — categories, keyed on group+category so names cannot collide'
+  @annotation 'Ring 2 — categories, keyed on the two ids'
   set $PrevKey = '';
   loop $C in $Rows
   begin
-    set $Key = $C/GroupName + '|' + $C/CategoryName;
+    set $Key = $C/GroupId + '|' + $C/CategoryId;
     if $Key != $PrevKey then
       set $PrevKey = $Key;
       set $Sub = 0;
       loop $CS in $Rows
       begin
-        if $CS/GroupName = $C/GroupName and $CS/CategoryName = $C/CategoryName then
+        if $CS/CategoryId = $C/CategoryId then
           set $Sub = $Sub + $CS/Total;
         end if;
       end loop;
 
       set $Ids = $Ids + $Sep + '"C:' + $Key + '"';
       set $Labels = $Labels + $Sep + '"' + $C/CategoryName + '"';
-      set $Parents = $Parents + $Sep + '"G:' + $C/GroupName + '"';
+      set $Parents = $Parents + $Sep + '"G:' + $C/GroupId + '"';
       set $Values = $Values + $Sep + formatDecimal($Sub, '0.00');
       set $Sep = ',';
     end if;
@@ -103,9 +116,9 @@ begin
   @annotation 'Ring 3 — merchants, one node per row of the view'
   loop $M in $Rows
   begin
-    set $CatId = 'C:' + $M/GroupName + '|' + $M/CategoryName;
+    set $CatId = 'C:' + $M/GroupId + '|' + $M/CategoryId;
 
-    set $Ids = $Ids + $Sep + '"M:' + $M/GroupName + '|' + $M/CategoryName + '|' + $M/Merchant + '"';
+    set $Ids = $Ids + $Sep + '"M:' + $M/GroupId + '|' + $M/CategoryId + '|' + $M/Merchant + '"';
     set $Labels = $Labels + $Sep + '"' + $M/Merchant + '"';
     set $Parents = $Parents + $Sep + '"' + $CatId + '"';
     set $Values = $Values + $Sep + formatDecimal($M/Total, '0.00');
@@ -157,7 +170,7 @@ end;
  * a bounding box rather than the point (FINDINGS 69).
  *
  * @param $Context The dashboard context
- * @returns e.g. 'M:Housing|Rent|Woonstad'
+ * @returns e.g. 'M:<groupId>|<categoryId>|Woonstad'
  */
 create or modify microflow Ledger.GET_SunburstId ($Context: Ledger.SunburstContext)
 returns string as $Id
@@ -178,9 +191,9 @@ end;
  * Returns '' for a level the id does not reach, which is exactly what the
  * filters want — an unset level means "do not narrow further".
  *
- * @param $Id A node id such as 'C:Housing|Rent'
+ * @param $Id A node id such as 'C:<groupId>|<categoryId>'
  * @param $Level 1, 2 or 3
- * @returns The level's name, or ''
+ * @returns The level's id (or, at level 3, the merchant name), or ''
  */
 create or modify microflow Ledger.GET_SunburstPart ($Id: string, $Level: integer)
 returns string as $Part
@@ -226,18 +239,24 @@ end;
 /
 
 /**
- * The transactions behind the current selection.
+ * The transactions behind the current selection, already joined.
  *
- * XPath walks the association to reach the group name — ordinary XPath, not the
- * microflow-expression restriction of FINDINGS 43/48. The category and merchant
- * levels are narrowed in memory, because "constrain only if set" is not
- * something an XPath constraint against a variable can express.
+ * Reads VTransactionLine rather than Transaction. The old version retrieved
+ * Transaction objects and left the caller to cross Transaction_Category and
+ * Transaction_Account per row — one query each, per row, per render. The join
+ * is now in the view; this is a single query.
+ *
+ * The category and merchant levels are still narrowed in memory, because
+ * "constrain only if set" is not something an XPath constraint against a
+ * variable can express.
+ *
+ * Mirrors are excluded by the view itself, so there is no IsMirror clause here.
  *
  * @param $Context The dashboard context
- * @returns Transactions, newest first
+ * @returns Joined transaction lines, newest first
  */
 create or modify microflow Ledger.GET_SunburstTransactions ($Context: Ledger.SunburstContext)
-returns list of Ledger.Transaction as $Txs
+returns list of Ledger.VTransactionLine as $Txs
 folder 'Dashboard'
 begin
   declare $Group string = '';
@@ -246,10 +265,9 @@ begin
   $G = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 1);
   set $Group = $G;
 
-  retrieve $Txs from Ledger.Transaction
-    where [Ledger.Transaction_Category/Ledger.Category/Ledger.Category_CategoryGroup/Ledger.CategoryGroup/Name = $Group]
-      and [IsMirror = false]
-    sort by TxDate desc;
+  retrieve $Txs from Ledger.VTransactionLine
+    where GroupId = $Group
+    sort by Ledger.VTransactionLine.TxDate desc;
 
   return $Txs;
 end;
@@ -290,7 +308,8 @@ begin
   loop $T in $Txs
   begin
     set $Keep = true;
-    set $CatName = $T/Ledger.Transaction_Category/Ledger.Category/Name;
+    @annotation 'Plain column reads: the join is in VTransactionLine, not here'
+    set $CatName = $T/CategoryId;
     if $Category != '' and $CatName != $Category then
       set $Keep = false;
     end if;
@@ -302,8 +321,7 @@ begin
       set $N = $N + 1;
       $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
 
-      @annotation 'Crossing an association has to be the whole expression — FINDINGS 48'
-      set $Acct = $T/Ledger.Transaction_Account/Name;
+      set $Acct = $T/AccountName;
       set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
 
       $Line = create Ledger.DrillLine (
@@ -333,15 +351,16 @@ returns Ledger.SunburstSelection as $Sel
 folder 'Dashboard'
 begin
   declare $Kind string = '';
-  declare $Group string = '';
-  declare $Category string = '';
+  declare $GroupId string = '';
+  declare $CatId string = '';
   declare $Merchant string = '';
   declare $Kicker string = '';
   declare $Title string = '';
   declare $Amount decimal = 0;
+  declare $GroupLabel string = '';
+  declare $CatLabel string = '';
 
   $Id = call microflow Ledger.GET_SunburstId (Context = $Context);
-
   @annotation 'length() rather than = empty: an unset String is not equal to empty'
   if length($Id) < 2 then
     $Empty = create Ledger.SunburstSelection (
@@ -353,26 +372,30 @@ begin
 
   set $Kind = substring($Id, 0, 1);
   $G = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 1);
-  set $Group = $G;
+  set $GroupId = $G;
   $C = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 2);
-  set $Category = $C;
+  set $CatId = $C;
   $M = call microflow Ledger.GET_SunburstPart (Id = $Id, Level = 3);
   set $Merchant = $M;
 
   set $Kicker = if $Kind = 'G' then 'Category group'
     else if $Kind = 'C' then 'Category' else 'Merchant';
-  set $Title = if $Merchant != '' then $Merchant
-    else if $Category != '' then $Category else $Group;
 
+  @annotation 'Match on ids; carry the names off the matching rows, because the id levels no longer carry a display label'
   retrieve $Rows from Ledger.VMerchantSpend;
   loop $V in $Rows
   begin
-    if $V/GroupName = $Group
-      and ($Category = '' or $V/CategoryName = $Category)
+    if $V/GroupId = $GroupId
+      and ($CatId = '' or $V/CategoryId = $CatId)
       and ($Merchant = '' or $V/Merchant = $Merchant) then
       set $Amount = $Amount + $V/Total;
+      set $GroupLabel = $V/GroupName;
+      set $CatLabel = $V/CategoryName;
     end if;
   end loop;
+
+  set $Title = if $Merchant != '' then $Merchant
+    else if $CatId != '' then $CatLabel else $GroupLabel;
 
   $Lines = call microflow Ledger.DS_SunburstLines (Context = $Context);
   $Count = count($Lines);
@@ -411,17 +434,17 @@ begin
 
   loop $V in $Src
   begin
-    if $V/GroupName != $PrevGroup then
-      set $PrevGroup = $V/GroupName;
+    if $V/GroupId != $PrevGroup then
+      set $PrevGroup = $V/GroupId;
       set $Sub = 0;
       loop $GS in $Src
       begin
-        if $GS/GroupName = $V/GroupName then
+        if $GS/GroupId = $V/GroupId then
           set $Sub = $Sub + $GS/Total;
         end if;
       end loop;
       set $N = $N + 1;
-      set $NodeId = 'G:' + $V/GroupName;
+      set $NodeId = 'G:' + $V/GroupId;
       $GT = call microflow Ledger.FMT_Euro (Amount = $Sub);
       $GRow = create Ledger.SunburstRow (
         Label = $V/GroupName, NodeId = $NodeId, Kind = 'G',
@@ -431,13 +454,13 @@ begin
       add $GRow to $Rows;
     end if;
 
-    set $Key = $V/GroupName + '|' + $V/CategoryName;
+    set $Key = $V/GroupId + '|' + $V/CategoryId;
     if $Key != $PrevKey then
       set $PrevKey = $Key;
       set $Sub = 0;
       loop $CS in $Src
       begin
-        if $CS/GroupName = $V/GroupName and $CS/CategoryName = $V/CategoryName then
+        if $CS/CategoryId = $V/CategoryId then
           set $Sub = $Sub + $CS/Total;
         end if;
       end loop;
@@ -453,7 +476,7 @@ begin
     end if;
 
     set $N = $N + 1;
-    set $NodeId = 'M:' + $V/GroupName + '|' + $V/CategoryName + '|' + $V/Merchant;
+    set $NodeId = 'M:' + $V/GroupId + '|' + $V/CategoryId + '|' + $V/Merchant;
     $MT = call microflow Ledger.FMT_Euro (Amount = $V/Total);
     $MRow = create Ledger.SunburstRow (
       Label = $V/Merchant, NodeId = $NodeId, Kind = 'M',

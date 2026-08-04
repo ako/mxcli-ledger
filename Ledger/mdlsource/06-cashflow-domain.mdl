@@ -58,7 +58,22 @@ create or modify non-persistent entity Ledger.CashflowRow (
   M09Text: string(24), M09Band: string(16),
   M10Text: string(24), M10Band: string(16),
   M11Text: string(24), M11Band: string(16),
-  M12Text: string(24), M12Band: string(16)
+  M12Text: string(24), M12Band: string(16),
+
+  /**
+   * The row's category, as a casted id string rather than an association.
+   *
+   * A view entity cannot carry an association (CE6771), so the builder used to
+   * match view rows back to Category objects by name and hold the object here.
+   * VMatrixActual now emits the id directly, and the inspector fetches by it —
+   * a name was only ever a safe key while no two categories shared one.
+   *
+   * Empty on group and net rows, which is what makes them undrillable: there
+   * is no single category to show transactions for.
+   */
+  CategoryIdText: string(200),
+  /** The row's category group name, shown as the inspector's kicker */
+  GroupNameText: string(50)
 );
 /
 
@@ -91,7 +106,12 @@ create or modify non-persistent entity Ledger.ReportContext (
   /** e.g. 'Groceries · March 2026' */
   DrillTitle: string(160),
   /** e.g. '€ 655 of € 620 budget · 11 transactions' */
-  DrillMeta: string(200)
+  DrillMeta: string(200),
+  /**
+   * The selected category, as a casted id string. Empty when nothing is
+   * selected, which is what makes the drill datasources return nothing.
+   */
+  DrillCategoryId: string(200)
 );
 /
 
@@ -119,34 +139,10 @@ create or modify non-persistent entity Ledger.DrillLine (
 );
 /
 
-/**
- * The category behind a matrix row.
- *
- * Group and net rows leave it empty, which is also what makes them
- * undrillable: there is no single category to show transactions for.
- */
-create or modify association Ledger.CashflowRow_Category
-  from Ledger.CashflowRow
-  to Ledger.Category
-  type reference
-  owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
 
-/**
- * The category the inspector is showing.
- *
- * On ReportContext rather than on a popup object because the inspector is part
- * of the page: it sits beside the matrix, is populated on load, and both it and
- * the matrix read the one object the page's dataview already holds.
- */
-create or modify association Ledger.ReportContext_DrillCategory
-  from Ledger.ReportContext
-  to Ledger.Category
-  type reference
-  owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+
+-- CashflowRow_Category and ReportContext_DrillCategory are gone: the drill key
+-- is a casted id string now (see CategoryIdText / DrillCategoryId above).
 
 /**
  * The page context a matrix row was built for.

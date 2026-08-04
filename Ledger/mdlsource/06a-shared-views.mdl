@@ -1,0 +1,69 @@
+-- ============================================================================
+-- 06a - Shared transaction view
+-- ============================================================================
+-- One transaction with everything a detail list needs already joined, and with
+-- the ids of the things it hangs off exposed as strings.
+--
+-- Two screens read it: the cashflow inspector (10a) and the dashboard drilldown
+-- (21). It used to live with the dashboard, but it is not a dashboard thing.
+--
+-- Why ids as strings. A view entity cannot carry an association (CE6771,
+-- FINDINGS 41), and Mendix XPath has no id operator reachable from a microflow
+-- expression, so `[id = $Text]` is not available either (MDL048). What *is*
+-- available is `cast(id as string)`: the value is stable, it is identical
+-- across independently defined views, and constraining a view on that column
+-- returns exactly the rows an association join returns — verified against the
+-- association path before this was built on (FINDINGS 74).
+--
+-- That is what makes the id a usable key: a caller that holds a CategoryId
+-- string can fetch these rows without ever holding a Category object. It
+-- replaces matching on display names, which was only ever correct while no two
+-- categories shared a name.
+--
+-- Casted ids must be declared string(200): a derived column normalises to that
+-- length regardless of the source, and declaring anything else is CE6770 "View
+-- Entity is out of sync with the OQL Query" (FINDINGS 36, 74).
+-- ============================================================================
+
+/**
+ * A transaction with its category, group and account resolved.
+ *
+ * Mirrors are excluded here rather than at every call site — an internal
+ * transfer books on both accounts, and no detail list wants both halves.
+ *
+ * Amount and SignedAmount are both carried: callers total on Amount (which is
+ * always positive, matching how the matrix and KPIs add up) and display
+ * SignedAmount (which carries the direction).
+ *
+ * Pass-through string columns must declare their source's exact length:
+ * CategoryGroup.Name is string(50), Category.Name and Account.Name are
+ * string(100), Transaction.Merchant is string(200).
+ */
+create or modify view entity Ledger.VTransactionLine (
+  GroupId: string(200),
+  GroupName: string(50),
+  CategoryId: string(200),
+  CategoryName: string(100),
+  Merchant: string(200),
+  AccountName: string(100),
+  TxDate: datetime,
+  Amount: decimal,
+  SignedAmount: decimal
+) as (
+  select
+    cast(g.id as string) as GroupId,
+    g.Name as GroupName,
+    cast(c.id as string) as CategoryId,
+    c.Name as CategoryName,
+    t.Merchant as Merchant,
+    a.Name as AccountName,
+    t.TxDate as TxDate,
+    t.Amount as Amount,
+    t.SignedAmount as SignedAmount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false
+);
+/

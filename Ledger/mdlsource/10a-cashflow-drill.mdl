@@ -1,5 +1,5 @@
 -- ============================================================================
--- 09 - Cashflow inspector
+-- 10a - Cashflow inspector
 -- ============================================================================
 -- Clicking a cell in the matrix answers the question the matrix provokes:
 -- 'Groceries went €35 over in March — on what?'. The transactions appear in a
@@ -17,29 +17,36 @@
 -- outline and the panel its contents in one round trip.
 --
 -- Only category rows select. A group subtotal has no single category to list
--- and the net line has none at all, so both leave CashflowRow_Category empty
--- and the handler declines. That is one guard rather than a row-kind check plus
--- a null check, because the association being empty *is* the condition.
+-- and the net line has none at all, so both carry an empty CategoryIdText and
+-- the handler declines. That is one guard rather than a row-kind check plus a
+-- null check, because the key being empty *is* the condition.
+--
+-- Numbered 10a rather than 09 because it now reads the view entities defined in
+-- 10 and 06a, and the files apply in order.
+--
+-- The selection travels as a casted id string rather than an association: a
+-- view entity cannot carry one (CE6771), and a caller holding an id can fetch
+-- the matching view rows without ever holding a Category (FINDINGS 74).
 -- ============================================================================
 
 /**
- * The transactions behind the selected cell: one category, one month, mirrors
- * excluded.
+ * The transactions behind the selected cell: one category, one month.
  *
  * The filter lives here because two callers need the same rows — the panel's
- * list and its header figures — and they must not be able to disagree. Mirrors
- * are excluded for the same reason the matrix excludes them: an internal
- * transfer books on both accounts and the cell would not add up to the list
- * underneath it.
+ * list and its header figures — and they must not be able to disagree.
  *
- * Returns nothing when no cell is selected: the category association is unset,
- * so the constraint matches nothing.
+ * Reads VTransactionLine, constrained on the category's casted id. Mirrors are
+ * excluded by the view. The old version retrieved Transaction objects through
+ * an association and left the caller to cross Transaction_Account per row.
+ *
+ * Returns nothing when no cell is selected: DrillCategoryId is empty, and no
+ * row has an empty CategoryId.
  *
  * @param $Context The page's report context
- * @returns Transactions, oldest first
+ * @returns Transaction lines, oldest first
  */
 create or modify microflow Ledger.GET_DrillTransactions ($Context: Ledger.ReportContext)
-returns list of Ledger.Transaction as $Txs
+returns list of Ledger.VTransactionLine as $Txs
 folder 'Cashflow'
 begin
   declare $Start datetime = [%CurrentDateTime%];
@@ -48,15 +55,11 @@ begin
   set $Start = addMonths(dateTime(2026, 1, 1), $Context/DrillMonthIndex - 1);
   set $End = addMonths($Start, 1);
 
-  @annotation 'XPath cannot compare against an association path, only a variable'
-  retrieve $Cat from $Context/Ledger.ReportContext_DrillCategory;
-
-  retrieve $Txs from Ledger.Transaction
-    where Ledger.Transaction_Category = $Cat
+  retrieve $Txs from Ledger.VTransactionLine
+    where CategoryId = $Context/DrillCategoryId
       and TxDate >= $Start
       and TxDate < $End
-      and IsMirror = false
-    sort by TxDate asc;
+    sort by Ledger.VTransactionLine.TxDate asc;
 
   return $Txs;
 end;
@@ -85,8 +88,8 @@ begin
     set $N = $N + 1;
     $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
 
-    @annotation 'Crossing an association has to be the whole expression — FINDINGS 48'
-    set $Acct = $T/Ledger.Transaction_Account/Name;
+    @annotation 'Plain column read: the join is in VTransactionLine'
+    set $Acct = $T/AccountName;
     set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
 
     $Line = create Ledger.DrillLine (
@@ -124,19 +127,16 @@ returns boolean as $Selected
 folder 'Cashflow'
 begin
   declare $Selected boolean = false;
-  declare $MonthKey string = '';
   declare $MonthName string = '';
   declare $Budget decimal = 0;
   declare $ActualOut string = '';
   declare $BudgetOut string = '';
   declare $CountOut string = '';
 
-  retrieve $Cat from $Row/Ledger.CashflowRow_Category;
   retrieve $Context from $Row/Ledger.CashflowRow_Context;
 
-  if $Cat != empty then
-    $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $MonthIndex);
-    set $MonthKey = $MK;
+  @annotation 'Group and net rows carry no category id, so they do not select'
+  if length($Row/CategoryIdText) > 0 then
     $MN = call microflow Ledger.FMT_MonthName (MonthIndex = $MonthIndex);
     set $MonthName = $MN;
 
@@ -144,15 +144,20 @@ begin
     change $Context (
       DrillSortKey = $Row/SortOrder,
       DrillMonthIndex = $MonthIndex,
-      Ledger.ReportContext_DrillCategory = $Cat);
+      DrillCategoryId = $Row/CategoryIdText);
 
     $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
     @annotation 'count() and sum() declare their own outputs — see FINDINGS 47'
     $Count = count($Txs);
     $Actual = sum($Txs.Amount);
 
-    $B = call microflow Ledger.CALC_Budget (Category = $Cat, MonthKey = $MonthKey);
-    set $Budget = $B;
+    @annotation 'The budget comes off the same view the matrix reads, found by id rather than by walking an association to a Category'
+    retrieve $Budgets from Ledger.VCategoryBudget;
+    $BRow = find($Budgets, CategoryId = $Row/CategoryIdText);
+    if $BRow != empty then
+      $B = call microflow Ledger.GET_ViewBudget (B = $BRow, MonthIndex = $MonthIndex);
+      set $Budget = $B;
+    end if;
 
     $AT = call microflow Ledger.FMT_Euro (Amount = $Actual);
     set $ActualOut = $AT;
@@ -161,7 +166,7 @@ begin
     set $CountOut = if $Count = 1 then '1 transaction' else toString($Count) + ' transactions';
 
     change $Context (
-      DrillKicker = $Cat/Ledger.Category_CategoryGroup/Name,
+      DrillKicker = $Row/GroupNameText,
       DrillTitle = $Row/Label + ' · ' + $MonthName + ' 2026',
       DrillMeta = $ActualOut + ' of ' + $BudgetOut + ' budget · ' + $CountOut)
       refresh;
