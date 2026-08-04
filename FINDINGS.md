@@ -1972,3 +1972,77 @@ So the id-encoding scheme in `21-dashboard-builder.mdl` is correct and useless
 with this widget: the information exists in the browser and never reaches the
 microflow. A pluggable widget that forwarded `points[0].id` — or simply the
 whole point — would make the whole feature work as designed.
+
+## Phase 9 — runtime observability (2026-08-04)
+
+Monitoring the running app with `--metrics` and `--trace-otlp`, per the
+`analyze-runtime` skill. The full report is in
+[`docs/observability.md`](docs/observability.md); the two mxcli defects are here.
+
+### 70. `--trace-otlp` reports success when the OTel agent failed to start
+
+The skill says user-set `OTEL_*` environment wins over what mxcli sets, so I set
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/json` to make the spans easy to parse:
+
+```bash
+OTEL_EXPORTER_OTLP_PROTOCOL=http/json mxcli run --local --ensure-db \
+  --metrics --trace-otlp http://127.0.0.1:4318 --trace-service ledger
+```
+
+mxcli reported:
+
+```
+Metrics (Prometheus): http://127.0.0.1:8090/prometheus
+Tracing enabled (OpenTelemetry, service "ledger"); spans -> OTLP http://127.0.0.1:4318
+Preview available at https://ledger-demo.mxcli.org
+```
+
+The app started and served normally. No spans ever arrived. The reason was only
+in `runtime.log`:
+
+```
+OpenTelemetry Javaagent failed to start
+io.opentelemetry.sdk.autoconfigure.spi.ConfigurationException: Unsupported OTLP traces protocol: http/json
+	at io.opentelemetry.exporter.otlp.internal.OtlpSpanExporterProvider.createExporter(OtlpSpanExporterProvider.java:80)
+```
+
+The bundled agent (2.28.1) ships only the protobuf exporter. Two things went
+wrong independently: the agent aborted, and mxcli announced tracing was on
+anyway. The second is the one that costs time — the observable symptom is an
+empty span file, which reads as "my collector is misconfigured" rather than "the
+agent is dead". A boot-time check for `Javaagent failed to start` in the runtime
+log, surfaced as a warning, would have made this immediate.
+
+Removing the variable and letting the default (`http/protobuf`) stand fixed it —
+14,396 spans in one browsing pass.
+
+### 71. Documented metric names are not the ones served
+
+`analyze-runtime.md` gives:
+
+```bash
+curl -s http://127.0.0.1:8090/prometheus | grep -E 'connectionbus_|handler_requests|sessions_|taskqueue_'
+```
+
+and names the families `connectionbus_{selects,inserts,updates,deletes,transactions}_total`.
+The runtime actually serves them under an `mx_runtime_stats_` prefix:
+
+```
+mx_runtime_stats_connectionbus_selects_total{XASId="a547a678-..."} 2269.0
+mx_runtime_stats_handler_requests_total{XASId="a547a678-...",name="xas/"} 45.0
+mx_runtime_stats_sessions_anonymous_sessions 1.0
+```
+
+The skill's own `grep` still matches (it is unanchored), so this only bites when
+you anchor the pattern or script against the documented name — which is what a
+sampler does. Worth correcting in the skill, since the surrounding text presents
+those as the family names.
+
+Two related traps for anyone scripting against this endpoint, neither an mxcli
+bug but both worth writing down:
+
+- `jvm_memory_used_bytes` has an `id` label containing spaces
+  (`id="G1 Eden Space"`), so the value is `$NF`, not `$2`. Summing `$2` yields
+  zero silently.
+- `handler_requests_total` is per-handler (`name="xas/"`, `name="p/"`, …), so
+  there is no single total to read.

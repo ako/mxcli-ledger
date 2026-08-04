@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 69 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 71 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -150,13 +150,22 @@ Stated rather than hidden:
   in the builder, and this one has not been converted.
 - **CSV import is not built.** The prototype's import wizard read no file and its
   counts were hardcoded; a real one is genuinely new work.
+- **Four datasources are N+1.** A single pass over the app issues ~2,200
+  SELECTs, nearly all of them from four flows crossing an association inside a
+  loop. Measured and root-caused in
+  [`docs/observability.md`](./docs/observability.md); not yet fixed.
+- **The theme pulls IBM Plex from Google Fonts at runtime.** Where that CDN is
+  unreachable the app silently falls back to system faces — including in the
+  container these screenshots were taken in, so the images above do not show the
+  intended typography. Self-hosting the faces would fix both.
 
 ## Layout
 
 ```
-FINDINGS.md              69 numbered findings — the main deliverable alongside the app
+FINDINGS.md              71 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
+docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
 Ledger/theme/            Atlas token overrides
