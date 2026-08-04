@@ -158,11 +158,15 @@ Measured browser-side, click to content:
 | Transactions | 2.5 s | — |
 | Accounts | 2.0 s | — |
 | Categories & rules | 3.0 s | — |
-| Dashboard ring click | 1.2 s | |
-| Cashflow cell click | 1.5 s | |
+| Dashboard ring click | see below | |
+| Cashflow cell click | see below | |
 
 Cashflow stays slow warm because `DS_CashflowRows` re-runs in full on every
 visit. The others are cheap once the client bundle is cached.
+
+The click figures in the first version of this table were wrong — they measured
+a fixed `waitForTimeout(1500)` in the load script rather than the click. What a
+click actually costs is measured below.
 
 ---
 
@@ -236,6 +240,57 @@ The fix is still worth it, because the cost it removes is the one that scales:
 169 round trips against a database 1.5 ms away is ~250 ms, and 169 connections
 held per concurrent user is a pool problem. But if this page needs to get
 genuinely fast, the next target is the per-cell microflow calls, not the SQL.
+
+## Still open: selecting a cell rebuilds the whole matrix
+
+Clicking a cashflow cell fires **three** requests, not one:
+
+| request | cost |
+|---|---:|
+| `ACT_DrillCell` | 15–62 ms |
+| **`DS_CashflowRows`** | **131–374 ms** |
+| `DS_DrillLines` | 14–71 ms |
+
+The detail list is not the slow part. The matrix — all 228 cells, ~3,000 nested
+microflow calls — is rebuilt on every selection, and the grid re-renders with
+it. Through the hub tunnel each request also costs a round trip (~150 ms
+measured), so it is paid twice.
+
+The cause is one line in `DS_CashflowRows`:
+
+```
+if $V/SortKey = $Context/DrillSortKey and $M = $Context/DrillMonthIndex then
+  set $Band = $Band + ' cf-sel';
+```
+
+The selection outline is **baked into the row data**, so `ACT_DrillCell` has to
+refresh the `ReportContext` — and because the grid's datasource and the
+inspector's list both take that same object as their parameter, refreshing it to
+update the list unavoidably invalidates the matrix. The matrix is rebuilt to
+move one CSS class.
+
+### The fix, and why it is not in yet
+
+Split the drill state onto its own non-persistent object associated to the row.
+`ACT_DrillCell` then refreshes only that, `DS_CashflowRows` never re-runs, and
+the outline moves into the column's `DynamicCellClass` expression reading the
+selection through a single association hop.
+
+The open question is whether DataGrid2 re-evaluates a cell-class expression when
+an *associated* object refreshes. It could not be probed cheaply:
+`ALTER PAGE … ON colM03` fails with `widget "colM03" not found`, because grid
+columns are not addressable as widgets, so testing it means rewriting the page
+in source and restarting.
+
+There is a cleaner version of this that needs no split at all, and it is blocked
+on finding 75. A view keyed on `(CategoryId, Yr, MonthIndex)` works — `datepart`
+gives integer year and month columns, and OQL builds the meta line exactly
+(`17 Mar · ING Betaalrekening`). If the list could be a plain database
+datasource over that view, nothing would take the `ReportContext` as a
+parameter and the rebuild would disappear as a side effect. The one column that
+stops it is the amount: OQL cannot produce `#,##0.00` — it has no `substring`,
+`abs` or `floor` (CE0174) — and MDL cannot ask the Text widget to format it.
+Give `contentparams` a `Format` slot and this whole section becomes moot.
 
 ## Errors found in the tooling
 
