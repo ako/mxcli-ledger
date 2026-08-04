@@ -54,6 +54,51 @@ create or modify view entity Ledger.VMerchantSpend (
 /
 
 /**
+ * One transaction with its category, group and account already joined.
+ *
+ * The drilldown list needs a transaction's category name (to filter) and its
+ * account name (to display). Reading those off the Transaction object means
+ * crossing an association inside a loop, and that is one query per row, every
+ * time — 672 category selects and 180 account selects over nine drilldowns
+ * when this was measured (docs/observability.md). The join belongs in the
+ * query, not the loop.
+ *
+ * This is safe to flatten because the drilldown only ever *displays* these
+ * rows: they are copied into DrillLine, a non-persistent display object.
+ * Nothing downstream needs the Transaction itself, which is the one thing a
+ * view entity cannot hand back (CE6771, FINDINGS 41).
+ *
+ * Mirrors are excluded here rather than at every call site — an internal
+ * transfer books on both accounts, and the drilldown never wants both halves.
+ *
+ * Pass-through string columns must declare their source's exact length
+ * (FINDINGS 36): CategoryGroup.Name is string(50), Category.Name and
+ * Account.Name are string(100), Transaction.Merchant is string(200).
+ */
+create or modify view entity Ledger.VTransactionLine (
+  GroupName: string(50),
+  CategoryName: string(100),
+  Merchant: string(200),
+  AccountName: string(100),
+  TxDate: datetime,
+  SignedAmount: decimal
+) as (
+  select
+    g.Name as GroupName,
+    c.Name as CategoryName,
+    t.Merchant as Merchant,
+    a.Name as AccountName,
+    t.TxDate as TxDate,
+    t.SignedAmount as SignedAmount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false
+);
+/
+
+/**
  * The decoded selection, rebuilt on every click.
  *
  * A separate object from SunburstContext because it is produced by a *datasource*

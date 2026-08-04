@@ -2046,3 +2046,59 @@ bug but both worth writing down:
   zero silently.
 - `handler_requests_total` is per-handler (`name="xas/"`, `name="p/"`, …), so
   there is no single total to read.
+
+### 72. MDL001's `find()` advice is right, and the syntax is not in the skills
+
+Fixing the N+1 datasources (docs/observability.md) left two nested loops that
+were key lookups rather than aggregation. `mxcli check` flagged both:
+
+```
+⚠ nested loop detected (loop inside a loop). If the inner loop is a key LOOKUP
+  (finding one matching item), replace it with FIND($List, <condition>) for an
+  in-memory match (O(N) vs O(N^2)). [MDL001]
+    at Ledger.DS_CashflowRows
+    → For a lookup: $Match = FIND($List, key = $item/key).
+```
+
+The advice is correct and the distinction it draws — lookup versus genuine
+aggregation — is the right one: the same file's budget rollup is a real
+group × category × month aggregation and the rule says to ignore it there.
+Both lookups converted cleanly:
+
+```
+$Cat = find($Cats, Name = $V/Label);
+if $Cat != empty then
+  change $Row (Ledger.CashflowRow_Category = $Cat);
+end if;
+```
+
+`mxcli check --references` passed and `mx check` reported 0 errors.
+
+Two notes for anyone following the same hint:
+
+- **`find($List, <condition>)` appears nowhere in `.ai-context/skills/`.**
+  `HELP list operations` returns "No syntax help found". The only statement of
+  the syntax is the lint message itself. It is also easy to conflate with the
+  string `find()` of FINDINGS 33, which returns an index and must not be
+  declared — a different function with the same name.
+- It assigns an entity-typed variable without a `declare`, which is the only
+  way to hold one at all (MDL043/CE0053 forbids declaring entity locals). That
+  makes `find()` more than an optimisation: it is the idiomatic way to carry a
+  looked-up object out of a loop.
+
+### 73. Removing an N+1 bought less than expected, and the trace said why
+
+Worth recording because the measurement contradicted the obvious prediction.
+`DS_CashflowRows` went from 173 database queries per render to 4, and got only
+about 60 ms faster (median 270 ms → 209 ms).
+
+The spans explain it: against a loopback Postgres each of those queries cost
+~0.4 ms, so 169 of them were ~68 ms of a ~270 ms flow. The remaining cost is
+interpreter overhead — the flow makes roughly 3,000 nested microflow calls per
+render (`GET_ViewBudget` alone runs 468 times) and 1,611 Change activities.
+
+The lesson is not that the fix was pointless — 169 round trips against a
+database 1.5 ms away is ~250 ms, and it is per concurrent user — but that
+*query count and wall-clock time are separate problems*, and only the trace
+distinguishes them. A lint rule counting retrieves inside loops would have
+flagged this flow correctly and still mispredicted the payoff by 4x.

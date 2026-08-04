@@ -268,6 +268,103 @@ end;
 /
 
 /**
+ * Builds the report context: mode, subheading and the four headline figures.
+ *
+ * KPIs cover elapsed months only. Including future months would add their
+ * zero actuals to spend and count every future cell as massively under
+ * budget.
+ *
+ * Reads the same two view entities the matrix reads, rather than calling
+ * CALC_Actual and CALC_Budget per category per month. Those helpers are one
+ * database round trip each, so the old version issued 416 of them to render a
+ * four-figure header — the slowest datasource in the app at 530ms mean
+ * (docs/observability.md). VMatrixActual and VCategoryBudget already hold
+ * every figure it needs, computed by the same rules, in two queries.
+ *
+ * Only category rows are counted: VMatrixActual also carries Group and Net
+ * rows, and adding those to a total built from categories would double-count.
+ *
+ * The budget row is found by an inner loop over thirteen in-memory rows rather
+ * than held in a variable, because MDL cannot declare an entity-typed local
+ * (MDL043/CE0053). The month loop lives inside the match so it runs once.
+ *
+ * @returns A fresh ReportContext in Actual mode
+ */
+create or modify microflow Ledger.DS_ReportContext ()
+returns Ledger.ReportContext as $Context
+folder 'Cashflow'
+begin
+  declare $Through integer = 0;
+  declare $Income decimal = 0;
+  declare $Spend decimal = 0;
+  declare $Over integer = 0;
+  declare $M integer = 1;
+  declare $IsIncome boolean = false;
+  declare $A decimal = 0;
+  declare $B decimal = 0;
+
+  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
+  set $Through = $ThroughCalc;
+
+  retrieve $ViewRows from Ledger.VMatrixActual sort by SortKey asc;
+  retrieve $KpiBudgets from Ledger.VCategoryBudget sort by SortKey asc;
+
+  loop $V in $ViewRows
+  begin
+    if $V/RowKind = 'Category' then
+      set $IsIncome = $V/GroupTypeName = 'Income';
+
+      @annotation 'Key lookup, not aggregation — MDL001 advises find() over a nested loop'
+      $KB = find($KpiBudgets, SortKey = $V/SortKey);
+
+      if $KB != empty then
+        set $M = 1;
+        while $M <= $Through
+        begin
+          $AM = call microflow Ledger.GET_ViewActual (V = $V, MonthIndex = $M);
+          set $A = $AM;
+          $BM = call microflow Ledger.GET_ViewBudget (B = $KB, MonthIndex = $M);
+          set $B = $BM;
+          if $IsIncome then
+            set $Income = $Income + $A;
+            if $B - $A > $B * 0.02 then
+              set $Over = $Over + 1;
+            end if;
+          else
+            set $Spend = $Spend + $A;
+            if $A - $B > $B * 0.02 then
+              set $Over = $Over + 1;
+            end if;
+          end if;
+          set $M = $M + 1;
+        end while;
+      end if;
+    end if;
+  end loop;
+
+  $IncomeText = call microflow Ledger.FMT_Euro (Amount = $Income);
+  $SpendText = call microflow Ledger.FMT_Euro (Amount = $Spend);
+  $NetText = call microflow Ledger.FMT_Euro (Amount = $Income - $Spend);
+
+  $Context = create Ledger.ReportContext (
+    Mode = Ledger.ReportMode.Actual,
+    Subheading = 'Twelve months of actuals against budget. Cell colour shows how far each category is over or under its monthly budget.',
+    KpiIncome = $IncomeText,
+    KpiSpend = $SpendText,
+    KpiNet = $NetText,
+    KpiOver = toString($Over) + ' cells',
+    ElapsedThrough = $Through,
+
+    -- The inspector starts empty and says so
+    DrillKicker = 'Inspector',
+    DrillTitle = 'Select a cell',
+    DrillMeta = 'Click any cell in the matrix to list the transactions behind it.');
+
+  return $Context;
+end;
+/
+
+/**
  * Builds every row of the cashflow matrix for the context's mode.
  *
  * Rewritten to read two view entities instead of issuing a retrieve per cell.
@@ -331,12 +428,11 @@ begin
 
     @annotation 'Category rows carry their Category so a cell can drill into it'
     if $V/RowKind = 'Category' then
-      loop $C in $Cats
-      begin
-        if ($C/Ledger.Category_CategoryGroup/SortOrder * 100 + $C/SortOrder) = $V/SortKey then
-          change $Row (Ledger.CashflowRow_Category = $C);
-        end if;
-      end loop;
+      @annotation 'Match on Label, not a recomputed SortKey: crossing Category_CategoryGroup here cost one query per evaluation — 169 per render (docs/observability.md). VMatrixActual already emits the category name as Label.'
+      $Cat = find($Cats, Name = $V/Label);
+      if $Cat != empty then
+        change $Row (Ledger.CashflowRow_Category = $Cat);
+      end if;
     end if;
 
     set $RowTotal = 0;

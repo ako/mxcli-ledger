@@ -166,6 +166,66 @@ visit. The others are cheap once the client bundle is cached.
 
 ---
 
+## After the fix
+
+All four were fixed and the identical scripted pass re-run.
+
+| | before | after |
+|---|---:|---:|
+| **SELECTs for one 45-request pass** | **2,194** | **225** |
+| `DS_ReportContext` | 214 q/call, 530 ms | 3 q/call, 124 ms |
+| `DS_CashflowRows` | 173 q/call, 322 ms | 4 q/call, 278 ms |
+| `DS_SunburstLines` | 118 q/call, 206 ms | 1 q/call, 65 ms |
+| `DS_SunburstSelection` | 90 q/call, 162 ms | 2 q/call, 59 ms |
+| Cashflow page, warm | 1,372 ms | 657 ms |
+
+What changed:
+
+- **`VTransactionLine`** — a new view joining Transaction → Category → Group →
+  Account, with mirrors excluded. `GET_SunburstTransactions` returns these
+  instead of `Transaction`, so `DS_SunburstLines` reads plain columns where it
+  used to cross two associations per row.
+- **`DS_ReportContext`** now reads `VMatrixActual` and `VCategoryBudget` — the
+  same two views the matrix reads — instead of calling `CALC_Actual` and
+  `CALC_Budget` per category per month.
+- **`DS_CashflowRows`** matches a view row to its Category on `Name = Label`
+  rather than recomputing the view's `SortKey` from the association.
+- Both category lookups became `find($List, key = …)` on the advice of
+  **MDL001**, which the linter raised on exactly these two nested loops.
+
+`DS_ReportContext` moved from `08-cashflow-datasources.mdl` to
+`10-cashflow-view.mdl`, because it now depends on view entities defined there
+and the files apply in order.
+
+### Verified, not assumed
+
+The figures have to be identical, and they are — checked along three
+independent paths:
+
+| | value |
+|---|---|
+| Cashflow INCOME / SPEND / NET | € 45,118 / € 29,566 / € 15,552 |
+| Postgres, same window, straight SQL | Income 45,118 / Expense 29,566 |
+| Dashboard total (merchant view) | € 29,566 |
+| Groceries, dashboard vs matrix | € 4,484 both |
+| Albert Heijn drilldown | € 1,124 · 19 transactions, 19 lines rendered |
+
+The KPI flow now computes its totals from a completely different query than
+before and lands on the same numbers as raw SQL. `mx check`: 0 errors.
+
+### What did not improve, and why
+
+`DS_CashflowRows` lost 169 queries and got only ~60 ms faster. That is the
+expected result once measured rather than assumed: against a loopback Postgres
+those queries cost ~0.4 ms each, so they were ~20% of the flow's time. The rest
+is interpreter overhead — the flow makes roughly 3,000 nested microflow calls
+per render (`GET_ViewBudget` alone runs 468 times) and 1,611 Change activities.
+
+The fix is still worth it, because the cost it removes is the one that scales:
+169 round trips against a database 1.5 ms away is ~250 ms, and 169 connections
+held per concurrent user is a pool problem. But if this page needs to get
+genuinely fast, the next target is the per-cell microflow calls, not the SQL.
+
 ## Errors found in the tooling
 
 Two mxcli issues surfaced while doing this; both are recorded in

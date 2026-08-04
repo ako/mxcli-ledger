@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 71 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 73 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -92,6 +92,10 @@ files apply in dependency order:
 | `17`–`19` | Rules engine |
 | `20`–`22` | Dashboard sunburst |
 
+A runtime monitoring pass — what the app actually does under load, and the
+four N+1 datasources it found and fixed (2,194 SELECTs per pass down to 225) —
+is in [`docs/observability.md`](./docs/observability.md).
+
 The set is **re-applied from scratch** rather than patched, so the numbering is
 the build order and every file is idempotent (`create or modify` throughout).
 
@@ -150,10 +154,6 @@ Stated rather than hidden:
   in the builder, and this one has not been converted.
 - **CSV import is not built.** The prototype's import wizard read no file and its
   counts were hardcoded; a real one is genuinely new work.
-- **Four datasources are N+1.** A single pass over the app issues ~2,200
-  SELECTs, nearly all of them from four flows crossing an association inside a
-  loop. Measured and root-caused in
-  [`docs/observability.md`](./docs/observability.md); not yet fixed.
 - **The theme pulls IBM Plex from Google Fonts at runtime.** Where that CDN is
   unreachable the app silently falls back to system faces — including in the
   container these screenshots were taken in, so the images above do not show the
@@ -162,7 +162,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              71 numbered findings — the main deliverable alongside the app
+FINDINGS.md              73 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
