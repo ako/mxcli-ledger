@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 73 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 74 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -87,14 +87,20 @@ files apply in dependency order:
 |---|---|
 | `01`–`04` | Domain model, enumerations, demo data |
 | `05` | Transactions, Accounts, Categories screens |
-| `06`–`11` | Cashflow matrix, view entities, inspector |
+| `06`–`11` | Cashflow matrix, shared views, inspector |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
 | `20`–`22` | Dashboard sunburst |
 
-A runtime monitoring pass — what the app actually does under load, and the
-four N+1 datasources it found and fixed (2,194 SELECTs per pass down to 225) —
-is in [`docs/observability.md`](./docs/observability.md).
+A runtime monitoring pass — what the app actually does under load, and the four
+N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
+[`docs/observability.md`](./docs/observability.md).
+
+Both drilldowns are keyed on `cast(id as string)` rather than on display names.
+A view entity cannot carry an association, but it can expose an id, and a view
+constrained on that column returns exactly what an association join returns —
+so the cashflow inspector and the sunburst reach their rows without ever
+holding the object. See finding 74.
 
 The set is **re-applied from scratch** rather than patched, so the numbering is
 the build order and every file is idempotent (`create or modify` throughout).
@@ -162,7 +168,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              73 numbered findings — the main deliverable alongside the app
+FINDINGS.md              74 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

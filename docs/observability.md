@@ -197,6 +197,17 @@ What changed:
 `10-cashflow-view.mdl`, because it now depends on view entities defined there
 and the files apply in order.
 
+A second pass then re-keyed both drilldowns on `cast(id as string)` (finding
+74), taking the pass from 225 SELECTs to **173** and the warm Cashflow page from
+657 ms to **340 ms**: `DS_CashflowRows` no longer
+retrieves all thirteen categories to name-match one, and `DS_DrillLines` reads
+the account name off the view instead of crossing an association per row. Two
+associations went with it — `CashflowRow_Category` and
+`ReportContext_DrillCategory` — and `VTransactionLine` moved to
+`06a-shared-views.mdl`, since the inspector reads it too. The drill file is now
+`10a-cashflow-drill.mdl`: it depends on the views, so it has to apply after
+them.
+
 ### Verified, not assumed
 
 The figures have to be identical, and they are — checked along three

@@ -39,6 +39,8 @@ create or modify view entity Ledger.VMatrixActual (
   Label: string(200),
   RowKind: string(200),
   GroupTypeName: string(200),
+  CategoryId: string(200),
+  GroupName: string(200),
   M01Actual: decimal,
   M02Actual: decimal,
   M03Actual: decimal,
@@ -57,6 +59,8 @@ create or modify view entity Ledger.VMatrixActual (
     cast(c.Name as string) as Label,
     'Category' as RowKind,
     cast(g.GroupType as string) as GroupTypeName,
+    cast(c.id as string) as CategoryId,
+    cast(g.Name as string) as GroupName,
     sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 1 and t.IsMirror = false then t.Amount else 0 end) as M01Actual,
     sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 2 and t.IsMirror = false then t.Amount else 0 end) as M02Actual,
     sum(case when datepart(YEAR, t.TxDate) = 2026 and datepart(MONTH, t.TxDate) = 3 and t.IsMirror = false then t.Amount else 0 end) as M03Actual,
@@ -72,7 +76,7 @@ create or modify view entity Ledger.VMatrixActual (
   from Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
   left join c/Ledger.Transaction_Category/Ledger.Transaction as t
-  group by g.SortOrder, c.SortOrder, c.Name, g.GroupType
+  group by g.SortOrder, c.SortOrder, c.Name, g.GroupType, c.id, g.Name
 
   union all
 
@@ -81,6 +85,8 @@ create or modify view entity Ledger.VMatrixActual (
     cast(g2.Name as string) as Label,
     'Group' as RowKind,
     cast(g2.GroupType as string) as GroupTypeName,
+    '' as CategoryId,
+    cast(g2.Name as string) as GroupName,
     sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 1 and t2.IsMirror = false then t2.Amount else 0 end) as M01Actual,
     sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 2 and t2.IsMirror = false then t2.Amount else 0 end) as M02Actual,
     sum(case when datepart(YEAR, t2.TxDate) = 2026 and datepart(MONTH, t2.TxDate) = 3 and t2.IsMirror = false then t2.Amount else 0 end) as M03Actual,
@@ -105,6 +111,8 @@ create or modify view entity Ledger.VMatrixActual (
     'Net cashflow' as Label,
     'Net' as RowKind,
     'Net' as GroupTypeName,
+    '' as CategoryId,
+    '' as GroupName,
     sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 1 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M01Actual,
     sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 2 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M02Actual,
     sum(case when datepart(YEAR, t3.TxDate) = 2026 and datepart(MONTH, t3.TxDate) = 3 and t3.IsMirror = false then (case when g3.GroupType = 'Income' then t3.Amount else 0 - t3.Amount end) else 0 end) as M03Actual,
@@ -140,6 +148,7 @@ create or modify view entity Ledger.VMatrixActual (
  */
 create or modify view entity Ledger.VCategoryBudget (
   SortKey: integer,
+  CategoryId: string(200),
   CategoryName: string(100),
   GroupSortOrder: integer,
   GroupTypeName: string(200),
@@ -158,6 +167,7 @@ create or modify view entity Ledger.VCategoryBudget (
 ) as (
   select
     (g.SortOrder * 100 + c.SortOrder) as SortKey,
+    cast(c.id as string) as CategoryId,
     c.Name as CategoryName,
     g.SortOrder as GroupSortOrder,
     cast(g.GroupType as string) as GroupTypeName,
@@ -200,7 +210,7 @@ create or modify view entity Ledger.VCategoryBudget (
   from Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
   left join c/Ledger.BudgetOverride_Category/Ledger.BudgetOverride as o
-  group by g.SortOrder, c.SortOrder, c.Name, c.BaselineBudget, g.GroupType
+  group by g.SortOrder, c.SortOrder, c.Name, c.BaselineBudget, g.GroupType, c.id
 );
 /
 
@@ -405,9 +415,6 @@ begin
   retrieve $ViewRows from Ledger.VMatrixActual sort by SortKey asc;
   retrieve $Budgets from Ledger.VCategoryBudget sort by SortKey asc;
 
-  @annotation 'For the drilldown: a view row cannot hand back a Category (CE6771)'
-  retrieve $Cats from Ledger.Category;
-
   loop $V in $ViewRows
   begin
     set $IsIncome = $V/GroupTypeName = 'Income';
@@ -426,13 +433,11 @@ begin
     @annotation 'Cells write the selection back onto the context they came from'
     change $Row (Ledger.CashflowRow_Context = $Context);
 
-    @annotation 'Category rows carry their Category so a cell can drill into it'
+    @annotation 'The drill key travels as a casted id string — no Category object, no retrieve, no name match. Group and net rows carry '''', which is what makes them undrillable.'
     if $V/RowKind = 'Category' then
-      @annotation 'Match on Label, not a recomputed SortKey: crossing Category_CategoryGroup here cost one query per evaluation — 169 per render (docs/observability.md). VMatrixActual already emits the category name as Label.'
-      $Cat = find($Cats, Name = $V/Label);
-      if $Cat != empty then
-        change $Row (Ledger.CashflowRow_Category = $Cat);
-      end if;
+      change $Row (
+        CategoryIdText = $V/CategoryId,
+        GroupNameText = $V/GroupName);
     end if;
 
     set $RowTotal = 0;

@@ -2102,3 +2102,63 @@ database 1.5 ms away is ~250 ms, and it is per concurrent user — but that
 *query count and wall-clock time are separate problems*, and only the trace
 distinguishes them. A lint rule counting retrieves inside loops would have
 flagged this flow correctly and still mispredicted the payoff by 4x.
+
+### 74. A casted id is a usable key; `[id = $Var]` is not
+
+A view entity cannot carry an association (CE6771, finding 41), which had left
+two builders matching view rows back to objects by display name. The question
+was whether an object id could be exposed instead. Three probes, in order.
+
+**`select c.id as CategoryId` is read as an association, not an id.** It
+applies without complaint and then fails validation:
+
+```
+[error] [CE1613] "The selected association 'Ledger.CategoryId' no longer exists."
+        at OQL query 'Ledger.VProbeId'
+```
+
+**`cast(c.id as string)` works, and must be declared `string(200)`.** At
+`string(50)` it is CE6770 "View Entity is out of sync with the OQL Query" — a
+derived column normalises to 200 regardless of the source (finding 36).
+
+**There is no way back to the object.** `retrieve … where id = $Text` is
+rejected by MDL048, which is precise about why and about the alternative:
+
+```
+✗ retrieve '$Cat' constrains the object id against a value ([id = $IdText]),
+  which Mendix XPath does not support (CE0161) — there is no id operator
+  reachable from a microflow expression                              [MDL048]
+  → Retrieve by GUID with a marketplace action (NanoflowCommons GetObjectByGuid
+    / CommunityCommons), or expose the id as a String on a view entity
+    (cast(id as string) as ObjectId) and constrain on that String column.
+```
+
+That second suggestion is the whole trick, and it was worth verifying rather
+than assuming, because it only helps if ids agree across separately defined
+views. They do. Two independent probe views, one over Category and one over
+Transaction joined to Category, and the id-constrained fetch against the
+ordinary association join:
+
+```
+VProbeCat  → Groceries = 5066549580792692
+SELECT CatId, count(*), sum(Amount) FROM VProbeTx WHERE CatId = '5066549580792692'
+  → 77 rows, -4484.06
+SELECT ... FROM Transaction t INNER JOIN t/Transaction_Category/Category c
+  WHERE c.Name = 'Groceries' AND t.IsMirror = false
+  → 77 rows, -4484.06
+```
+
+Same rows, and −4,484 is the Groceries figure both screens display.
+
+So the rule is: **a casted id is a real key between view entities, and never a
+route to a persistent object.** Both drilldowns were rebuilt on it — the
+cashflow inspector no longer retrieves all thirteen categories to name-match
+one, and the sunburst's node ids are `G:<groupId>` / `C:<groupId>|<categoryId>`
+instead of concatenated names. Two associations (`CashflowRow_Category`,
+`ReportContext_DrillCategory`) were dropped outright.
+
+What it does *not* replace: an association between two persistent entities.
+There you would lose referential integrity, delete behaviour, and XPath
+navigation from either side, and gain nothing — the object is already reachable.
+Both associations dropped here were on non-persistent display objects that live
+for one render.
