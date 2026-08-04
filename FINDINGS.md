@@ -2235,3 +2235,83 @@ Two asks for mxcli, in order:
    `ALTER PAGE SET` already does. Whatever the answer to (1), silently
    discarding an authored property is the more expensive bug — the model is not
    what the source says, and nothing tells you.
+
+### 76. mxcli PR #88 tested — the format block is written correctly and has no runtime effect
+
+PR #88 (`feat(pages): dynamic-text parameter formatting via a FORMAT block`)
+answers finding 75 with a per-parameter `format (…)` block and a new
+MDL-WIDGET18 for the silent drop. Both halves do what they claim, and the
+feature still does not reach the screen.
+
+**What works.** The widget-level key now errors instead of vanishing:
+
+```
+✗ page Ledger.T1: widget `d1`: `decimalprecision` is a per-parameter format, not a
+  widget property … A widget-level `decimalprecision` is dropped on write. [MDL-WIDGET18]
+```
+
+The block parses, applies, survives `mx check` (0 errors) and round-trips —
+`decimalPrecision: 2` is omitted on read because it is the default, while `0`
+and `4` come back verbatim:
+
+```
+dynamictext dT3 (Content: '{1}', ContentParams: [{1} = SignedAmount format (groupDigits: true)])
+precision 0 -> format (decimalPrecision: 0, groupDigits: true)
+precision 4 -> format (decimalPrecision: 4, groupDigits: true)
+```
+
+The `Forms$FormattingInfo` written into the `.mpr` is complete and correct.
+
+**What does not.** Converting the Transactions grid's date and amount to
+custom-content columns with `format (dateFormat: Custom, customDateFormat:
+'d MMM yyyy')` and `format (decimalPrecision: 2, groupDigits: true)`, then
+rebuilding from an emptied `deployment/`, still renders:
+
+```
+7/4/2026, 12:00 AM   Pluk Bloemen   iDEAL 20000   -12
+```
+
+Not `4 Jul 2026` and `-12.00`. The custom content is live — 32 `.tx-date` and 32
+`.tx-amount` containers in the DOM — so the columns are mine; the formatting is
+simply ignored.
+
+**Root cause, from the serialized parameter.** `Forms$ClientTemplateParameter`
+comes out as:
+
+```json
+{ "$Type": "Forms$ClientTemplateParameter",
+  "Expression": "toString($currentObject/TxDate)",
+  "FormattingInfo": { "$Type": "Forms$FormattingInfo",
+                      "DateFormat": "Custom", "CustomDateFormat": "d MMM yyyy",
+                      "DecimalPrecision": 2, "GroupDigits": false },
+  "AttributeRef": null }
+```
+
+`FormattingInfo` is right. `AttributeRef` is **null**, and the value is an
+*expression*: `toString($currentObject/TxDate)`. The Text reference says Format
+is "a format in which the value will be displayed (**only for attributes**)" —
+so an expression parameter is exactly the case the runtime does not format. And
+`toString()` has already stringified the value before formatting could apply,
+which is why a Decimal reads `-12` rather than `-12.00` even at the default
+precision.
+
+This is not specific to the new syntax: **all 248 template parameters in that
+page have `AttributeRef: null`**. MDL has always written `{1} = Attr` as an
+expression rather than an attribute reference, which is why every screen in this
+app preformats.
+
+So PR #88 needs one more piece: when a content parameter is a plain attribute,
+serialize it as `AttributeRef` instead of `Expression: toString(...)`. The
+`FormattingInfo` half is already correct and will start working the moment the
+parameter is an attribute.
+
+Two smaller things from the same test run:
+
+- **The PR does not build as pushed.** It changes `mdl/grammar/domains/MDLPage.g4`
+  without the regenerated parser, so `go build ./cmd/mxcli` fails with
+  `paCtx.ParamFormatV3 undefined` / `undefined: parser.IParamFormatV3Context`
+  until `make grammar` is run.
+- **MDL-WIDGET18's suggested fix does not parse.** It advises
+  `ContentParams: [{1} = Attr (decimalprecision: <value>)]`, omitting the
+  `format` keyword the PR's own documentation calls required. Copy-pasting the
+  suggestion gives a syntax error; `{1} = Attr format (…)` is correct.
