@@ -2162,3 +2162,54 @@ There you would lose referential integrity, delete behaviour, and XPath
 navigation from either side, and gain nothing — the object is already reachable.
 Both associations dropped here were on non-persistent display objects that live
 for one render.
+
+### 75. Dynamic Text formatting is a Mendix feature MDL cannot reach — and asking for it inline is dropped in silence
+
+Mendix supports formatting on a Dynamic Text content parameter: a parameter
+bound to a Decimal, Integer or Long carries decimal precision and a group-digits
+setting, and a DateTime parameter carries a date format. MDL exposes none of it.
+Its `dynamictext` grammar has `content`, `contentparams`, `rendermode`, `class`
+and `attribute` — the round trip of a decimal-bound one is complete at:
+
+```
+dynamictext txtPlain (Content: '{1}', ContentParams: [{1} = SignedAmount])
+```
+
+That is the whole reason this app preformats. `DrillLine.AmountText`,
+`CashflowRow.M01Text` and every other display string exist because a Decimal
+rendered through `dynamictext` comes out as `-51.3` and `5068.38000000`. It is
+also the direct cause of the README's "Transactions screen shows raw decimals"
+gap, and it is what stopped the cashflow inspector becoming a plain
+database-datasource list over a view entity: OQL cannot build `#,##0.00`
+either — it has no `substring`, no `abs` and no `floor` (CE0174) — so the one
+column that must stay in a microflow keeps the whole list in one.
+
+**The worse half is how the attempt fails.** Setting the property inline on a
+`create or replace page` is accepted everywhere and then discarded:
+
+```bash
+$ mxcli check probe.mdl -p Ledger.mpr --references
+✓ All references valid
+Check passed!
+$ mxcli exec probe.mdl -p Ledger.mpr
+Created page Ledger.ProbeFmt2                      # no warning
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.ProbeFmt2"
+dynamictext txtFmt (Content: '{1}', ContentParams: [{1} = SignedAmount])
+```
+
+`decimalprecision: 2, groupdigits: true` went in and are simply not there. No
+error, no warning, `mx check` 0 errors — the same silent-drop class as finding
+67, and the same reason it costs time: the model is quietly not what the source
+says.
+
+The `ALTER PAGE` path, by contrast, fails properly:
+
+```
+Error: failed to set: failed to set DecimalPrecision on txtPlain:
+       property "DecimalPrecision" not found (widget has no pluggable Object)
+```
+
+So the unknown-property check exists and works on one path and not the other.
+Two separate asks for mxcli: implement the formatting properties, and until
+then, make the inline page path reject an unknown widget property the way
+`ALTER PAGE SET` already does.
