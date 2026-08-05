@@ -241,7 +241,7 @@ The fix is still worth it, because the cost it removes is the one that scales:
 held per concurrent user is a pool problem. But if this page needs to get
 genuinely fast, the next target is the per-cell microflow calls, not the SQL.
 
-## Still open: selecting a cell rebuilds the whole matrix
+## Fixed: selecting a cell no longer rebuilds the matrix
 
 Clicking a cashflow cell fires **three** requests, not one:
 
@@ -269,28 +269,58 @@ inspector's list both take that same object as their parameter, refreshing it to
 update the list unavoidably invalidates the matrix. The matrix is rebuilt to
 move one CSS class.
 
-### The fix, and why it is not in yet
+### The fix
 
-Split the drill state onto its own non-persistent object associated to the row.
-`ACT_DrillCell` then refreshes only that, `DS_CashflowRows` never re-runs, and
-the outline moves into the column's `DynamicCellClass` expression reading the
-selection through a single association hop.
+The selection is no longer part of the row data. Three changes, and the
+coupling is gone:
 
-The open question is whether DataGrid2 re-evaluates a cell-class expression when
-an *associated* object refreshes. It could not be probed cheaply:
-`ALTER PAGE … ON colM03` fails with `widget "colM03" not found`, because grid
-columns are not addressable as widgets, so testing it means rewriting the page
-in source and restarting.
+- **`DS_CashflowRows` stops appending `cf-sel`.** The column's
+  `DynamicCellClass` computes it instead, reading the selection through the
+  row's association:
+  `$currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey`.
+  The association path needs its target entity — without `Ledger.ReportContext`
+  it is `CE0117 "Error(s) in expression"`.
+- **The inspector list becomes a database datasource.** `VTransactionLine`
+  gained `Yr` and `MonthIndex` (plain `datepart` integers), so the list can be
+  an XPath-constrained database source instead of a microflow:
+  `[CategoryId = $currentObject/DrillCategoryId] and [Yr = 2026] and
+  [MonthIndex = $currentObject/DrillMonthIndex]`. Nothing now takes the
+  `ReportContext` as a datasource *parameter*.
+- **`ACT_DrillCell` drops its `refresh`.** Attribute changes reach the client on
+  their own; refresh was only ever needed to re-run a datasource, and the one
+  that has to re-run now re-queries on the attribute change itself.
 
-There is a cleaner version of this that needs no split at all, and it is blocked
-on finding 75. A view keyed on `(CategoryId, Yr, MonthIndex)` works — `datepart`
-gives integer year and month columns, and OQL builds the meta line exactly
-(`17 Mar · ING Betaalrekening`). If the list could be a plain database
-datasource over that view, nothing would take the `ReportContext` as a
-parameter and the rebuild would disappear as a side effect. The one column that
-stops it is the amount: OQL cannot produce `#,##0.00` — it has no `substring`,
-`abs` or `floor` (CE0174) — and MDL cannot ask the Text widget to format it.
-Give `contentparams` a `Format` slot and this whole section becomes moot.
+The formatting that used to justify the microflow moved into the widget, which
+only became possible with mxcli PR #88 (findings 75–77). `Sign` and `AbsAmount`
+are computed in the view so the template renders `-€ 61.38` rather than
+`€ -61.38` — a format block gives precision and group digits but no currency
+symbol and no control over where the minus goes.
+
+`DS_DrillLines` is deleted; it had no callers left.
+
+**Verified.** The load-bearing question — whether a constrained database
+datasource re-queries on a plain attribute change, with no refresh — was probed
+in isolation first: a list went 0 → 20 rows → 7 rows as the constraining
+attribute changed. Then end to end:
+
+| | before | after |
+|---|---:|---:|
+| requests per click | 3 | 2 |
+| `DS_CashflowRows` per click | 176–295 ms | **not called** |
+| server work per click | ~250–400 ms | ~50–100 ms |
+| click → correct detail visible | — | 161–297 ms |
+| full-grid DOM re-render | every click | never |
+
+`DS_CashflowRows` ran twice across 37 traced POSTs, both on page load. The
+outline still moves (`cf-sel` count is 1 after every click), the heatmap is
+intact (`over-1`…`under-5` across all 228 cells), and the inspector agrees with
+Postgres: Groceries · March is 11 transactions and € 655 against `11 | 655.23`.
+
+Local wall-clock gain is modest, because loopback latency is negligible and the
+old measurement was looser than the new one. The gain that matters is
+structural: one fewer round trip, no 228-cell rebuild, and no full-grid
+re-render — all three of which cost far more over the hub tunnel and under
+concurrency than they do here.
 
 ## Errors found in the tooling
 

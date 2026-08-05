@@ -31,6 +31,16 @@
  * Mirrors are excluded here rather than at every call site — an internal
  * transfer books on both accounts, and no detail list wants both halves.
  *
+ * Yr and MonthIndex are plain integers off TxDate rather than a date range, so
+ * a page can constrain on them in XPath — which is what lets the cashflow
+ * inspector be a database datasource instead of a microflow, and that is what
+ * keeps a cell click from rebuilding the whole matrix (docs/observability.md).
+ *
+ * Sign and AbsAmount exist so a text template can render '-€ 61.38' rather than
+ * '€ -61.38'. A parameter's format block gives precision and group digits but no
+ * currency symbol and no control over where the minus goes, so the split is done
+ * in the query: the template is '{1}€ {2}'.
+ *
  * Amount and SignedAmount are both carried: callers total on Amount (which is
  * always positive, matching how the matrix and KPIs add up) and display
  * SignedAmount (which carries the direction).
@@ -47,8 +57,12 @@ create or modify view entity Ledger.VTransactionLine (
   Merchant: string(200),
   AccountName: string(100),
   TxDate: datetime,
+  Yr: integer,
+  MonthIndex: integer,
   Amount: decimal,
-  SignedAmount: decimal
+  SignedAmount: decimal,
+  Sign: string(200),
+  AbsAmount: decimal
 ) as (
   select
     cast(g.id as string) as GroupId,
@@ -58,8 +72,12 @@ create or modify view entity Ledger.VTransactionLine (
     t.Merchant as Merchant,
     a.Name as AccountName,
     t.TxDate as TxDate,
+    datepart(YEAR, t.TxDate) as Yr,
+    datepart(MONTH, t.TxDate) as MonthIndex,
     t.Amount as Amount,
-    t.SignedAmount as SignedAmount
+    t.SignedAmount as SignedAmount,
+    (case when t.SignedAmount < 0 then '-' else '' end) as Sign,
+    (case when t.SignedAmount < 0 then 0 - t.SignedAmount else t.SignedAmount end) as AbsAmount
   from Ledger.Transaction as t
   inner join t/Ledger.Transaction_Category/Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g

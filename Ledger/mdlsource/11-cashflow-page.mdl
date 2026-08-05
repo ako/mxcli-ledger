@@ -102,7 +102,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM01 (
               caption: 'Jan', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M01Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M01Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 1 then '' cf-sel'' else '''')'
             ) {
               container cellM01 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 1),
@@ -114,7 +114,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM02 (
               caption: 'Feb', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M02Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M02Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 2 then '' cf-sel'' else '''')'
             ) {
               container cellM02 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 2),
@@ -126,7 +126,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM03 (
               caption: 'Mar', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M03Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M03Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 3 then '' cf-sel'' else '''')'
             ) {
               container cellM03 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 3),
@@ -138,7 +138,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM04 (
               caption: 'Apr', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M04Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M04Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 4 then '' cf-sel'' else '''')'
             ) {
               container cellM04 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 4),
@@ -150,7 +150,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM05 (
               caption: 'May', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M05Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M05Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 5 then '' cf-sel'' else '''')'
             ) {
               container cellM05 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 5),
@@ -162,7 +162,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM06 (
               caption: 'Jun', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M06Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M06Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 6 then '' cf-sel'' else '''')'
             ) {
               container cellM06 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 6),
@@ -174,7 +174,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM07 (
               caption: 'Jul', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M07Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M07Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 7 then '' cf-sel'' else '''')'
             ) {
               container cellM07 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 7),
@@ -186,7 +186,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM08 (
               caption: 'Aug', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M08Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M08Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 8 then '' cf-sel'' else '''')'
             ) {
               container cellM08 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 8),
@@ -198,7 +198,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM09 (
               caption: 'Sep', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M09Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M09Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 9 then '' cf-sel'' else '''')'
             ) {
               container cellM09 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 9),
@@ -210,7 +210,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM10 (
               caption: 'Oct', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M10Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M10Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 10 then '' cf-sel'' else '''')'
             ) {
               container cellM10 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 10),
@@ -222,7 +222,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM11 (
               caption: 'Nov', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M11Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M11Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 11 then '' cf-sel'' else '''')'
             ) {
               container cellM11 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 11),
@@ -234,7 +234,7 @@ create or replace page Ledger.Cashflow_Overview
             column colM12 (
               caption: 'Dec', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,
-              DynamicCellClass: '''cf-cell '' + $currentObject/M12Band'
+              DynamicCellClass: '''cf-cell '' + $currentObject/M12Band + (if $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillSortKey = $currentObject/SortOrder and $currentObject/Ledger.CashflowRow_Context/Ledger.ReportContext/DrillMonthIndex = 12 then '' cf-sel'' else '''')'
             ) {
               container cellM12 (
                 onclick: microflow Ledger.ACT_DrillCell(Row: $currentObject, MonthIndex: 12),
@@ -276,17 +276,32 @@ create or replace page Ledger.Cashflow_Overview
                     dynamictext txtDrillTitle (attribute: DrillTitle, rendermode: H5)
                     dynamictext txtDrillMeta (attribute: DrillMeta, class: 'ledger-inspector-meta')
                   }
+                  -- A database datasource, not a microflow. Nothing here takes the
+                  -- ReportContext as a datasource *parameter*, so ACT_DrillCell can
+                  -- move the selection without refreshing it — which is what stopped
+                  -- every click rebuilding all 228 matrix cells. The constraint
+                  -- re-queries on a plain attribute change (verified).
                   listview lvDrill (
-                    datasource: microflow Ledger.DS_DrillLines,
+                    datasource: database from Ledger.VTransactionLine
+                      where [CategoryId = $currentObject/DrillCategoryId]
+                        and [Yr = 2026]
+                        and [MonthIndex = $currentObject/DrillMonthIndex]
+                      sort by TxDate asc,
                     class: 'ledger-inspector-list'
                   ) {
                     template tplDrill {
                       container ctnLine (class: 'ledger-line') {
                         container ctnLineText (class: 'ledger-line-text') {
                           dynamictext txtLineMerchant (attribute: Merchant, class: 'ledger-line-merchant')
-                          dynamictext txtLineMeta (attribute: MetaText, class: 'ledger-line-meta')
+                          dynamictext txtLineMeta (
+                            content: '{1} · {2}',
+                            contentparams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM'), {2} = AccountName],
+                            class: 'ledger-line-meta')
                         }
-                        dynamictext txtLineAmount (attribute: AmountText, class: 'ledger-line-amount')
+                        dynamictext txtLineAmount (
+                          content: '{1}€ {2}',
+                          contentparams: [{1} = Sign, {2} = AbsAmount format (decimalPrecision: 2, groupDigits: true)],
+                          class: 'ledger-line-amount')
                       }
                     }
                   }
