@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 77 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 78 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -155,13 +155,13 @@ Stated rather than hidden:
   the chart instead.
 - **The dashboard breakdown pages at 20 rows.** `PageSize` on the listview did
   not take effect, so deeper groups need paging to reach.
-- **The Transactions screen shows raw decimals** (`-21.4`). Mendix supports
-  decimal precision and group digits on a Dynamic Text content parameter.
-  mxcli PR #88 adds the MDL syntax for it, but it has no runtime effect yet:
-  MDL writes every content parameter as an expression
-  (`toString($currentObject/Attr)`) with `AttributeRef: null`, and Mendix
-  formats attribute parameters only (findings 75, 76). Until that lands, every
-  screen preformats in the builder; this one has not been converted.
+- **The Transactions screen shows raw decimals** (`-21.4`). Solved upstream but
+  not yet landed here: mxcli PR #88 adds per-parameter formatting to
+  `dynamictext` and a `ShowContentAs: dynamicText` grid column, both verified
+  end to end against this app — a column renders `12 Jan 2026` and `5,308.52`
+  (findings 75–77). The two-column change waits on #88 merging, because
+  `format (…)` does not parse on released mxcli and would break the build loop
+  above. Every other screen preformats in the builder.
 - **CSV import is not built.** The prototype's import wizard read no file and its
   counts were hardcoded; a real one is genuinely new work.
 - **The theme pulls IBM Plex from Google Fonts at runtime.** Where that CDN is
@@ -172,7 +172,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              77 numbered findings — the main deliverable alongside the app
+FINDINGS.md              78 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

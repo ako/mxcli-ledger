@@ -2436,7 +2436,78 @@ Two notes from the fix worth keeping:
   `~/.mxcli/mxbuild/*/modeler/mx check` and the `run --local` serve build surface
   it. Every check in this file used the raw binary, which is why it was caught.
 - **Column names still do not round-trip.** `colAmt2` comes back as
-  `column Amount`, taking its caption; an attribute column comes back named after
-  its attribute. Long-standing rather than new — but it means a column cannot be
-  addressed later by the name it was authored with, which is the same reason
-  `ALTER PAGE … ON colM03` fails (finding 76's probe).
+  `column Amount`, taking its caption. Long-standing rather than new, and
+  independent of the formatting work — written up separately as finding 78.
+
+### 78. A grid column's authored name is discarded, and the handle it gets instead is neither stable nor unique
+
+Every other widget in MDL is addressable by the name you give it. Columns are
+not: the authored name is dropped on write and replaced by a derived one. Four
+columns, one of each kind:
+
+```sql
+column colAuthoredAttr   (attribute: Merchant, caption: 'Who')
+column colAuthoredDyn    (ShowContentAs: dynamicText, caption: 'When', …)
+column colAuthoredCustom (caption: 'Actions') { actionbutton btnN (…) }
+column colNoCaption      (attribute: Description)
+```
+
+come back as:
+
+```
+column Merchant
+column "When"
+column "Actions"
+column "Description"
+```
+
+Not one authored name survives. The rule is **attribute name for an attribute
+column, caption for everything else** — note `colAuthoredAttr` becomes
+`Merchant`, its attribute, *not* `Who`, its caption.
+
+**The authored name cannot address the column; the derived one can:**
+
+```
+ON colAuthoredAttr  → Error: widget "colAuthoredAttr" not found
+ON Merchant         → Altered page Ledger.NTest
+ON "When"           → Altered page Ledger.NTest
+ON When             → Error: widget "When" not found     (quoting is not optional)
+```
+
+That alone is a round-trip wart. Two further behaviours make it a hazard.
+
+**The handle moves when the caption does.** For a non-attribute column the
+handle *is* the caption, so renaming the caption silently renames the column:
+
+```
+set Caption = 'Renamed' ON "When"   → Altered
+… the column is now `column Renamed`, and:
+set Caption = 'Again'   ON "When"   → Error: widget "When" not found
+```
+
+An attribute column is immune — its handle is the attribute — so the same
+edit is stable in one case and self-destructing in the other, with nothing in
+the syntax to distinguish them. A script that renames captions in sequence
+works or breaks depending on a column kind the author never had to think about.
+
+**Duplicate captions produce duplicate handles, and the ALTER hits the first
+one silently.** Two dynamic-text columns captioned 'Amount':
+
+```
+column Amount        ← Alignment: right applied here
+column Amount        ← untouched, and unaddressable
+```
+
+`set Alignment = right ON "Amount"` reports `Altered page`, changes only the
+first, and gives no indication the second exists. There is no way to reach it.
+
+`mx check` is 0 errors throughout — the model is valid. This is purely an MDL
+addressability defect, and it is why `ALTER PAGE … ON colM03` failed when I
+tried to probe the cashflow matrix's cell classes (finding 76): the name in the
+source had never existed in the model.
+
+**Ask:** persist the authored column name and address columns by it, as every
+other widget already is. Failing that, two smaller improvements would remove
+most of the sting — reject an `ON <name>` that matches more than one column
+rather than silently taking the first, and error on the authored name instead
+of reporting "not found" for a name that is right there in the source.
