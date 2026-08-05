@@ -140,16 +140,27 @@ create or replace page Ledger.Transaction_Overview
           content: 'Transactions with no category stay out of the cashflow report until assigned.',
           class: 'text-muted')
 
+        -- Date and amount render through dynamic-text columns rather than plain
+        -- attribute columns: an attribute column has no formatting options, so a
+        -- Decimal reads '-21.4' and a DateTime in the browser's locale. The
+        -- per-parameter format block is what the Data Grid 2 reference points at
+        -- (FINDINGS 75-77); it needs mxcli >= fa5705e3.
         dynamictext txtNeedsReview (content: 'Needs review', rendermode: H4)
         datagrid dgNeedsReview (
           datasource: database from Ledger.Transaction
             where [not(Ledger.Transaction_Category/Ledger.Category)]
             sort by TxDate desc
         ) {
-          column colNrDate (attribute: TxDate, caption: 'Date')
+          column colNrDate (
+            ShowContentAs: dynamicText, caption: 'Date',
+            Content: '{1}',
+            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')])
           column colNrMerchant (attribute: Merchant, caption: 'Merchant')
           column colNrDesc (attribute: Description, caption: 'Description')
-          column colNrAmount (attribute: SignedAmount, caption: 'Amount', Alignment: right)
+          column colNrAmount (
+            ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+            Content: '{1}',
+            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
         }
 
         dynamictext txtAll (content: 'All transactions', rendermode: H4)
@@ -158,10 +169,16 @@ create or replace page Ledger.Transaction_Overview
             where [IsMirror = false]
             sort by TxDate desc
         ) {
-          column colDate (attribute: TxDate, caption: 'Date')
+          column colDate (
+            ShowContentAs: dynamicText, caption: 'Date',
+            Content: '{1}',
+            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')])
           column colMerchant (attribute: Merchant, caption: 'Merchant')
           column colDesc (attribute: Description, caption: 'Description')
-          column colAmount (attribute: SignedAmount, caption: 'Amount', Alignment: right)
+          column colAmount (
+            ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+            Content: '{1}',
+            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
         }
       }
     }
