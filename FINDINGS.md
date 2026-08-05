@@ -2315,3 +2315,61 @@ Two smaller things from the same test run:
   `ContentParams: [{1} = Attr (decimalprecision: <value>)]`, omitting the
   `format` keyword the PR's own documentation calls required. Copy-pasting the
   suggestion gives a syntax error; `{1} = Attr format (…)` is correct.
+
+### 77. Data Grid 2's Dynamic Text column type is missing from MDL — and asking for it corrupts the grid
+
+Following 76: if a content parameter's formatting is going to work, the next
+question is how to reach it from a grid column, since that is where the raw
+decimals actually show. The [Data Grid 2 reference](https://docs.mendix.com/appstore/modules/data-grid-2/)
+gives a column **three** content types:
+
+> 1. **Attribute** — renders the value of a selected attribute
+> 2. **Dynamic Text** — renders a text-templated string which can contain text combined with attributes
+> 3. **Custom Content** — allows dropping widgets into cells
+
+and documents no formatting options on the Attribute type. So **Dynamic Text is
+the intended mechanism**: it is a text template, its parameters are
+`ClientTemplateParameter`s, and those are what carry `FormattingInfo`.
+
+MDL exposes the first and third. `column colX (attribute: Amount)` is Attribute;
+`column colX (caption: '…') { widgets }` is Custom Content. There is no syntax
+for the middle one.
+
+Worse, the obvious spelling parses and then destroys the column:
+
+```sql
+column colA (caption: 'Amount', content: '{1}',
+             contentparams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+```
+
+```
+$ mxcli check t-col.mdl -p Ledger.mpr
+Check passed!
+$ mxcli exec t-col.mdl -p Ledger.mpr
+Created page Ledger.TCol
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.TCol"
+      column Amount (Caption: 'Amount')
+```
+
+`content`, `contentparams` and the format block are all gone; the column has
+even lost its name, taking the caption instead. And unlike the other silent
+drops, this one leaves a model that does not load:
+
+```
+[error] [CE0463] "The definition of this widget has changed. Update this widget by
+        right-clicking it and selecting 'Update widget' …" at Data grid 2 'dg1'
+The app contains: 1 errors.
+```
+
+So `mxcli check` passes, `mxcli exec` succeeds, and the project is broken — the
+worst ordering of the three.
+
+**The ask:** expose Dynamic Text as a column content type, carrying the same
+per-parameter `format (…)` block PR #88 added to `dynamictext`. That is the
+route to formatted grid columns without wrapping every cell in Custom Content,
+and it is what the reference points at.
+
+Note it does not stand alone: finding 76 must land too. A Dynamic Text column
+whose parameter is written as `Expression: toString($currentObject/Attr)` with
+`AttributeRef: null` will be ignored by the runtime exactly as the widget one
+is. The two together are what make a formatted grid column work.
