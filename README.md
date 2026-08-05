@@ -76,6 +76,12 @@ incremented, so it cannot drift.
 
 ![Transactions](docs/screenshots/transactions.png)
 
+Dates and amounts render through **dynamic-text columns** — `ShowContentAs:
+dynamicText` with a per-parameter `format (…)` block — rather than plain
+attribute columns, which have no formatting options and would show `-21.4` and
+the browser's locale date. This is the one screen that does not preformat in a
+microflow; the capability came from mxcli PR #88, prompted by findings 75–78.
+
 ---
 
 ## How it is built
@@ -155,13 +161,6 @@ Stated rather than hidden:
   the chart instead.
 - **The dashboard breakdown pages at 20 rows.** `PageSize` on the listview did
   not take effect, so deeper groups need paging to reach.
-- **The Transactions screen shows raw decimals** (`-21.4`). Solved upstream but
-  not yet landed here: mxcli PR #88 adds per-parameter formatting to
-  `dynamictext` and a `ShowContentAs: dynamicText` grid column, both verified
-  end to end against this app — a column renders `12 Jan 2026` and `5,308.52`
-  (findings 75–77). The two-column change waits on #88 merging, because
-  `format (…)` does not parse on released mxcli and would break the build loop
-  above. Every other screen preformats in the builder.
 - **CSV import is not built.** The prototype's import wizard read no file and its
   counts were hardcoded; a real one is genuinely new work.
 - **The theme pulls IBM Plex from Google Fonts at runtime.** Where that CDN is
