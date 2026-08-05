@@ -2331,7 +2331,7 @@ Two smaller things from the same test run:
   `format` keyword the PR's own documentation calls required. Copy-pasting the
   suggestion gives a syntax error; `{1} = Attr format (…)` is correct.
 
-### 77. Data Grid 2's Dynamic Text column type is missing from MDL — and asking for it corrupts the grid
+### 77. Data Grid 2's Dynamic Text column type is missing from MDL — and asking for it corrupts the grid *(FIXED, verified)*
 
 Following 76: if a content parameter's formatting is going to work, the next
 question is how to reach it from a grid column, since that is where the raw
@@ -2406,3 +2406,37 @@ Custom Content is the working route today: wrapping the cell in a container with
 a formatted `dynamictext` renders correctly (verified above on the Transactions
 grid). Dynamic Text would be lighter, and is what the reference points at, but
 Custom Content is not blocked on it.
+
+**Fixed and verified.** PR #88 gained `fix(pages): DataGrid2 dynamic-text
+columns — carry FORMAT block + fix CE0463`. The content type is explicit —
+`ShowContentAs: dynamicText` — which is why my first retest still failed: I had
+omitted it, and a column without it is still an attribute column.
+
+```sql
+column colAmt2 (ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+  Content: '{1}', ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+```
+
+Round-trips complete (`ShowContentAs`, `Content`, `ContentParams` and the format
+suffix all come back), raw `mx check` is 0 errors, and the page renders:
+
+```
+DATE          MERCHANT                 AMOUNT
+12 Jan 2026   Koelewijn Holding BV     5,308.52
+2 Feb 2026    Koelewijn Holding BV     5,622.69
+```
+
+No custom-content wrapper, no page errors. This is the lighter route the Data
+Grid 2 reference points at, and it now works.
+
+Two notes from the fix worth keeping:
+
+- **`mxcli docker check` masks this class of defect.** It runs `mx update-widgets`
+  first, which repairs the very BSON discrepancy that produces CE0463. Raw
+  `~/.mxcli/mxbuild/*/modeler/mx check` and the `run --local` serve build surface
+  it. Every check in this file used the raw binary, which is why it was caught.
+- **Column names still do not round-trip.** `colAmt2` comes back as
+  `column Amount`, taking its caption; an attribute column comes back named after
+  its attribute. Long-standing rather than new — but it means a column cannot be
+  addressed later by the name it was authored with, which is the same reason
+  `ALTER PAGE … ON colM03` fails (finding 76's probe).
