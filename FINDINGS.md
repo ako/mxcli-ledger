@@ -2236,7 +2236,7 @@ Two asks for mxcli, in order:
    discarding an authored property is the more expensive bug — the model is not
    what the source says, and nothing tells you.
 
-### 76. mxcli PR #88 tested — the format block is written correctly and has no runtime effect
+### 76. mxcli PR #88 tested — the format block is written correctly and has no runtime effect *(FIXED, verified)*
 
 PR #88 (`feat(pages): dynamic-text parameter formatting via a FORMAT block`)
 answers finding 75 with a per-parameter `format (…)` block and a new
@@ -2305,12 +2305,27 @@ serialize it as `AttributeRef` instead of `Expression: toString(...)`. The
 `FormattingInfo` half is already correct and will start working the moment the
 parameter is an attribute.
 
+**Fixed and verified.** PR #88 gained
+`fix(pages): bind non-String dynamic-text params as AttributeRef so formatting
+applies`. Retested by converting the Transactions grid's date and amount to
+custom-content columns and rebuilding from an emptied `deployment/`:
+
+```
+before   7/4/2026, 12:00 AM   -12      -21.4     -1556.96   5308.52
+after    4 Jul 2026           -12.00   -21.40    -1,556.96  5,308.52
+```
+
+Decimal precision, group digits and the custom date pattern all apply.
+`AttributeRef` is non-null on 10 of 254 parameters — the non-String ones — where
+it was null on all 254 before. `mx check`: 0 errors.
+
 Two smaller things from the same test run:
 
-- **The PR does not build as pushed.** It changes `mdl/grammar/domains/MDLPage.g4`
-  without the regenerated parser, so `go build ./cmd/mxcli` fails with
-  `paCtx.ParamFormatV3 undefined` / `undefined: parser.IParamFormatV3Context`
-  until `make grammar` is run.
+- ~~The PR does not build as pushed.~~ **Wrong, mine.** A bare
+  `go build ./cmd/mxcli` fails with `paCtx.ParamFormatV3 undefined` after a
+  grammar change, but `mdl/grammar/parser/` is gitignored and the project's own
+  target is `build: grammar sync-all completions` — regenerating is a normal
+  build step, not something the PR omitted. Use `make build`.
 - **MDL-WIDGET18's suggested fix does not parse.** It advises
   `ContentParams: [{1} = Attr (decimalprecision: <value>)]`, omitting the
   `format` keyword the PR's own documentation calls required. Copy-pasting the
@@ -2373,3 +2388,21 @@ Note it does not stand alone: finding 76 must land too. A Dynamic Text column
 whose parameter is written as `Expression: toString($currentObject/Attr)` with
 `AttributeRef: null` will be ignored by the runtime exactly as the widget one
 is. The two together are what make a formatted grid column work.
+
+**Retested after PR #88's AttributeRef fix — unchanged.** 76's half now works,
+but a column still swallows `content`/`contentparams`, still renames itself to
+its caption, and still leaves `CE0463` behind:
+
+```
+$ mxcli check t-col.mdl -p Ledger.mpr        # Check passed!
+$ mxcli exec  t-col.mdl -p Ledger.mpr        # Created page Ledger.TCol
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.TCol"
+      column Amount (Caption: 'Amount')
+$ mx check Ledger.mpr
+[error] [CE0463] "The definition of this widget has changed …" at Data grid 2 'dg1'
+```
+
+Custom Content is the working route today: wrapping the cell in a container with
+a formatted `dynamictext` renders correctly (verified above on the Transactions
+grid). Dynamic Text would be lighter, and is what the reference points at, but
+Custom Content is not blocked on it.
