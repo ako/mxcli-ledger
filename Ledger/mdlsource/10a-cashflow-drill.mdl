@@ -65,44 +65,12 @@ begin
 end;
 /
 
-/**
- * The inspector list, preformatted for display.
- *
- * @param $Context The page's report context
- * @returns One line per transaction, oldest first
- */
-create or modify microflow Ledger.DS_DrillLines ($Context: Ledger.ReportContext)
-returns list of Ledger.DrillLine as $Lines
-folder 'Cashflow'
-begin
-  declare $N integer = 0;
-  declare $Meta string = '';
-  declare $Acct string = '';
-
-  $Lines = create list of Ledger.DrillLine;
-
-  $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
-
-  loop $T in $Txs
-  begin
-    set $N = $N + 1;
-    $Amount = call microflow Ledger.FMT_EuroCents (Amount = $T/SignedAmount);
-
-    @annotation 'Plain column read: the join is in VTransactionLine'
-    set $Acct = $T/AccountName;
-    set $Meta = formatDateTime($T/TxDate, 'd MMM') + ' · ' + $Acct;
-
-    $Line = create Ledger.DrillLine (
-      Merchant = $T/Merchant,
-      MetaText = $Meta,
-      AmountText = $Amount,
-      SortOrder = $N);
-    add $Line to $Lines;
-  end loop;
-
-  return $Lines;
-end;
-/
+-- DS_DrillLines is gone. The inspector list is now an XPath-constrained
+-- database datasource over VTransactionLine (11-cashflow-page.mdl), which is
+-- what lets a cell click avoid refreshing the ReportContext and so avoid
+-- rebuilding the matrix. Its formatting moved into the widget: a text template
+-- with a per-parameter format block, plus Sign/AbsAmount off the view so the
+-- minus lands before the euro symbol.
 
 /**
  * Points the inspector at one matrix cell.
@@ -165,11 +133,11 @@ begin
     set $BudgetOut = $BT;
     set $CountOut = if $Count = 1 then '1 transaction' else toString($Count) + ' transactions';
 
+    @annotation 'No refresh. Attribute changes reach the client on their own; refresh is only needed to re-run a datasource, and the one datasource that has to re-run — the inspector list — is now an XPath-constrained database source that re-queries on the attribute change itself. Refreshing here re-ran DS_CashflowRows over all 228 cells on every click (docs/observability.md).'
     change $Context (
       DrillKicker = $Row/GroupNameText,
       DrillTitle = $Row/Label + ' · ' + $MonthName + ' 2026',
-      DrillMeta = $ActualOut + ' of ' + $BudgetOut + ' budget · ' + $CountOut)
-      refresh;
+      DrillMeta = $ActualOut + ' of ' + $BudgetOut + ' budget · ' + $CountOut);
 
     set $Selected = true;
   end if;
