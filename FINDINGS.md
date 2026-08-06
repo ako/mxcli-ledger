@@ -2511,3 +2511,45 @@ other widget already is. Failing that, two smaller improvements would remove
 most of the sting — reject an `ON <name>` that matches more than one column
 rather than silently taking the first, and error on the authored name instead
 of reporting "not found" for a name that is right there in the source.
+
+### 79. `mxcli theme apply` over an existing hand-built theme half-applies, with no warning
+
+mxcli now ships three themes, one of them called **ledger** — "warm paper,
+hairline rules instead of cards, serif headings" — which is this app's design
+language, and it vendors its faces (`theme/web/mxcli-fonts/`, Source Sans 3 +
+Source Serif 4, SIL OFL) rather than importing them from a CDN. That is exactly
+the fix this project's README lists as an open gap.
+
+Applying it here does not deliver it. `mxcli theme apply ledger` reports eleven
+files written and exits 0:
+
+```
+  added     theme/web/custom-variables.scss
+  added     theme/web/main.scss
+  created   theme/web/mxcli-fonts/…            (7 woff2 + OFL.txt)
+```
+
+`added`, not `replaced` — the generated block is inserted *alongside* this
+project's own 35 `--ledger-*` tokens in the same file. The result is neither
+theme:
+
+- The page ground shifts slightly (`rgb(246,244,240)` → `rgb(247,244,238)`) —
+  so it is not a no-op.
+- Every font stays the project's (`"IBM Plex Mono", ui-monospace…`), because
+  `themesource/ledger/web/main.scss` is a *module* stylesheet and compiles after
+  `theme/web/`. The theme's own `main.scss` comment says it "compiles last, so
+  the partials win" — true within `theme/`, not against a themesource module.
+- **The Google Fonts request still fires and still fails.** The seven vendored
+  woff2 files are downloaded, written, and never referenced.
+
+So the one thing worth having — no CDN at runtime — is precisely what does not
+arrive, and nothing says so. `apply` could reasonably notice that
+`custom-variables.scss` already carries non-generated declarations, or that a
+themesource module defines a competing `main.scss`, and warn.
+
+Adopting the shipped theme properly is a real option for this app, but it is a
+design decision rather than a drop-in: it means deleting this project's palette,
+and it would cost the monospace figures — mxcli's themes vendor a sans and a
+serif, no mono, and this app's whole numeric layout rests on tabular monospace
+(see the README's note on why). `mxcli theme remove` plus restoring
+`theme/` from git returned the app exactly to its prior state.
