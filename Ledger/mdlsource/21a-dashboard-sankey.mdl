@@ -21,7 +21,8 @@
 --
 --   0            Income (hub)
 --   1..k         income categories   -> link (cat -> 0)
---   k+1..k+g     expense groups      -> link (0 -> group)
+--   then, per expense group: the group   -> link (0 -> group)
+--                            its categories -> link (group -> category)
 --   last         Not spent           -> link (0 -> notspent)
 --
 -- Figures cover elapsed months only, the same window as the KPIs (a full-year
@@ -133,6 +134,8 @@ begin
   declare $LinkSep string = '';
   declare $Next integer = 1;
   declare $ColorIx integer = 0;
+  declare $GroupIx integer = 0;
+  declare $CatTotal decimal = 0;
   declare $Through integer = 0;
   declare $IncomeTotal decimal = 0;
   declare $SpendTotal decimal = 0;
@@ -170,7 +173,7 @@ begin
     end if;
   end loop;
 
-  @annotation 'Expense groups flow OUT of the hub'
+  @annotation 'Expense groups flow OUT of the hub, and each group flows on into its own categories. The category loop is nested inside the group loop so the group node index is still in scope when its links are written — the alternative, a second pass, would need a reverse lookup from category to group index that MDL has no map to hold.'
   loop $G in $Rows
   begin
     if $G/RowKind = 'Group' and $G/GroupTypeName = 'Expense' then
@@ -187,7 +190,29 @@ begin
         set $LinkColors = $LinkColors + $LinkSep + '"' + $Tint + '"';
         set $LinkSep = ',';
         set $SpendTotal = $SpendTotal + $RowTotal;
+        set $GroupIx = $Next;
         set $Next = $Next + 1;
+
+        @annotation 'A category belongs to this group when its SortKey falls in the group is hundred-block: group SortKey is groupOrder*100, category SortKey is groupOrder*100 + categoryOrder. Compared as a range rather than with div, so it does not depend on integer-division semantics.'
+        loop $C in $Rows
+        begin
+          if $C/RowKind = 'Category'
+            and $C/SortKey > $G/SortKey
+            and $C/SortKey < $G/SortKey + 100 then
+            $CA = call microflow Ledger.SUM_ElapsedActual (V = $C, Through = $Through);
+            set $CatTotal = $CA;
+            if $CatTotal > 0 then
+              set $Labels = $Labels + $Sep + '"' + $C/Label + '"';
+              set $Colors = $Colors + $Sep + '"' + $Hex + '"';
+              set $Src = $Src + $LinkSep + toString($GroupIx);
+              set $Tgt = $Tgt + $LinkSep + toString($Next);
+              set $Val = $Val + $LinkSep + formatDecimal($CatTotal, '0.00');
+              set $LinkColors = $LinkColors + $LinkSep + '"' + $Tint + '"';
+              set $Next = $Next + 1;
+            end if;
+          end if;
+        end loop;
+
         set $ColorIx = $ColorIx + 1;
       end if;
     end if;

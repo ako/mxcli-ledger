@@ -32,11 +32,12 @@ comes to € 4,484 on both. That agreement is the test.
 
 Below it, a sankey answers what the sunburst structurally cannot — where the
 money came from and how much survived. Every ring above is a *share of spend*,
-so income never appears there and the surplus is invisible. The sankey flows
-income categories into one Income node and out again into the expense groups
-and into what was not spent, so it balances by construction: **€ 45,118 in ·
-€ 29,566 out · € 15,552 kept**, the same three figures the Cashflow KPI strip
-reports.
+so income never appears there and the surplus is invisible. The sankey runs
+income categories into one Income node and out again into the expense groups,
+on into their categories, and into what was not spent. It balances by
+construction: **€ 45,118 in · € 29,566 out · € 15,552 kept**, the same three
+figures the Cashflow KPI strip reports, and each group's outgoing links sum
+back to it (Housing 10,227 + 1,459 + 563 = 12,249).
 
 Plotly's `sankey` trace ships in the Charts.mpk bundle, so it goes through the
 same CustomChart escape hatch as the sunburst. Its links reference nodes by

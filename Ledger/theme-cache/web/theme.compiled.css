@@ -30912,6 +30912,146 @@ Do not change this file because it is core styling. Customizing core files will 
 /* Labels */
 /* Groupbox */
 /* Callouts */
+:root {
+  /* Brand Colors */
+  --brand-primary: #1B4D4B;
+  --brand-success: #2C6E4A;
+  --brand-warning: #CD8501;
+  --brand-danger: #A8321E;
+  --brand-default: color-mix(in srgb, var(--brand-primary) 8%, #EAE7E1);
+  --gray: #93969B;
+  /* --- Ledger palette, for this file and themesource/ledger/web/main.scss --- */
+  --ledger-paper: #F6F4F0;
+  --ledger-card: #FFFFFF;
+  --ledger-rule: #E0DDD6;
+  --ledger-wash: #FBFAF8;
+  --ledger-divider: #F0EEE9;
+  --ledger-divider-strong: #E4E1DA;
+  --ledger-ink: #17181A;
+  --ledger-ink-2: #6E7078;
+  --ledger-ink-3: #93969B;
+  --ledger-label: #7C7F85;
+  --ledger-strong: #45474A;
+  --ledger-over: #A8321E;
+  --ledger-under: #2C6E4A;
+  --ledger-accent: #1B4D4B;
+  --ledger-sidebar: #1C1E1F;
+  --ledger-sidebar-line: #2E3132;
+  --ledger-sidebar-accent: #8FD0A8;
+  --ledger-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ledger-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  /* Typography */
+  --font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-size-default: 13px;
+  --font-size-large: 15px;
+  --font-size-small: 11.5px;
+  --font-color-default: var(--ledger-ink);
+  --font-color-header: var(--ledger-ink);
+  --font-color-detail: var(--ledger-ink-2);
+  --line-height-base: 1.5;
+  /* Page titles are the prototype's serif; the smaller headers stay sans. */
+  --font-size-h1: 26px;
+  --font-size-h2: 26px;
+  --font-size-h3: 19px;
+  --font-size-h4: 15px;
+  --font-size-h5: 14px;
+  --font-size-h6: 12px;
+  --font-weight-header: 500;
+  /* Surfaces. Squarer than Atlas' default — the prototype is 3-4px throughout. */
+  --bg-color: var(--ledger-paper);
+  --bg-color-secondary: var(--ledger-card);
+  --border-color-default: var(--ledger-rule);
+  --border-radius-s: 3px;
+  --border-radius-m: 4px;
+  --border-radius-l: 6px;
+  /* Atlas' default card shadow reads as material; the prototype is flat. */
+  --shadow-color: transparent;
+  --shadow-small: 0 0 0 0;
+  --shadow-medium: 0 0 0 0;
+  --shadow-large: 0 0 0 0;
+  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+     closed width equal to the open one is what keeps it from collapsing to a
+     48px strip of clipped labels. */
+  --navsidebar-width-closed: 224px;
+  --navsidebar-width-open: 224px;
+  --navsidebar-bg: var(--ledger-sidebar);
+  --navsidebar-color: #B9BBBE;
+  --navsidebar-color-hover: #FFFFFF;
+  --navsidebar-color-active: #FFFFFF;
+  --navsidebar-bg-hover: #262829;
+  --navsidebar-bg-active: var(--ledger-sidebar-line);
+  --navsidebar-border-color: var(--ledger-sidebar-line);
+  --navsidebar-font-size: 13.5px;
+  --navsidebar-shadow: none;
+  --navigation-border-radius: 3px;
+  --navigation-item-padding: 8px 10px;
+  --navigation-item-height: auto;
+  /* No glyphs in this navigation, so the 48px icon slot is pure empty space. */
+  --navsidebar-icon-height: 0;
+  --navsidebar-icon-width: 0;
+  /* Grids */
+  --grid-border-color: var(--ledger-rule);
+  --grid-bg: var(--ledger-card);
+  --grid-bg-header: var(--ledger-wash);
+  --grid-bg-hover: var(--ledger-wash);
+  --grid-bg-selected: color-mix(in srgb, var(--ledger-accent) 8%, #FFFFFF);
+  --grid-paging-color: var(--ledger-ink-3);
+  /* Controls */
+  --btn-border-radius: 3px;
+  --btn-font-size: 12.5px;
+  --form-input-border-radius: 3px;
+  --form-input-border-color: #DAD6CE;
+  --form-label-size: 12.5px;
+  --form-label-color: var(--ledger-ink-2);
+}
+
+/*
+DISCLAIMER:
+This mapping file provides defaults for sass variables to provide backwards compatibility for modules which are still using SASS variables.
+Do not change this file because it is core styling. Customizing core files will make updating Atlas much more difficult in the future.
+*/
+/* Brand Colors */
+/* Gray Shades */
+/* Default Font Size & Color */
+/* Global Border */
+/* Topbar */
+/* Sidebar */
+/* Topbar mobile */
+/* Navbar Brand Name */
+/* Background Colors */
+/* Default Link Color */
+/* Font Family */
+/* Font Sizes */
+/* Font Weights */
+/* Header Font Sizes */
+/* Header Font Weight */
+/* Line Height */
+/* Header Margin */
+/* Font Colors */
+/* Navigation */
+/* Sidebar Navigation */
+/* Topbar Navigation */
+/* Shadows */
+/* Form Inputs */
+/* Buttons */
+/* Header */
+/* Grid */
+/* Tabs */
+/* Modal */
+/* Data View */
+/* Alerts */
+/* Wizard */
+/* Labels */
+/* Groupbox */
+/* Callouts */
+/* Timeline */
+/* Accordion */
+/* Spacing */
+/* Brand Variants */
+/* Alerts */
+/* Labels */
+/* Groupbox */
+/* Callouts */
 :root.theme-dark {
   --brand-primary: color-mix(in srgb, #264ae5, var(--color-base) 25%);
   --brand-success: color-mix(in srgb, #1ac61a, var(--color-base) 25%);

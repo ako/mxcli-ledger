@@ -148,7 +148,7 @@ create or replace page Ledger.Dashboard
                       widthUnit: percentage,
                       width: 100,
                       heightUnit: pixels,
-                      height: 420,
+                      height: 560,
                       minHeightUnit: none,
                       maxHeightUnit: none,
                       showPlaygroundSlot: false,
