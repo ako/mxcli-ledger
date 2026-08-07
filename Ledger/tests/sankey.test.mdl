@@ -1,0 +1,84 @@
+-- ============================================================================
+-- Sankey regression tests
+-- ============================================================================
+-- Run with:  mxcli test tests/sankey.test.mdl -p Ledger.mpr --local
+--
+-- Two things about `--local` shape what can be asserted here.
+--
+-- It replaces AfterStartupMicroflow with the runner's endpoint registration,
+-- so Ledger.ASU_Startup never fires and nothing seeds — every query sees an
+-- empty database unless a test seeds for itself.
+--
+-- And seeding does not give a fixed answer: Seed_DemoData generates
+-- transactions up to the current date, so a database seeded today holds more
+-- than one seeded last week (380 rows vs 334, measured). Euro totals are
+-- therefore a property of *when* the database was seeded, not of this code —
+-- asserting them would pass today and fail tomorrow. The figures are verified
+-- against Postgres instead (see the commit and docs/observability.md).
+--
+-- So these tests assert what the builder controls: its palette, and the shape
+-- of the payload it emits.
+-- ============================================================================
+
+/**
+ * @test Sankey palette cycles through the chart colours
+ * @expect $c = '#1B4D4B'
+ */
+$c = call microflow Ledger.GET_SankeyColor (Index = 0);
+/
+
+/**
+ * @test Sankey palette falls back past the end of the cycle
+ * @expect $c6 = '#6B6257'
+ */
+$c6 = call microflow Ledger.GET_SankeyColor (Index = 6);
+/
+
+/**
+ * @test Sankey link tint matches its node colour
+ * @expect $t = 'rgba(168,50,30,0.30)'
+ */
+$t = call microflow Ledger.GET_SankeyTint (Index = 1);
+/
+
+/**
+ * The payload has to be a sankey trace, not whatever Plotly defaults to.
+ *
+ * @test Payload declares a sankey trace
+ * @expect contains($ctx/ChartData, '"type":"sankey"') = true
+ */
+$ctx = call microflow Ledger.DS_SankeyContext ();
+/
+
+/**
+ * Node 0 is the hub every link names by index, so it must always be emitted
+ * first and must always be there — even against an empty database, where both
+ * loops add nothing.
+ *
+ * @test Income hub is always node 0
+ * @expect contains($ctxHub/ChartData, '"label":["Income"') = true
+ */
+$ctxHub = call microflow Ledger.DS_SankeyContext ();
+/
+
+/**
+ * Every link needs a source, a target and a value; a missing array would make
+ * Plotly drop the trace silently rather than error.
+ *
+ * @test Payload carries all three link arrays
+ * @expect contains($ctxL/ChartData, '"source":[') and contains($ctxL/ChartData, '"target":[') and contains($ctxL/ChartData, '"value":[')
+ */
+$ctxL = call microflow Ledger.DS_SankeyContext ();
+/
+
+/**
+ * With data present the diagram must balance, whatever the totals happen to
+ * be: the hub's outgoing links are the expense groups plus the surplus, so
+ * SubText always names all three parts.
+ *
+ * @test SubText reports in, out and kept
+ * @expect contains($ctxS/SubText, ' in · ') and contains($ctxS/SubText, ' out · ') and contains($ctxS/SubText, ' kept')
+ */
+$seeded = call microflow Ledger.Seed_DemoData ();
+$ctxS = call microflow Ledger.DS_SankeyContext ();
+/

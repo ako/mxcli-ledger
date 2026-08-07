@@ -1,0 +1,247 @@
+-- ============================================================================
+-- 21a - Dashboard: income-to-spend sankey
+-- ============================================================================
+-- The sunburst answers "how is spending divided up". It cannot answer "where
+-- did the money come from, and how much of it survived" — every ring is a
+-- share of spend, so income never appears and the surplus is invisible.
+--
+-- A sankey answers exactly that: income categories flow into one Income node,
+-- which flows out into the expense groups and into what was not spent. The
+-- widths are the same figures the KPI strip reports, so the two must agree —
+-- Income in equals expense out plus Not spent, by construction.
+--
+-- Plotly's `sankey` trace ships in the Charts.mpk bundle (Plotly 3.0.1, the
+-- full build, verified by rendering one before this was written), so it goes
+-- through the same CustomChart escape hatch as the sunburst.
+--
+-- The one structural difference from the sunburst: a sankey's links reference
+-- nodes by **array index**, not by id. That fixes the build order — the Income
+-- hub is emitted first so it is always index 0, and every later node knows the
+-- hub's index without a second pass:
+--
+--   0            Income (hub)
+--   1..k         income categories   -> link (cat -> 0)
+--   k+1..k+g     expense groups      -> link (0 -> group)
+--   last         Not spent           -> link (0 -> notspent)
+--
+-- Figures cover elapsed months only, the same window as the KPIs (a full-year
+-- window would count future months as zero income and make the surplus wrong).
+-- ============================================================================
+
+/** One hex from the app's chart palette, cycled by node position. */
+create or modify microflow Ledger.GET_SankeyColor ($Index: integer)
+returns string as $Hex
+folder 'Dashboard'
+begin
+  declare $Hex string = '#6B6257';
+  if $Index = 0 then set $Hex = '#1B4D4B'; end if;
+  if $Index = 1 then set $Hex = '#A8321E'; end if;
+  if $Index = 2 then set $Hex = '#7C6A3F'; end if;
+  if $Index = 3 then set $Hex = '#4A5A6B'; end if;
+  if $Index = 4 then set $Hex = '#6E4A5A'; end if;
+  if $Index = 5 then set $Hex = '#2C6E4A'; end if;
+  return $Hex;
+end;
+/
+
+/** The same colour as a translucent link tint. */
+create or modify microflow Ledger.GET_SankeyTint ($Index: integer)
+returns string as $Rgba
+folder 'Dashboard'
+begin
+  declare $Rgba string = 'rgba(107,98,87,0.30)';
+  if $Index = 0 then set $Rgba = 'rgba(27,77,75,0.30)'; end if;
+  if $Index = 1 then set $Rgba = 'rgba(168,50,30,0.30)'; end if;
+  if $Index = 2 then set $Rgba = 'rgba(124,106,63,0.30)'; end if;
+  if $Index = 3 then set $Rgba = 'rgba(74,90,107,0.30)'; end if;
+  if $Index = 4 then set $Rgba = 'rgba(110,74,90,0.30)'; end if;
+  if $Index = 5 then set $Rgba = 'rgba(44,110,74,0.30)'; end if;
+  return $Rgba;
+end;
+/
+
+/**
+ * A row's actual summed over the elapsed months.
+ *
+ * @param $V A VMatrixActual row
+ * @param $Through Last elapsed month, 1-12
+ * @returns Total actual for months 1..$Through
+ */
+create or modify microflow Ledger.SUM_ElapsedActual (
+  $V: Ledger.VMatrixActual,
+  $Through: integer
+)
+returns decimal as $Total
+folder 'Dashboard'
+begin
+  declare $Total decimal = 0;
+  declare $M integer = 1;
+
+  while $M <= $Through
+  begin
+    $A = call microflow Ledger.GET_ViewActual (V = $V, MonthIndex = $M);
+    set $Total = $Total + $A;
+    set $M = $M + 1;
+  end while;
+
+  return $Total;
+end;
+/
+
+/** Everything the sankey card binds to. */
+create or modify non-persistent entity Ledger.SankeyContext (
+  /** Plotly `data` array */
+  ChartData: string,
+  /** Plotly `layout` object */
+  ChartLayout: string,
+  /**
+   * Raw Plotly click event. Present because CustomChart requires the
+   * attribute, not because it is usable — it receives the clicked element's
+   * bounding box rather than the node (FINDINGS 69), exactly as on the
+   * sunburst. The sankey is a read-only view.
+   */
+  EventData: string,
+  /** e.g. '€ 45,118 in · € 29,566 out · € 15,552 kept' */
+  SubText: string(120)
+);
+/
+
+/**
+ * Builds the sankey payload from VMatrixActual.
+ *
+ * Two passes over the same retrieve, in the order the indices are assigned:
+ * income categories first (each linking into the hub), then expense groups
+ * (each linked from it). Node 0 is emitted before either loop so both know it.
+ *
+ * Amounts go through formatDecimal('0.00') rather than toString(): a Decimal
+ * stringifies with a long tail and small values come out in scientific
+ * notation (FINDINGS 19), neither of which is valid JSON for Plotly.
+ *
+ * @returns The sankey card's context object
+ */
+create or modify microflow Ledger.DS_SankeyContext ()
+returns Ledger.SankeyContext as $Context
+folder 'Dashboard'
+begin
+  declare $Labels string = '';
+  declare $Colors string = '';
+  declare $Src string = '';
+  declare $Tgt string = '';
+  declare $Val string = '';
+  declare $LinkColors string = '';
+  declare $Sep string = '';
+  declare $LinkSep string = '';
+  declare $Next integer = 1;
+  declare $ColorIx integer = 0;
+  declare $Through integer = 0;
+  declare $IncomeTotal decimal = 0;
+  declare $SpendTotal decimal = 0;
+  declare $RowTotal decimal = 0;
+  declare $Data string = '';
+  declare $Layout string = '';
+
+  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
+  set $Through = $ThroughCalc;
+
+  retrieve $Rows from Ledger.VMatrixActual sort by SortKey asc;
+
+  @annotation 'Node 0 is the hub, emitted before either loop so every link can name it'
+  set $Labels = '"Income"';
+  set $Colors = '"#2C6E4A"';
+  set $Sep = ',';
+
+  @annotation 'Income categories flow IN to the hub'
+  loop $I in $Rows
+  begin
+    if $I/RowKind = 'Category' and $I/GroupTypeName = 'Income' then
+      $IA = call microflow Ledger.SUM_ElapsedActual (V = $I, Through = $Through);
+      set $RowTotal = $IA;
+      if $RowTotal > 0 then
+        set $Labels = $Labels + $Sep + '"' + $I/Label + '"';
+        set $Colors = $Colors + $Sep + '"#2C6E4A"';
+        set $Src = $Src + $LinkSep + toString($Next);
+        set $Tgt = $Tgt + $LinkSep + '0';
+        set $Val = $Val + $LinkSep + formatDecimal($RowTotal, '0.00');
+        set $LinkColors = $LinkColors + $LinkSep + '"rgba(44,110,74,0.30)"';
+        set $LinkSep = ',';
+        set $IncomeTotal = $IncomeTotal + $RowTotal;
+        set $Next = $Next + 1;
+      end if;
+    end if;
+  end loop;
+
+  @annotation 'Expense groups flow OUT of the hub'
+  loop $G in $Rows
+  begin
+    if $G/RowKind = 'Group' and $G/GroupTypeName = 'Expense' then
+      $GA = call microflow Ledger.SUM_ElapsedActual (V = $G, Through = $Through);
+      set $RowTotal = $GA;
+      if $RowTotal > 0 then
+        $Hex = call microflow Ledger.GET_SankeyColor (Index = $ColorIx);
+        $Tint = call microflow Ledger.GET_SankeyTint (Index = $ColorIx);
+        set $Labels = $Labels + $Sep + '"' + $G/Label + '"';
+        set $Colors = $Colors + $Sep + '"' + $Hex + '"';
+        set $Src = $Src + $LinkSep + '0';
+        set $Tgt = $Tgt + $LinkSep + toString($Next);
+        set $Val = $Val + $LinkSep + formatDecimal($RowTotal, '0.00');
+        set $LinkColors = $LinkColors + $LinkSep + '"' + $Tint + '"';
+        set $LinkSep = ',';
+        set $SpendTotal = $SpendTotal + $RowTotal;
+        set $Next = $Next + 1;
+        set $ColorIx = $ColorIx + 1;
+      end if;
+    end if;
+  end loop;
+
+  @annotation 'The surplus is a node too, or the diagram would not balance'
+  if $IncomeTotal - $SpendTotal > 0 then
+    set $Labels = $Labels + $Sep + '"Not spent"';
+    set $Colors = $Colors + $Sep + '"#6B6257"';
+    set $Src = $Src + $LinkSep + '0';
+    set $Tgt = $Tgt + $LinkSep + toString($Next);
+    set $Val = $Val + $LinkSep + formatDecimal($IncomeTotal - $SpendTotal, '0.00');
+    set $LinkColors = $LinkColors + $LinkSep + '"rgba(107,98,87,0.30)"';
+  end if;
+
+  set $Data = '[{"type":"sankey","orientation":"h"'
+    + ',"arrangement":"snap"'
+    + ',"valueformat":",.0f"'
+    + ',"valuesuffix":" EUR"'
+    + ',"node":{"pad":16,"thickness":14'
+      + ',"line":{"color":"#FFFFFF","width":1}'
+      + ',"label":[' + $Labels + ']'
+      + ',"color":[' + $Colors + ']}'
+    + ',"link":{"source":[' + $Src + ']'
+      + ',"target":[' + $Tgt + ']'
+      + ',"value":[' + $Val + ']'
+      + ',"color":[' + $LinkColors + ']}'
+    + '}]';
+
+  set $Layout = '{"margin":{"t":8,"l":8,"r":8,"b":8}'
+    + ',"paper_bgcolor":"rgba(0,0,0,0)"'
+    + ',"plot_bgcolor":"rgba(0,0,0,0)"'
+    + ',"font":{"family":"IBM Plex Sans, system-ui, sans-serif","size":12,"color":"#17181A"}'
+    + '}';
+
+  $In = call microflow Ledger.FMT_Euro (Amount = $IncomeTotal);
+  $Out = call microflow Ledger.FMT_Euro (Amount = $SpendTotal);
+  $Kept = call microflow Ledger.FMT_Euro (Amount = $IncomeTotal - $SpendTotal);
+
+  $Context = create Ledger.SankeyContext (
+    ChartData = $Data,
+    ChartLayout = $Layout,
+    EventData = '',
+    SubText = $In + ' in · ' + $Out + ' out · ' + $Kept + ' kept');
+
+  return $Context;
+end;
+/
+
+grant execute on microflow Ledger.GET_SankeyColor to Ledger.User;
+/
+grant execute on microflow Ledger.GET_SankeyTint to Ledger.User;
+/
+grant execute on microflow Ledger.SUM_ElapsedActual to Ledger.User;
+/
+grant execute on microflow Ledger.DS_SankeyContext to Ledger.User;
+/
