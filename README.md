@@ -1,6 +1,6 @@
 # Ledger
 
-A household-finance app for Mendix 11.12.1, authored **entirely through
+A household-finance app for Mendix 11.13.0, authored **entirely through
 [mxcli](https://github.com/ako/mxcli) and MDL**. No hand-edited `.mpr`, no Studio
 Pro. Every entity, microflow, page and theme token in this repository was written
 as MDL source and applied from the command line.
@@ -114,7 +114,7 @@ the build order and every file is idempotent (`create or modify` throughout).
 ```bash
 cd Ledger
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
-~/.mxcli/mxbuild/11.12.1/modeler/mx check Ledger.mpr     # the authority
+~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
 mxcli run --local --ensure-db                            # run it
 ```
 
