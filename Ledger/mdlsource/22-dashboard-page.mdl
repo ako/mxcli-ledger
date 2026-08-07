@@ -128,6 +128,36 @@ create or replace page Ledger.Dashboard
                 }
               }
             }
+
+            -- The sankey sits below, full width. It answers where the money came
+            -- from and what survived, which the sunburst structurally cannot:
+            -- every ring there is a share of spend, so income never appears.
+            row rowSankey {
+              column colSankey (desktopwidth: 12) {
+                dataview dvSankey (datasource: microflow Ledger.DS_SankeyContext) {
+                  container ctnSankeyCard (class: 'card ledger-chart-card') {
+                    container ctnSankeyHead (class: 'ledger-chart-head') {
+                      dynamictext lblSankey (content: 'Income to spend', class: 'ledger-kicker')
+                      dynamictext subSankey (attribute: SubText, class: 'ledger-inspector-meta')
+                    }
+
+                    pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSankey (
+                      dataAttribute: ChartData,
+                      layoutAttribute: ChartLayout,
+                      eventDataAttribute: EventData,
+                      widthUnit: percentage,
+                      width: 100,
+                      heightUnit: pixels,
+                      height: 420,
+                      minHeightUnit: none,
+                      maxHeightUnit: none,
+                      showPlaygroundSlot: false,
+                      configurationOptions: '{"displayModeBar":false,"responsive":true}'
+                    )
+                  }
+                }
+              }
+            }
           }
         }
       }

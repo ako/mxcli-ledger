@@ -2553,3 +2553,62 @@ and it would cost the monospace figures — mxcli's themes vendor a sans and a
 serif, no mono, and this app's whole numeric layout rests on tabular monospace
 (see the README's note on why). `mxcli theme remove` plus restoring
 `theme/` from git returned the app exactly to its prior state.
+
+### 80. `mxcli test --local` runs against an unseeded database, and a failed assertion does not say what it got
+
+The new local test runner is fast and the mechanism is a good one — one boot,
+a token-guarded endpoint, each test its own microflow invoked over HTTP. Seven
+tests run in 573 ms. Two things cost time on the way to that.
+
+**It replaces AfterStartupMicroflow, so nothing seeds.** The run announces it:
+
+```
+After-startup set to MxTest.RegisterEndpoint (registers the endpoint; runs no tests)
+```
+
+which reads as plumbing, not as "your app's initialisation will not run". This
+app seeds its demo data from `Ledger.ASU_Startup`, so every query in every test
+saw an empty database. The first assertion failed with no hint why; the
+hypothesis was only confirmed by asserting the *empty* answer and watching it
+pass:
+
+```
+@expect $ctx/SubText = '€ 0 in · € 0 out · € 0 kept'      → PASS
+```
+
+A test that needs data has to seed for itself — `$x = call microflow
+Ledger.Seed_DemoData ();` as the first statement of the block. Worth saying in
+the runner's output, since replacing the after-startup microflow is invisible
+in its consequences.
+
+**A failing assertion prints the expectation but not the actual value.**
+
+```
+FAIL  Sankey balances income against spend and surplus (158ms)
+       expected $ctx/SubText = '€ 45,118 in · € 29,566 out · € 15,552 kept'
+```
+
+There is no "got …" line, so a mismatch gives you nothing to work from — the
+only way forward is to guess a value and assert it. Every other assertion
+library prints both sides; this one has the value in hand at the point it
+decides to fail.
+
+**`@expect` does take expressions**, which is not obvious from the help (it
+shows only `@expect $result = 'John Doe'`). `contains(…) = true` works, and so
+does a bare boolean conjunction:
+
+```
+@expect contains($ctx/ChartData, '"source":[') and contains($ctx/ChartData, '"value":[')
+```
+
+That is what made data-independent assertions possible here, and it deserves a
+line in the help text.
+
+**A note on what to assert, which is this project's mistake rather than
+mxcli's.** The first version of these tests pinned exact euro totals. They
+failed against the test database, and the reason was not a bug: `Seed_DemoData`
+generates transactions up to the current date, so a database seeded today holds
+more than one seeded ten days ago — 380 rows against 334, measured. Euro
+figures are a property of *when* the database was seeded. The suite now asserts
+the palette and the payload's shape, and the figures are verified against
+Postgres instead.
