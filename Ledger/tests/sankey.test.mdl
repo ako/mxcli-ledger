@@ -72,6 +72,18 @@ $ctxL = call microflow Ledger.DS_SankeyContext ();
 /
 
 /**
+ * The third level: each expense group flows on into its own categories. The
+ * category names are fixed reference data (02-seed-reference.mdl), so unlike
+ * the euro totals they are safe to assert.
+ *
+ * @test Expense groups flow on into their categories
+ * @expect contains($ctxC/ChartData, '"Rent"') and contains($ctxC/ChartData, '"Groceries"')
+ */
+$seededC = call microflow Ledger.Seed_DemoData ();
+$ctxC = call microflow Ledger.DS_SankeyContext ();
+/
+
+/**
  * With data present the diagram must balance, whatever the totals happen to
  * be: the hub's outgoing links are the expense groups plus the surplus, so
  * SubText always names all three parts.
