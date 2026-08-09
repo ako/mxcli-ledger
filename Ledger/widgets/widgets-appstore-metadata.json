@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0",
+  "widgets": [
+    {
+      "sha-256": "2d7fe7a2528fd16a8ded8b6ec18be32a300f0e4cf7264377303403d293938e5c",
+      "name": "Image",
+      "version": "1.6.0",
+      "appStoreVersionGuid": "dc44021c-8fe3-4e92-90dd-cb588bb92e04"
+    },
+    {
+      "sha-256": "5b565d39721447414b5a1416417b04beb6d2a6a7c4a98e9b4acb516c633fda3a",
+      "name": "Combo box",
+      "version": "2.9.0",
+      "appStoreVersionGuid": "dce845f4-d051-4161-847c-016c01703caa"
+    },
+    {
+      "sha-256": "99056b6973320908156c15110500003d17ae7979228958e2dd3f284eb4f181dd",
+      "name": "Timeline",
+      "version": "3.2.3",
+      "appStoreVersionGuid": "5f4d9fd2-5e46-455f-afed-a805b7a50552"
+    },
+    {
+      "sha-256": "98cff0323c4ce85a526855321cf571acf37bc3dda93b6140c7e6f1de55cfd28d",
+      "name": "Charts",
+      "version": "6.3.2",
+      "appStoreVersionGuid": "ee2d75d6-7bea-4755-bdfb-8e4121325047"
+    },
+    {
+      "sha-256": "510aeda5e4015cff246824193877e029808b5cad32374165ee016196e4447d68",
+      "name": "Maps",
+      "version": "4.1.0",
+      "appStoreVersionGuid": "51aa9f63-d7bb-4a35-8cf3-c4d707e2fece"
+    },
+    {
+      "sha-256": "0b242a6bea20e92cc9e8316f72998a76e51aa63d29296d122856faca6f53f9d2",
+      "name": "Badge",
+      "version": "3.2.3",
+      "appStoreVersionGuid": "14e57966-1dbf-426c-a785-10f89735eb8b"
+    },
+    {
+      "sha-256": "a157d38b4e908d8c8808e43c168802eaefe4ea5d445508dc9e5f3042bad66fe6",
+      "name": "Progress Circle",
+      "version": "3.3.3",
+      "appStoreVersionGuid": "626edd7a-ebd6-434b-b5ad-e5fa15d64c22"
+    },
+    {
+      "sha-256": "a855a16619586747656a6ebb41b8d401816c64e549a77d6261a144a39d71b382",
+      "name": "Progress Bar",
+      "version": "3.2.3",
+      "appStoreVersionGuid": "ff623196-6396-4e84-93c5-dacf97c75a72"
+    }
+  ]
+}
