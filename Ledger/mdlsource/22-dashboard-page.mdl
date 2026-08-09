@@ -166,6 +166,19 @@ create or replace page Ledger.Dashboard
 }
 /
 
+-- ============================================================================
+-- !! Applying this block DELETES the six navigation menu icons. !!
+--
+-- The icons were added in Studio Pro (commit b1856a7). `create or replace
+-- navigation` does not update the menu items — it deletes and recreates them
+-- (every item comes back with a new object id), so anything MDL cannot express
+-- is gone rather than preserved. Silently: it reports success and the mx check
+-- count does not move. Both engines behave the same way.
+-- See FINDINGS 81 and docs/widget-recovery.md.
+--
+-- Until MDL can round-trip icons, skip this block when re-applying the
+-- mdlsource set, or expect to re-add the icons in Studio Pro afterwards.
+-- ============================================================================
 create or replace navigation Responsive
   home page Ledger.Dashboard
   menu (
