@@ -2687,22 +2687,48 @@ mxcli reported success: `Navigation profile 'Responsive' updated.` No warning,
 no error, and `mx check` stays at the same error count — nothing anywhere says
 six properties were dropped.
 
-**It is not a blanket "unmentioned properties are cleared" rule**, which is what
-makes it a bug rather than a documented limitation. Profile-level properties
-that `DESCRIBE` also omits survive the same write untouched:
+**This is not the engine failing to preserve unmentioned values.** Preserving
+them is the modelsdk engine's whole reason for existing over the legacy one, and
+it works here — it is the navigation writer that steps outside it. Object
+identity shows exactly where the line falls. Comparing `$ID`s before and after
+the same write:
+
+```
+          doc                profile            menu (MenuItemCollection)
+baseline  ab8629b6c91e845c   2f04a03860481953   8d18a1bf43fe1c4f
+modelsdk  ab8629b6c91e845c   2f04a03860481953   4eb4bcdcdf288c42   ← new
+legacy    ab8629b6c91e845c   2f04a03860481953   cc71a503eac2df43   ← new
+```
+
+The document and the profile keep their identity, so they are *updated in
+place* and everything the statement did not mention survives on them — which is
+why `AppIcon` and `AppTitle` come through untouched despite `DESCRIBE` omitting
+both:
 
 ```
 BEFORE  AppIcon='Atlas_Core.Content.Mendix'  AppTitle='Mendix'
 AFTER   AppIcon='Atlas_Core.Content.Mendix'  AppTitle='Mendix'
 ```
 
-So the writer does preserve state it was not told about — just not on menu
-items, which it rebuilds from the parse tree alone.
+The `MenuItemCollection` gets a **new** id, and so does every one of the six
+items inside it (`ca489fb1…` → `88d0e47a…`, and so on for all six). They are not
+updated and stripped — they are deleted and rebuilt from the parse tree. There
+is no unmentioned value left to preserve because the object that held it no
+longer exists. The preservation contract never gets a chance to apply.
 
-Two things would fix it independently, and either is worth having: emit the
-icon in `DESCRIBE` and accept it in the grammar, or — until then — carry the
-existing icon across when a replaced menu item matches an old one by caption
-and page. The second is the cheaper guard against exactly this loss.
+**Both engines do this identically**, so it is not a legacy-versus-modelsdk
+difference and not a regression in the new engine — the menu writer is shared
+and opts out of the model in both. (Measured on throwaway copies; this project
+never authors with `--engine legacy`.)
+
+That changes what the fix is. Adding icon syntax to the grammar and to
+`DESCRIBE` is worth doing on its own, but it would only close *this* hole —
+every other menu-item property MDL does not model would keep vanishing the same
+way. The structural fix is for the writer to reconcile the collection instead of
+replacing it: match incoming items to existing ones, mutate those in place, and
+create or delete only the difference. Then menu items inherit the same guarantee
+the profile already has, and the grammar's coverage stops being the thing that
+decides what survives.
 
 **Consequence for this project.** `mdlsource/22-dashboard-page.mdl` owns the
 navigation block, and this app's stated method is to re-apply all 24 files from

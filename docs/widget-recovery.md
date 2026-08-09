@@ -132,10 +132,12 @@ Both look like the fix and both make things worse:
 
 **This is not fixed by the work order above, and step 5 will trigger it.**
 
-`mdlsource/22-dashboard-page.mdl` owns the navigation block. MDL has no icon
-clause on a menu item, so re-applying that file deletes all six icons and
-reports success. Verified: all six read back `(none)` afterwards, with no
-warning and no change in the `mx check` count.
+`mdlsource/22-dashboard-page.mdl` owns the navigation block. `create or replace
+navigation` deletes and recreates the menu items rather than updating them —
+every item comes back with a new object id — so the icons are not preserved,
+they are discarded with the objects that held them. All six read back `(none)`
+afterwards, with no warning and no change in the `mx check` count. Both engines
+do it; `--engine legacy` is not a way out.
 
 Until MDL can round-trip icons, either:
 
