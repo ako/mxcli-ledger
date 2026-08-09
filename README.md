@@ -1,6 +1,6 @@
 # Ledger
 
-A household-finance app for Mendix 11.12.1, authored **entirely through
+A household-finance app for Mendix 11.13.0, authored **entirely through
 [mxcli](https://github.com/ako/mxcli) and MDL**. No hand-edited `.mpr`, no Studio
 Pro. Every entity, microflow, page and theme token in this repository was written
 as MDL source and applied from the command line.
@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 75 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 80 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -29,6 +29,20 @@ any level of the breakdown lists the transactions behind it.
 The total, **€ 29,566**, is computed here from the merchant view. The Cashflow
 screen arrives at the same number from an entirely different query, and Groceries
 comes to € 4,484 on both. That agreement is the test.
+
+Below it, a sankey answers what the sunburst structurally cannot — where the
+money came from and how much survived. Every ring above is a *share of spend*,
+so income never appears there and the surplus is invisible. The sankey runs
+income categories into one Income node and out again into the expense groups,
+on into their categories, and into what was not spent. It balances by
+construction: **€ 45,118 in · € 29,566 out · € 15,552 kept**, the same three
+figures the Cashflow KPI strip reports, and each group's outgoing links sum
+back to it (Housing 10,227 + 1,459 + 563 = 12,249).
+
+Plotly's `sankey` trace ships in the Charts.mpk bundle, so it goes through the
+same CustomChart escape hatch as the sunburst. Its links reference nodes by
+array index rather than by id, which fixes the build order: the hub is emitted
+first so it is always node 0.
 
 ### Cashflow
 
@@ -76,6 +90,12 @@ incremented, so it cannot drift.
 
 ![Transactions](docs/screenshots/transactions.png)
 
+Dates and amounts render through **dynamic-text columns** — `ShowContentAs:
+dynamicText` with a per-parameter `format (…)` block — rather than plain
+attribute columns, which have no formatting options and would show `-21.4` and
+the browser's locale date. This is the one screen that does not preformat in a
+microflow; the capability came from mxcli PR #88, prompted by findings 75–78.
+
 ---
 
 ## How it is built
@@ -90,7 +110,7 @@ files apply in dependency order:
 | `06`–`11` | Cashflow matrix, shared views, inspector |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
-| `20`–`22` | Dashboard sunburst |
+| `20`–`22` | Dashboard sunburst and income-to-spend sankey |
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
@@ -108,7 +128,8 @@ the build order and every file is idempotent (`create or modify` throughout).
 ```bash
 cd Ledger
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
-~/.mxcli/mxbuild/11.12.1/modeler/mx check Ledger.mpr     # the authority
+~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
+mxcli test tests/*.test.mdl -p Ledger.mpr --local        # microflow tests
 mxcli run --local --ensure-db                            # run it
 ```
 
@@ -155,11 +176,6 @@ Stated rather than hidden:
   the chart instead.
 - **The dashboard breakdown pages at 20 rows.** `PageSize` on the listview did
   not take effect, so deeper groups need paging to reach.
-- **The Transactions screen shows raw decimals** (`-21.4`). Mendix *does*
-  support decimal precision and group digits on a Dynamic Text content
-  parameter; MDL has no syntax for it, and asking for it inline is dropped
-  without a warning (finding 75). The other screens work around it by
-  preformatting in the builder; this one has not been converted.
 - **CSV import is not built.** The prototype's import wizard read no file and its
   counts were hardcoded; a real one is genuinely new work.
 - **The theme pulls IBM Plex from Google Fonts at runtime.** Where that CDN is
@@ -170,12 +186,13 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              75 numbered findings — the main deliverable alongside the app
+FINDINGS.md              80 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
+Ledger/tests/            microflow tests (mxcli test --local)
 Ledger/theme/            Atlas token overrides
 Ledger/themesource/      component styling
 docs/screenshots/        the images above

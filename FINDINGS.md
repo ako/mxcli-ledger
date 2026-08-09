@@ -2235,3 +2235,380 @@ Two asks for mxcli, in order:
    `ALTER PAGE SET` already does. Whatever the answer to (1), silently
    discarding an authored property is the more expensive bug — the model is not
    what the source says, and nothing tells you.
+
+### 76. mxcli PR #88 tested — the format block is written correctly and has no runtime effect *(FIXED, verified)*
+
+PR #88 (`feat(pages): dynamic-text parameter formatting via a FORMAT block`)
+answers finding 75 with a per-parameter `format (…)` block and a new
+MDL-WIDGET18 for the silent drop. Both halves do what they claim, and the
+feature still does not reach the screen.
+
+**What works.** The widget-level key now errors instead of vanishing:
+
+```
+✗ page Ledger.T1: widget `d1`: `decimalprecision` is a per-parameter format, not a
+  widget property … A widget-level `decimalprecision` is dropped on write. [MDL-WIDGET18]
+```
+
+The block parses, applies, survives `mx check` (0 errors) and round-trips —
+`decimalPrecision: 2` is omitted on read because it is the default, while `0`
+and `4` come back verbatim:
+
+```
+dynamictext dT3 (Content: '{1}', ContentParams: [{1} = SignedAmount format (groupDigits: true)])
+precision 0 -> format (decimalPrecision: 0, groupDigits: true)
+precision 4 -> format (decimalPrecision: 4, groupDigits: true)
+```
+
+The `Forms$FormattingInfo` written into the `.mpr` is complete and correct.
+
+**What does not.** Converting the Transactions grid's date and amount to
+custom-content columns with `format (dateFormat: Custom, customDateFormat:
+'d MMM yyyy')` and `format (decimalPrecision: 2, groupDigits: true)`, then
+rebuilding from an emptied `deployment/`, still renders:
+
+```
+7/4/2026, 12:00 AM   Pluk Bloemen   iDEAL 20000   -12
+```
+
+Not `4 Jul 2026` and `-12.00`. The custom content is live — 32 `.tx-date` and 32
+`.tx-amount` containers in the DOM — so the columns are mine; the formatting is
+simply ignored.
+
+**Root cause, from the serialized parameter.** `Forms$ClientTemplateParameter`
+comes out as:
+
+```json
+{ "$Type": "Forms$ClientTemplateParameter",
+  "Expression": "toString($currentObject/TxDate)",
+  "FormattingInfo": { "$Type": "Forms$FormattingInfo",
+                      "DateFormat": "Custom", "CustomDateFormat": "d MMM yyyy",
+                      "DecimalPrecision": 2, "GroupDigits": false },
+  "AttributeRef": null }
+```
+
+`FormattingInfo` is right. `AttributeRef` is **null**, and the value is an
+*expression*: `toString($currentObject/TxDate)`. The Text reference says Format
+is "a format in which the value will be displayed (**only for attributes**)" —
+so an expression parameter is exactly the case the runtime does not format. And
+`toString()` has already stringified the value before formatting could apply,
+which is why a Decimal reads `-12` rather than `-12.00` even at the default
+precision.
+
+This is not specific to the new syntax: **all 248 template parameters in that
+page have `AttributeRef: null`**. MDL has always written `{1} = Attr` as an
+expression rather than an attribute reference, which is why every screen in this
+app preformats.
+
+So PR #88 needs one more piece: when a content parameter is a plain attribute,
+serialize it as `AttributeRef` instead of `Expression: toString(...)`. The
+`FormattingInfo` half is already correct and will start working the moment the
+parameter is an attribute.
+
+**Fixed and verified.** PR #88 gained
+`fix(pages): bind non-String dynamic-text params as AttributeRef so formatting
+applies`. Retested by converting the Transactions grid's date and amount to
+custom-content columns and rebuilding from an emptied `deployment/`:
+
+```
+before   7/4/2026, 12:00 AM   -12      -21.4     -1556.96   5308.52
+after    4 Jul 2026           -12.00   -21.40    -1,556.96  5,308.52
+```
+
+Decimal precision, group digits and the custom date pattern all apply.
+`AttributeRef` is non-null on 10 of 254 parameters — the non-String ones — where
+it was null on all 254 before. `mx check`: 0 errors.
+
+Two smaller things from the same test run:
+
+- ~~The PR does not build as pushed.~~ **Wrong, mine.** A bare
+  `go build ./cmd/mxcli` fails with `paCtx.ParamFormatV3 undefined` after a
+  grammar change, but `mdl/grammar/parser/` is gitignored and the project's own
+  target is `build: grammar sync-all completions` — regenerating is a normal
+  build step, not something the PR omitted. Use `make build`.
+- **MDL-WIDGET18's suggested fix does not parse.** It advises
+  `ContentParams: [{1} = Attr (decimalprecision: <value>)]`, omitting the
+  `format` keyword the PR's own documentation calls required. Copy-pasting the
+  suggestion gives a syntax error; `{1} = Attr format (…)` is correct.
+
+### 77. Data Grid 2's Dynamic Text column type is missing from MDL — and asking for it corrupts the grid *(FIXED, verified)*
+
+Following 76: if a content parameter's formatting is going to work, the next
+question is how to reach it from a grid column, since that is where the raw
+decimals actually show. The [Data Grid 2 reference](https://docs.mendix.com/appstore/modules/data-grid-2/)
+gives a column **three** content types:
+
+> 1. **Attribute** — renders the value of a selected attribute
+> 2. **Dynamic Text** — renders a text-templated string which can contain text combined with attributes
+> 3. **Custom Content** — allows dropping widgets into cells
+
+and documents no formatting options on the Attribute type. So **Dynamic Text is
+the intended mechanism**: it is a text template, its parameters are
+`ClientTemplateParameter`s, and those are what carry `FormattingInfo`.
+
+MDL exposes the first and third. `column colX (attribute: Amount)` is Attribute;
+`column colX (caption: '…') { widgets }` is Custom Content. There is no syntax
+for the middle one.
+
+Worse, the obvious spelling parses and then destroys the column:
+
+```sql
+column colA (caption: 'Amount', content: '{1}',
+             contentparams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+```
+
+```
+$ mxcli check t-col.mdl -p Ledger.mpr
+Check passed!
+$ mxcli exec t-col.mdl -p Ledger.mpr
+Created page Ledger.TCol
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.TCol"
+      column Amount (Caption: 'Amount')
+```
+
+`content`, `contentparams` and the format block are all gone; the column has
+even lost its name, taking the caption instead. And unlike the other silent
+drops, this one leaves a model that does not load:
+
+```
+[error] [CE0463] "The definition of this widget has changed. Update this widget by
+        right-clicking it and selecting 'Update widget' …" at Data grid 2 'dg1'
+The app contains: 1 errors.
+```
+
+So `mxcli check` passes, `mxcli exec` succeeds, and the project is broken — the
+worst ordering of the three.
+
+**The ask:** expose Dynamic Text as a column content type, carrying the same
+per-parameter `format (…)` block PR #88 added to `dynamictext`. That is the
+route to formatted grid columns without wrapping every cell in Custom Content,
+and it is what the reference points at.
+
+Note it does not stand alone: finding 76 must land too. A Dynamic Text column
+whose parameter is written as `Expression: toString($currentObject/Attr)` with
+`AttributeRef: null` will be ignored by the runtime exactly as the widget one
+is. The two together are what make a formatted grid column work.
+
+**Retested after PR #88's AttributeRef fix — unchanged.** 76's half now works,
+but a column still swallows `content`/`contentparams`, still renames itself to
+its caption, and still leaves `CE0463` behind:
+
+```
+$ mxcli check t-col.mdl -p Ledger.mpr        # Check passed!
+$ mxcli exec  t-col.mdl -p Ledger.mpr        # Created page Ledger.TCol
+$ mxcli -p Ledger.mpr -c "DESCRIBE PAGE Ledger.TCol"
+      column Amount (Caption: 'Amount')
+$ mx check Ledger.mpr
+[error] [CE0463] "The definition of this widget has changed …" at Data grid 2 'dg1'
+```
+
+Custom Content is the working route today: wrapping the cell in a container with
+a formatted `dynamictext` renders correctly (verified above on the Transactions
+grid). Dynamic Text would be lighter, and is what the reference points at, but
+Custom Content is not blocked on it.
+
+**Fixed and verified.** PR #88 gained `fix(pages): DataGrid2 dynamic-text
+columns — carry FORMAT block + fix CE0463`. The content type is explicit —
+`ShowContentAs: dynamicText` — which is why my first retest still failed: I had
+omitted it, and a column without it is still an attribute column.
+
+```sql
+column colAmt2 (ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+  Content: '{1}', ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+```
+
+Round-trips complete (`ShowContentAs`, `Content`, `ContentParams` and the format
+suffix all come back), raw `mx check` is 0 errors, and the page renders:
+
+```
+DATE          MERCHANT                 AMOUNT
+12 Jan 2026   Koelewijn Holding BV     5,308.52
+2 Feb 2026    Koelewijn Holding BV     5,622.69
+```
+
+No custom-content wrapper, no page errors. This is the lighter route the Data
+Grid 2 reference points at, and it now works.
+
+Two notes from the fix worth keeping:
+
+- **`mxcli docker check` masks this class of defect.** It runs `mx update-widgets`
+  first, which repairs the very BSON discrepancy that produces CE0463. Raw
+  `~/.mxcli/mxbuild/*/modeler/mx check` and the `run --local` serve build surface
+  it. Every check in this file used the raw binary, which is why it was caught.
+- **Column names still do not round-trip.** `colAmt2` comes back as
+  `column Amount`, taking its caption. Long-standing rather than new, and
+  independent of the formatting work — written up separately as finding 78.
+
+### 78. A grid column's authored name is discarded, and the handle it gets instead is neither stable nor unique
+
+Every other widget in MDL is addressable by the name you give it. Columns are
+not: the authored name is dropped on write and replaced by a derived one. Four
+columns, one of each kind:
+
+```sql
+column colAuthoredAttr   (attribute: Merchant, caption: 'Who')
+column colAuthoredDyn    (ShowContentAs: dynamicText, caption: 'When', …)
+column colAuthoredCustom (caption: 'Actions') { actionbutton btnN (…) }
+column colNoCaption      (attribute: Description)
+```
+
+come back as:
+
+```
+column Merchant
+column "When"
+column "Actions"
+column "Description"
+```
+
+Not one authored name survives. The rule is **attribute name for an attribute
+column, caption for everything else** — note `colAuthoredAttr` becomes
+`Merchant`, its attribute, *not* `Who`, its caption.
+
+**The authored name cannot address the column; the derived one can:**
+
+```
+ON colAuthoredAttr  → Error: widget "colAuthoredAttr" not found
+ON Merchant         → Altered page Ledger.NTest
+ON "When"           → Altered page Ledger.NTest
+ON When             → Error: widget "When" not found     (quoting is not optional)
+```
+
+That alone is a round-trip wart. Two further behaviours make it a hazard.
+
+**The handle moves when the caption does.** For a non-attribute column the
+handle *is* the caption, so renaming the caption silently renames the column:
+
+```
+set Caption = 'Renamed' ON "When"   → Altered
+… the column is now `column Renamed`, and:
+set Caption = 'Again'   ON "When"   → Error: widget "When" not found
+```
+
+An attribute column is immune — its handle is the attribute — so the same
+edit is stable in one case and self-destructing in the other, with nothing in
+the syntax to distinguish them. A script that renames captions in sequence
+works or breaks depending on a column kind the author never had to think about.
+
+**Duplicate captions produce duplicate handles, and the ALTER hits the first
+one silently.** Two dynamic-text columns captioned 'Amount':
+
+```
+column Amount        ← Alignment: right applied here
+column Amount        ← untouched, and unaddressable
+```
+
+`set Alignment = right ON "Amount"` reports `Altered page`, changes only the
+first, and gives no indication the second exists. There is no way to reach it.
+
+`mx check` is 0 errors throughout — the model is valid. This is purely an MDL
+addressability defect, and it is why `ALTER PAGE … ON colM03` failed when I
+tried to probe the cashflow matrix's cell classes (finding 76): the name in the
+source had never existed in the model.
+
+**Ask:** persist the authored column name and address columns by it, as every
+other widget already is. Failing that, two smaller improvements would remove
+most of the sting — reject an `ON <name>` that matches more than one column
+rather than silently taking the first, and error on the authored name instead
+of reporting "not found" for a name that is right there in the source.
+
+### 79. `mxcli theme apply` over an existing hand-built theme half-applies, with no warning
+
+mxcli now ships three themes, one of them called **ledger** — "warm paper,
+hairline rules instead of cards, serif headings" — which is this app's design
+language, and it vendors its faces (`theme/web/mxcli-fonts/`, Source Sans 3 +
+Source Serif 4, SIL OFL) rather than importing them from a CDN. That is exactly
+the fix this project's README lists as an open gap.
+
+Applying it here does not deliver it. `mxcli theme apply ledger` reports eleven
+files written and exits 0:
+
+```
+  added     theme/web/custom-variables.scss
+  added     theme/web/main.scss
+  created   theme/web/mxcli-fonts/…            (7 woff2 + OFL.txt)
+```
+
+`added`, not `replaced` — the generated block is inserted *alongside* this
+project's own 35 `--ledger-*` tokens in the same file. The result is neither
+theme:
+
+- The page ground shifts slightly (`rgb(246,244,240)` → `rgb(247,244,238)`) —
+  so it is not a no-op.
+- Every font stays the project's (`"IBM Plex Mono", ui-monospace…`), because
+  `themesource/ledger/web/main.scss` is a *module* stylesheet and compiles after
+  `theme/web/`. The theme's own `main.scss` comment says it "compiles last, so
+  the partials win" — true within `theme/`, not against a themesource module.
+- **The Google Fonts request still fires and still fails.** The seven vendored
+  woff2 files are downloaded, written, and never referenced.
+
+So the one thing worth having — no CDN at runtime — is precisely what does not
+arrive, and nothing says so. `apply` could reasonably notice that
+`custom-variables.scss` already carries non-generated declarations, or that a
+themesource module defines a competing `main.scss`, and warn.
+
+Adopting the shipped theme properly is a real option for this app, but it is a
+design decision rather than a drop-in: it means deleting this project's palette,
+and it would cost the monospace figures — mxcli's themes vendor a sans and a
+serif, no mono, and this app's whole numeric layout rests on tabular monospace
+(see the README's note on why). `mxcli theme remove` plus restoring
+`theme/` from git returned the app exactly to its prior state.
+
+### 80. `mxcli test --local` runs against an unseeded database, and a failed assertion does not say what it got
+
+The new local test runner is fast and the mechanism is a good one — one boot,
+a token-guarded endpoint, each test its own microflow invoked over HTTP. Seven
+tests run in 573 ms. Two things cost time on the way to that.
+
+**It replaces AfterStartupMicroflow, so nothing seeds.** The run announces it:
+
+```
+After-startup set to MxTest.RegisterEndpoint (registers the endpoint; runs no tests)
+```
+
+which reads as plumbing, not as "your app's initialisation will not run". This
+app seeds its demo data from `Ledger.ASU_Startup`, so every query in every test
+saw an empty database. The first assertion failed with no hint why; the
+hypothesis was only confirmed by asserting the *empty* answer and watching it
+pass:
+
+```
+@expect $ctx/SubText = '€ 0 in · € 0 out · € 0 kept'      → PASS
+```
+
+A test that needs data has to seed for itself — `$x = call microflow
+Ledger.Seed_DemoData ();` as the first statement of the block. Worth saying in
+the runner's output, since replacing the after-startup microflow is invisible
+in its consequences.
+
+**A failing assertion prints the expectation but not the actual value.**
+
+```
+FAIL  Sankey balances income against spend and surplus (158ms)
+       expected $ctx/SubText = '€ 45,118 in · € 29,566 out · € 15,552 kept'
+```
+
+There is no "got …" line, so a mismatch gives you nothing to work from — the
+only way forward is to guess a value and assert it. Every other assertion
+library prints both sides; this one has the value in hand at the point it
+decides to fail.
+
+**`@expect` does take expressions**, which is not obvious from the help (it
+shows only `@expect $result = 'John Doe'`). `contains(…) = true` works, and so
+does a bare boolean conjunction:
+
+```
+@expect contains($ctx/ChartData, '"source":[') and contains($ctx/ChartData, '"value":[')
+```
+
+That is what made data-independent assertions possible here, and it deserves a
+line in the help text.
+
+**A note on what to assert, which is this project's mistake rather than
+mxcli's.** The first version of these tests pinned exact euro totals. They
+failed against the test database, and the reason was not a bug: `Seed_DemoData`
+generates transactions up to the current date, so a database seeded today holds
+more than one seeded ten days ago — 380 rows against 334, measured. Euro
+figures are a property of *when* the database was seeded. The suite now asserts
+the palette and the payload's shape, and the figures are verified against
+Postgres instead.

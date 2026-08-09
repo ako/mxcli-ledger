@@ -20,7 +20,7 @@
 # deleted inode.
 #
 # Environment overrides:
-#   MENDIX_VERSION   Mendix version to pre-cache (default 11.12.1)
+#   MENDIX_VERSION   Mendix version to pre-cache (default 11.13.0)
 #   MXCLI_REF        git ref of mxcli to build (default main)
 #   SKIP_MENDIX_CACHE=1   skip the ~1.2 GB engine/runtime download
 
@@ -29,7 +29,7 @@ set -euo pipefail
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
-MENDIX_VERSION="${MENDIX_VERSION:-11.12.1}"
+MENDIX_VERSION="${MENDIX_VERSION:-11.13.0}"
 
 ANTLR_VERSION="4.13.1"
 ANTLR_DIR="/opt/antlr"

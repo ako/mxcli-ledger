@@ -490,11 +490,7 @@ begin
         set $Band = '';
       end if;
 
-      @annotation 'The selected cell is outlined; the band string carries the class'
-      if $V/SortKey = $Context/DrillSortKey and $M = $Context/DrillMonthIndex then
-        set $Band = $Band + ' cf-sel';
-      end if;
-
+      @annotation 'The selection is NOT baked in here. Doing so made the outline part of the row data, so moving it meant refreshing the context, which re-ran this builder over all 228 cells on every click. The cell class computes it instead (11-cashflow-page.mdl).'
       $Set = call microflow Ledger.SET_RowMonth (
         Row = $Row, MonthIndex = $M, Text = $Text, Band = $Band);
 
