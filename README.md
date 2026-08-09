@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 80 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 82 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -168,6 +168,13 @@ up.
 
 Stated rather than hidden:
 
+- **The app does not currently build from a clone.** Widgets were updated in
+  Studio Pro, but `.gitignore` carries `*.mpk`, so the packages never travelled
+  with the commit and `mx check` reports 116 CE0463 errors against the stale
+  ones. [`docs/widget-recovery.md`](./docs/widget-recovery.md) is the work order;
+  findings 81–82 are the diagnosis. That commit is also the one exception to
+  "authored entirely through mxcli" — it added the navigation menu icons, which
+  MDL can neither read nor write.
 - **The chart itself is not clickable.** Three independent blockers, all recorded
   in `FINDINGS.md` 67–69: MDL silently drops an `action`-typed property on a
   pluggable widget; writing a widget attribute does not re-run a datasource over
@@ -186,10 +193,11 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              80 numbered findings — the main deliverable alongside the app
+FINDINGS.md              82 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
+docs/widget-recovery.md  open work order — restoring the widget packages
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
 Ledger/tests/            microflow tests (mxcli test --local)

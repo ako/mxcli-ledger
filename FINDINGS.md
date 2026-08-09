@@ -2612,3 +2612,197 @@ more than one seeded ten days ago — 380 rows against 334, measured. Euro
 figures are a property of *when* the database was seeded. The suite now asserts
 the palette and the payload's shape, and the figures are verified against
 Postgres instead.
+
+---
+
+## Phase 10 — a Studio Pro round-trip (2026-08-09)
+
+The app had been authored entirely through mxcli up to this point. Commit
+`b1856a7` is the first change made in Studio Pro: widgets updated to current
+Marketplace versions, and icons added to the six navigation menu items. Both
+halves broke on the way back.
+
+### 81. Navigation menu-item icons are invisible to MDL, and the documented round-trip deletes them
+
+Six menu items carried icons, deliberately spanning all three kinds Mendix
+supports:
+
+| Menu item | `$Type` | Value |
+|---|---|---|
+| Dashboard | `Forms$IconCollectionIcon` | `Atlas_Core.Atlas.align-center` |
+| Cashflow | `Forms$IconCollectionIcon` | `Atlas_Core.Atlas.align-bottom` |
+| Budgets | `Forms$IconCollectionIcon` | `Atlas_Core.Atlas_Filled.alert-circle` |
+| Transactions | `Forms$IconCollectionIcon` | `Atlas_Core.Atlas_Styling.aligncontent-horizontal-space-between` |
+| Accounts | `Forms$GlyphIcon` | code `9999` |
+| Categories & rules | `Forms$ImageIcon` | `System.Images.Close` |
+
+`DESCRIBE` emits none of them:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE NAVIGATION Responsive"
+create or replace navigation Responsive
+  home page Ledger.Dashboard
+  menu (
+    menu item 'Dashboard' page Ledger.Dashboard;
+    menu item 'Cashflow' page Ledger.Cashflow_Overview;
+    ...
+  )
+;
+```
+
+The write side cannot express them either — `mxcli syntax navigation.create`
+gives the whole menu-item grammar as `MENU ITEM 'Label' PAGE Module.Page;`,
+with no icon clause.
+
+**The two combine into silent data loss.** `mxcli syntax navigation` documents
+the round-trip as the way to change navigation:
+
+```
+navigation.alter    Modify navigation via round-trip: DESCRIBE, edit, CREATE OR REPLACE
+```
+
+Feeding `DESCRIBE`'s own output straight back is therefore the sanctioned
+workflow, and it destroys every icon. Verified on a copy of the project rather
+than the real one — apply the block above, then read the icons back out of the
+navigation unit's BSON:
+
+```
+== BEFORE (as committed)
+   'Dashboard'              Forms$IconCollectionIcon Atlas_Core.Atlas.align-center
+   'Cashflow'               Forms$IconCollectionIcon Atlas_Core.Atlas.align-bottom
+   'Budgets'                Forms$IconCollectionIcon Atlas_Core.Atlas_Filled.alert-circle
+   'Transactions'           Forms$IconCollectionIcon Atlas_Core.Atlas_Styling.aligncontent-…
+   'Accounts'               Forms$GlyphIcon 9999
+   'Categories & rules'     Forms$ImageIcon System.Images.Close
+== AFTER  (mdl re-applied)
+   'Dashboard'              (none)
+   'Cashflow'               (none)
+   'Budgets'                (none)
+   'Transactions'           (none)
+   'Accounts'               (none)
+   'Categories & rules'     (none)
+```
+
+mxcli reported success: `Navigation profile 'Responsive' updated.` No warning,
+no error, and `mx check` stays at the same error count — nothing anywhere says
+six properties were dropped.
+
+**It is not a blanket "unmentioned properties are cleared" rule**, which is what
+makes it a bug rather than a documented limitation. Profile-level properties
+that `DESCRIBE` also omits survive the same write untouched:
+
+```
+BEFORE  AppIcon='Atlas_Core.Content.Mendix'  AppTitle='Mendix'
+AFTER   AppIcon='Atlas_Core.Content.Mendix'  AppTitle='Mendix'
+```
+
+So the writer does preserve state it was not told about — just not on menu
+items, which it rebuilds from the parse tree alone.
+
+Two things would fix it independently, and either is worth having: emit the
+icon in `DESCRIBE` and accept it in the grammar, or — until then — carry the
+existing icon across when a replaced menu item matches an old one by caption
+and page. The second is the cheaper guard against exactly this loss.
+
+**Consequence for this project.** `mdlsource/22-dashboard-page.mdl` owns the
+navigation block, and this app's stated method is to re-apply all 24 files from
+scratch rather than patch. That normal build now silently reverts the icons, so
+file 22 carries a warning comment until MDL can round-trip them.
+
+### 82. Widget packages are gitignored, so a widget update makes every other clone unbuildable
+
+`.gitignore:14` is `*.mpk`, added by this project in `0ccf6db` on a "do not
+commit binaries" reading. Mendix's own convention commits `widgets/`, and this
+is why.
+
+Studio Pro updated the Marketplace widgets and rewrote the stored instances to
+match. The instances are inside `Ledger.mpr` and travelled with the commit; the
+packages they now describe did not. A fresh clone gets the new model against
+whatever `.mpk` happen to be on disk:
+
+```
+$ ~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr
+[error] [CE0463] "The definition of this widget has changed. …" at Data grid 2 'dataGrid2_1'
+The app contains: 116 errors.
+
+$ ~/.mxcli/mxbuild/11.13.0/modeler/mxbuild Ledger.mpr
+BUILD FAILED
+```
+
+Errors by module — 73 of them are in Atlas page templates the app never uses,
+but ten are ours and any one is enough to fail the build:
+
+```
+     73 Atlas_Web_Content
+     11 Administration
+     10 MyFirstModule
+     10 Ledger
+      9 Atlas_Core
+      3 FeedbackModule
+```
+
+The ten in `Ledger` are six Data Grid 2s (`dgMatrix`, `dgBudgets`,
+`dgTransactions`, `dgNeedsReview`, `dgCategories`, `dgRules`), three Combo boxes
+on `CategoryRule_Edit`, and `galAccounts`. The Dashboard is clean — CustomChart
+is unaffected, so the sunburst and sankey still hold.
+
+What is installed against what the commit declares:
+
+| Package | on disk | declared |
+|---|---|---|
+| Image | 1.5.0 | 1.6.0 |
+| Combo box | 2.5.0 | 2.9.0 |
+| Charts | 6.2.1 | 6.3.2 |
+| Maps | 4.0.0 | 4.1.0 |
+| Timeline · Badge · Progress Bar | 3.2.2 | 3.2.3 |
+| Progress Circle | 3.3.2 | 3.3.3 |
+| Data Widgets *(module)* | 3.5.0 | 3.11.3 |
+| Atlas Core *(module)* | 4.1.3 | 4.3.8 |
+
+The declared column comes from `Ledger/widgets/widgets-appstore-metadata.json`,
+new in this commit — Studio Pro now records the version and content GUID of each
+Marketplace widget. That file is the recovery key, and it is worth noting that it
+covers only *widgets*: Data Grid 2 and Gallery ship inside the Data Widgets
+**module** and appear nowhere in it, even though six of Ledger's ten errors are
+theirs. Their version has to be read from `themesource/datawidgets/.version`.
+
+**Two commands look like the fix and are not.**
+
+`mxcli widget sync` reconciles instances against the packages that are
+installed, so with stale packages it runs backwards — it would strip the new
+Data Grid 2 selection and dynamic-pagination properties to match 3.4.0:
+
+```
+$ mxcli widget sync -p Ledger.mpr --dry-run
+  dgTransactions  (Datagrid 3.4.0)
+    - allSelectedText          not declared by Datagrid 3.4.0
+    - dynamicPageSize          not declared by Datagrid 3.4.0
+    - enableSelectAll          not declared by Datagrid 3.4.0
+    …
+65 widget instance(s), 746 property change(s) across 31 container(s).
+```
+
+That is a real capability pointed the wrong way: it is for when the packages are
+ahead of the model, and here the model is ahead of the packages. Its own help is
+straight about the limits (`PARTIAL — clears 7 of 40 CE0463 on the reference
+fixture`) and about the alternative, `mx update-widgets`, which "destroys the
+mprcontents/ folder on MPR v2 projects".
+
+`mxcli marketplace download` is the right route but needs a Personal Access
+Token; without one it stops before any network call:
+
+```
+$ mxcli marketplace search "Charts"
+auth: no credential for profile "default". Run: mxcli auth login --profile default
+```
+
+`mxcli auth login` is a browser flow this container cannot complete, but the
+token is read from `MENDIX_PAT` directly, so supplying the variable is enough.
+Confirmed by injecting a dummy value and watching the failure move from "no
+credential" to a real 401 from `marketplace-api.mendix.com` — the env-var path
+and the outbound proxy both work.
+
+**The fix is to stop ignoring `*.mpk` and commit `Ledger/widgets/`** (9.6 MB).
+Packages are as much a part of a Mendix app's source as the `.mpr`; leaving them
+out produces a repository that only builds on the machine that authored it, and
+nothing warns you until a widget version moves.
