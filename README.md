@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 93 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 94 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -20,35 +20,60 @@ records which, and how they were verified.
 
 ### Dashboard
 
-Spend for the year as a three-level donut — category group, category, merchant —
-over a single OQL view aggregated per merchant and rolled up in memory. Clicking
-any level of the breakdown lists the transactions behind it.
+One chart. One row per category, and in that row the four things you would
+otherwise open four screens to compare.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-The total is computed here from the merchant view; the Cashflow screen arrives
-at the same number from an entirely different query. That agreement is the test,
-and it is the agreement rather than the figure that matters — the seed generates
-transactions up to the current date, so every total on these screens moves with
-the calendar (finding 80). At the time of writing the window is January to
-August 2026.
+A net strip across the top — income above the axis, spend below, net through
+the middle, twenty months. Then the table: each category's own twenty months
+against the band it usually occupies, this year against the same months of last
+year as a bar either side of zero, the year's total direct-labelled, and how
+much of it is standing cost. Clicking a row lists what is behind it.
 
-Below it, a sankey answers what the sunburst structurally cannot — where the
-money came from and how much survived. Every ring above is a *share of spend*,
-so income never appears there and the surplus is invisible. The sankey runs
-income categories into one Income node and out again into the expense groups,
-on into their categories, and into what was not spent. It balances by
-construction: **income in · spend out · the rest kept**, the same three figures
-the Cashflow KPI strip reports, and each group's outgoing links sum back to it.
-Over January–July 2026 that was € 45,118 in, € 29,566 out, € 15,552 kept, and
-those three still reconcile exactly when the window is pinned to those months —
-which is how the 2025 history added later was shown to be additive rather than
-disruptive.
+The readings are meant to be made in that order and to lead somewhere. A red
+dot is a month more than two deviations above that category's own normal:
+six of them over 280 category-months, which is about the rate at which a mark
+still means "open this". At one deviation it fired on one month in six and was
+decoration. The delta bars are coloured by *favourable* rather than by sign, so
+income falling and spend rising are both red — Freelance is down € 1,505 on
+last year, Rent up € 590. The recurring column is the saving column: a merchant
+billing in four months or more is a standing cost, and the filled part of the
+bar is the part cancelling actually removes. Income rows are blank there, which
+is the honest reading — there is no standing cost to cancel in a salary.
 
-Plotly's `sankey` trace ships in the Charts.mpk bundle, so it goes through the
-same CustomChart escape hatch as the sunburst. Its links reference nodes by
-array index rather than by id, which fixes the build order: the hub is emitted
-first so it is always node 0.
+**Uncategorised transactions are a row in the table, not a badge in a corner.**
+They get the same four readings as anything else, they sort in with everything
+else, and a row cannot be dismissed the way a number off to one side can. Today
+that row reads € 764 across twelve transactions, all in one month — which is
+why it renders as a point rather than a line.
+
+Clicking a row opens what is behind it — every transaction in that category,
+against a scale that starts where the data does rather than at zero, because
+zero is not a value any grocery shop ever charged:
+
+![Dashboard detail](docs/screenshots/dashboard-detail.png)
+
+Every figure was read back out of Postgres: Salary € 43,661, Rent € 11,813,
+Freelance € 7,520, down to Subscriptions € 514 and the € 764 review row, all
+fourteen matching the rendered column exactly. Groceries reports € 11,783 over
+220 transactions, largest 40 plotted — also the figure in the panel above.
+
+This replaced a sunburst and a sankey, both Plotly through the CustomChart
+escape hatch. Each answered one question and neither answered it densely — a
+donut spent a screen on thirteen numbers, a sankey spent one on about twenty,
+and both were shape-first: you read the picture, then went hunting for the
+figure. Neither showed a trend, an outlier, or anything you could act on.
+
+The replacement is Vega-Lite through the project's own widget, and the whole
+table is one spec: an `hconcat` of four faceted panels sharing a row order,
+because Vega-Lite cannot put a concatenation *inside* a facet. Panels that must
+align is the fragile part of that arrangement, and two ways of breaking it are
+in finding 94 — facet rows default to sizing themselves to their content, and a
+transform that aggregates away the sort field drops one panel back to
+alphabetical order while the others hold. Both were found by rendering the spec
+headless in node and reading the row geometry off the scenegraph, which turns a
+three-minute deploy into a three-second check.
 
 ### Cashflow
 
@@ -81,8 +106,8 @@ this project, and it is here because `facet` is an operator: the grid falls out
 of the data instead of being thirteen hand-placed subplots. The widget takes the
 **spec and the data separately** — the spec is a static property, committed and
 diffable, and the microflow emits only a table of rows. Nothing assembles a
-chart payload at runtime, which is the opposite of how the sunburst and sankey
-are built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
+chart payload at runtime, which is the opposite of how the Plotly charts it
+replaced were built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
 reachable through the same widget for what Vega-Lite cannot express.
 
 Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
@@ -227,7 +252,8 @@ files apply in dependency order:
 | `06`–`11` | Cashflow matrix, shared views, inspector |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
-| `20`–`22` | Dashboard sunburst and income-to-spend sankey |
+| `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
+| `21b`–`22` | Dashboard: the overview table and what is behind a row |
 | `23` | Cashflow sparkline grid, through the project's own Vega widget |
 | `24`–`26` | Insights: aggregate views, payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
@@ -236,11 +262,11 @@ A runtime monitoring pass — what the app actually does under load, and the fou
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
 [`docs/observability.md`](./docs/observability.md).
 
-Both drilldowns are keyed on `cast(id as string)` rather than on display names.
-A view entity cannot carry an association, but it can expose an id, and a view
+Drilldowns are keyed on `cast(id as string)` rather than on display names. A
+view entity cannot carry an association, but it can expose an id, and a view
 constrained on that column returns exactly what an association join returns —
-so the cashflow inspector and the sunburst reach their rows without ever
-holding the object. See finding 74.
+so the cashflow inspector reaches its rows without ever holding the object. See
+finding 74.
 
 The set is **re-applied from scratch** rather than patched, so the numbering is
 the build order and every file is idempotent (`create or modify` throughout).

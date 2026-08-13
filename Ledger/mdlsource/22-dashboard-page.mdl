@@ -1,31 +1,49 @@
 -- ============================================================================
 -- 22 - Dashboard page
 -- ============================================================================
--- The chart is Charts.mpk's CustomChart, reached through MDL's PLUGGABLEWIDGET
--- escape hatch — the shorthand widget list has no entry for it, and it needs
--- three properties the shorthands do not expose: dataAttribute, layoutAttribute
--- and eventDataAttribute.
+-- One chart, where there used to be two.
 --
--- The detail panel sits beside the chart rather than in a popup, the same
--- arrangement as the cashflow inspector and for the same reason: the chart is
--- the thing being questioned, so it has to stay on screen while the answer is
--- read, and a second click just repoints the panel.
+-- The sunburst and the sankey are gone. Each was Plotly through CustomChart,
+-- each answered a single question, and neither answered it densely: a donut
+-- spent a screen on thirteen numbers, a sankey spent one on about twenty, and
+-- both were shape-first — you read the picture, then went hunting for the
+-- figure. Neither showed a trend, an outlier, or anything you could act on.
 --
--- The chart is not the click target. FINDINGS 67 — MDL dropping an `action`
--- property — was fixed in mxcli, so `onClick` can now be set; but two reasons
--- remain, and both are in the widget rather than the tooling: writing an
--- attribute does not re-run a datasource over its object (68), and CustomChart
--- forwards the segment's bounding box rather than the clicked point (69), so a
--- handler could fire but could not tell which segment was hit.
+-- What replaces them is a table of sparklines. The form is Tufte's, and the
+-- argument for it is his: at this size the eye compares rows, and comparison
+-- is the whole job of a dashboard. Thirteen categories, twenty months, four
+-- readings each, above the fold.
 --
--- So the same hierarchy is rendered a second time as a clickable breakdown
--- beside the chart, using the container-onclick mechanism the cashflow matrix
--- and budgets grid already rely on. The chart shows the shape; the list is
--- where the drilling happens.
+--   the strip     income above the axis, spend below, net through the middle,
+--                 twenty months — the macro reading, before any detail
+--   the shape     each category's own twenty months against the band it
+--                 usually occupies, so an unusual month reads as a departure
+--                 rather than as a number you have to hold in your head
+--   the trend     this year against the same months of last year, as a bar
+--                 either side of zero — direction and size in one mark
+--   the standing  how much of the category recurs, because that is the part
+--                 cancelling actually removes
+--
+-- Uncategorised transactions are a row in the table, not a badge in a corner.
+-- They want the same four readings as anything else, and a row cannot be
+-- dismissed the way a number off to one side can.
+--
+-- Nothing here is chartjunk by omission: there is no legend (the rows are
+-- labelled), no gridlines on the sparklines (the band is the reference), no
+-- axis on the delta column (zero is drawn, and the bar is read against it),
+-- and no colour that does not mean something.
+--
+-- All four columns are one Vega-Lite spec, an hconcat of faceted panels sharing
+-- a row order — Vega-Lite cannot put a concatenation inside a facet, so the
+-- table has to be built the other way round. Only the first panel carries
+-- labels, and the rows line up only because every panel declares the same
+-- height, the same sort, the same facet domain, and `bounds: flush`. Equal
+-- height alone is not enough and the failure is silent; the notes on each
+-- property say what breaks without it, and finding 94 has the measurements.
 -- ============================================================================
 
 /**
- * Dashboard: where the money went, three rings deep.
+ * Dashboard: everything at once, one row per category.
  */
 create or replace page Ledger.Dashboard
 (
@@ -38,142 +56,331 @@ create or replace page Ledger.Dashboard
   layoutgrid lgDash {
     row rowDashMain {
       column colDashBody (desktopwidth: 12) {
-        dataview dvDash (datasource: microflow Ledger.DS_SunburstContext) {
+        dataview dvDash (datasource: microflow Ledger.DS_OverviewContext) {
           dynamictext txtDashHeading (content: 'Dashboard', rendermode: H2)
-          dynamictext txtDashSub (
-            content: 'Spend for 2026, by category group, category and merchant. Click any ring to list the transactions behind it.',
-            rendermode: paragraph,
-            class: 'text-muted')
+          dynamictext txtDashSub (attribute: SubText, rendermode: paragraph, class: 'text-muted')
 
-          layoutgrid lgDashRow {
-            row rowDashSplit {
-              column colChart (desktopwidth: 7) {
-                container ctnChartCard (class: 'card ledger-chart-card') {
-                  container ctnChartHead (class: 'ledger-chart-head') {
-                    dynamictext lblChart (content: 'Total spend', class: 'ledger-kicker')
-                    dynamictext valChart (attribute: TotalText, rendermode: H3)
-                  }
+          container ctnOverviewCard (class: 'card ledger-card') {
+            dynamictext lblOverview (
+              content: 'Twenty months, thirteen categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.',
+              rendermode: paragraph,
+              class: 'text-muted')
 
-                  pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSunburst (
-                    dataAttribute: ChartData,
-                    layoutAttribute: ChartLayout,
-                    eventDataAttribute: EventData,
-                    widthUnit: percentage,
-                    width: 100,
-                    -- OverflowY is deliberately absent: MDL-WIDGET10 points out
-                    -- it is ignored unless maxHeightUnit is set.
-                    heightUnit: pixels,
-                    height: 520,
-                    minHeightUnit: none,
-                    maxHeightUnit: none,
-                    showPlaygroundSlot: false,
-                    -- responsive:false. With it on, Plotly re-measures its container
-                    -- and redraws on every resize — including the resize its own
-                    -- redraw causes when the page's vertical scrollbar appears or
-                    -- disappears, which is a loop that widens the chart a little each
-                    -- pass. Reported from a real browser; not reproducible headless,
-                    -- where scrollbars are overlaid and take no layout width. The
-                    -- cost is that the chart no longer follows a window resize until
-                    -- the page is reloaded.
-                    configurationOptions: '{"displayModeBar":false,"responsive":false}'
-                  )
-                }
-              }
-
-              column colDashBreakdown (desktopwidth: 2) {
-                container ctnBreakdown (class: 'card ledger-inspector') {
-                  container ctnBreakdownHead (class: 'ledger-inspector-head') {
-                    dynamictext lblBreakdown (content: 'Breakdown', class: 'ledger-kicker')
-                    dynamictext subBreakdown (
-                      content: 'Click a level to drill in.',
-                      class: 'ledger-inspector-meta')
-                  }
-                  -- All levels at once: a paged breakdown would hide the very
-                  -- rows the chart is inviting you to click.
-                  listview lvBreakdown (
-                    datasource: microflow Ledger.DS_SunburstRows,
-                    PageSize: 200,
-                    class: 'ledger-inspector-list'
-                  ) {
-                    template tplBreakdown {
-                      container ctnNode (
-                        onclick: microflow Ledger.ACT_SelectNode(Row: $currentObject),
-                        dynamicclasses: '''sb-node sb-'' + $currentObject/Kind + (if $currentObject/IsSelected then '' sb-on'' else '''')'
-                      ) {
-                        dynamictext txtNodeLabel (attribute: Label, class: 'sb-node-label')
-                        dynamictext txtNodeAmount (attribute: AmountText, class: 'sb-node-amount')
-                      }
-                    }
-                  }
-                }
-              }
-
-              column colDashDetail (desktopwidth: 3) {
-                container ctnDashPanel (class: 'card ledger-inspector') {
-                  dataview dvDashSel (
-                    datasource: microflow Ledger.DS_SunburstSelection,
-                    class: 'ledger-inspector-head'
-                  ) {
-                    dynamictext txtDashKicker (attribute: Kicker, class: 'ledger-kicker')
-                    dynamictext txtDashTitle (attribute: Title, rendermode: H5)
-                    dynamictext txtDashMeta (attribute: Meta, class: 'ledger-inspector-meta')
-                  }
-                  listview lvDash (
-                    datasource: microflow Ledger.DS_SunburstLines,
-                    PageSize: 200,
-                    class: 'ledger-inspector-list'
-                  ) {
-                    template tplDash {
-                      container ctnDashLine (class: 'ledger-line') {
-                        container ctnDashLineText (class: 'ledger-line-text') {
-                          dynamictext txtDashMerchant (attribute: Merchant, class: 'ledger-line-merchant')
-                          dynamictext txtDashLineMeta (attribute: MetaText, class: 'ledger-line-meta')
-                        }
-                        dynamictext txtDashAmount (attribute: AmountText, class: 'ledger-line-amount')
-                      }
-                    }
-                  }
-                }
-              }
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOverview (
+              chartData: TableData,
+              datasetName: 'table',
+              chartHeight: 620,
+              renderer: 'svg',
+              showActions: false,
+              selection: SelectedPoint,
+              onClick: microflow Ledger.ACT_SelectOverviewCategory(Context: $currentObject),
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "background": null,
+  "paddingNote": "Forty on the left, because flush bounds do not measure the row header. The category labels are laid out to the left of the panel origin and the view is only as wide as the layout says it is, so the longest label was being cut off by the SVG viewport - a clip, not a truncation, with no ellipsis to give it away. The padding is the reserve the layout no longer computes.",
+  "padding": {"left": 40, "top": 4, "right": 12, "bottom": 4},
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 8, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#F2EEE6"},
+    "header": {"labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A",
+               "labelAnchor": "start", "labelPadding": 2, "titleFontSize": 9,
+               "titleColor": "#8A8378", "titleAnchor": "start"},
+    "title": {"font": "IBM Plex Sans", "fontSize": 10, "color": "#8A8378",
+              "fontWeight": 500, "anchor": "start", "offset": 6},
+    "facet": {
+      "description": "Tight rows. Fourteen of them have to fit, and the gap between sparklines carries no information - Tufte would spend the pixels on months rather than on air.",
+      "spacing": 3
+    }
+  },
+  "vconcat": [
+    {
+      "title": "Income above, spend below, net through the middle",
+      "description": "The macro reading. Derived from the same monthly rows the table below uses - income and spend are the two signs of one aggregate, so no second dataset exists for this.",
+      "transform": [{"filter": "datum.k === \'m\'"}],
+      "widthNote": "Matched to the table below it, not to the card. The strip is pushed right by the header column the table needs, so a width chosen against the card overhangs the view on the right and loses its last months.",
+      "width": 690,
+      "height": 110,
+      "layer": [
+        {
+          "transform": [
+            {"calculate": "datum.kind === \'Income\' ? datum.v : -datum.v", "as": "signed"}
+          ],
+          "mark": {"type": "area", "interpolate": "monotone", "opacity": 0.9},
+          "encoding": {
+            "y": {"field": "signed", "type": "quantitative", "aggregate": "sum", "stack": "zero",
+                  "axis": {"title": null, "format": ",.0f", "grid": true, "tickCount": 3}},
+            "color": {
+              "field": "kind", "type": "nominal", "legend": null,
+              "scale": {"domain": ["Income", "Expense"], "range": ["#4E9E74", "#8A5A2B"]}
             }
-
-            -- The sankey sits below, full width. It answers where the money came
-            -- from and what survived, which the sunburst structurally cannot:
-            -- every ring there is a share of spend, so income never appears.
-            row rowSankey {
-              column colSankey (desktopwidth: 12) {
-                dataview dvSankey (datasource: microflow Ledger.DS_SankeyContext) {
-                  container ctnSankeyCard (class: 'card ledger-chart-card') {
-                    container ctnSankeyHead (class: 'ledger-chart-head') {
-                      dynamictext lblSankey (content: 'Income to spend', class: 'ledger-kicker')
-                      dynamictext subSankey (attribute: SubText, class: 'ledger-inspector-meta')
-                    }
-
-                    pluggablewidget 'com.mendix.widget.web.customchart.CustomChart' chartSankey (
-                      dataAttribute: ChartData,
-                      layoutAttribute: ChartLayout,
-                      eventDataAttribute: EventData,
-                      widthUnit: percentage,
-                      width: 100,
-                      heightUnit: pixels,
-                      height: 560,
-                      minHeightUnit: none,
-                      maxHeightUnit: none,
-                      showPlaygroundSlot: false,
-                      -- responsive:false. With it on, Plotly re-measures its container
-                    -- and redraws on every resize — including the resize its own
-                    -- redraw causes when the page's vertical scrollbar appears or
-                    -- disappears, which is a loop that widens the chart a little each
-                    -- pass. Reported from a real browser; not reproducible headless,
-                    -- where scrollbars are overlaid and take no layout width. The
-                    -- cost is that the chart no longer follows a window resize until
-                    -- the page is reloaded.
-                    configurationOptions: '{"displayModeBar":false,"responsive":false}'
-                    )
-                  }
+          }
+        },
+        {
+          "description": "Net. The only line on the strip, so it needs no legend to be the thing you read.",
+          "transform": [
+            {"calculate": "datum.kind === \'Income\' ? datum.v : -datum.v", "as": "signed"},
+            {"aggregate": [{"op": "sum", "field": "signed", "as": "net"}], "groupby": ["t"]}
+          ],
+          "mark": {"type": "line", "color": "#17181A", "strokeWidth": 1.5, "interpolate": "monotone"},
+          "encoding": {
+            "y": {"field": "net", "type": "quantitative"},
+            "tooltip": [
+              {"field": "t", "type": "temporal", "title": "Month", "format": "%b %Y"},
+              {"field": "net", "type": "quantitative", "title": "Net", "format": ",.2f"}
+            ]
+          }
+        },
+        {
+          "mark": {"type": "rule", "color": "#8A8378", "strokeWidth": 1},
+          "encoding": {"y": {"datum": 0}}
+        }
+      ],
+      "encoding": {
+        "x": {"field": "t", "type": "temporal",
+              "axis": {"title": null, "format": "%b %y", "tickCount": 10, "grid": false}}
+      }
+    },
+    {
+      "description": "The table. Four columns, each faceted by category on the same sort and the same row height, so the rows line up across panels without being one chart.",
+      "hconcat": [
+        {
+          "title": "Twenty months, against the usual range",
+          "transform": [{"filter": "datum.k === \'m\'"}],
+          "bounds": "flush",
+          "boundsNote": "Every panel is flush, and that is what makes the table a table. Vega-Lite sizes a facet row to its content bounds by default, so a panel whose marks overflow the declared 26px - an outlier dot straddling the top of the sparkline, a rule drawn to the row edge - gets taller rows than a panel of plain text. Four panels, three different row pitches, and by the fourteenth category the labels sat a full row below their numbers.",
+          "facet": {
+            "row": {
+              "field": "cat", "type": "nominal", "title": null,
+              "sort": {"op": "max", "field": "ord", "order": "descending"},
+              "headerNote": "labelAnchor middle, and it has to be said here because the project config sets start for axis and column headers. On a row header the anchors read backwards - start puts the label on the row\'s bottom edge, end on its top - so the inherited start had every label sitting a half-row below the numbers it names.",
+              "header": {"labelAngle": 0, "labelAnchor": "middle", "labelBaseline": "middle", "labelFontSize": 10, "labelLimit": 200, "labelPadding": 4}
+            }
+          },
+          "resolve": {
+            "description": "Independent y per row. A shared scale is more comparable in principle and useless in practice here - Salary at 43,661 against Subscriptions at 514 presses twelve of the thirteen flat against the axis. Each sparkline is read for its shape against its own band, which is what the band is for.",
+            "scale": {"y": "independent"}
+          },
+          "spec": {
+            "width": 300,
+            "height": 26,
+            "transform": [
+              {
+                "description": "One point per month, first, before anything else. The model emits a row per category per month per *account*, and the review row is a row per transaction - so a category held on two accounts arrives as two values at the same x. A line mark does not aggregate; it joins them in order, which drew a sawtooth for every multi-account category and a single vertical stroke for the review row. Summing here also fixes the band, which was otherwise a deviation over per-account rows rather than over months.",
+                "aggregate": [{"op": "sum", "field": "v", "as": "v"}],
+                "groupbyNote": "ord is in the groupby only to keep it alive. It is constant per category and nothing in this panel plots it - but the facet row domain is built from the data as the spec leaves it, so aggregating ord away made the row sort silently fall back to alphabetical while the other three panels stayed on the sort. The four columns then named different rows.",
+                "groupby": ["cat", "t", "ord"]
+              },
+              {
+                "description": "The band a category usually occupies. A window over its own months rather than a global one - EUR 1,500 is ordinary for Rent and extraordinary for Coffee, and a shared band would say the opposite.",
+                "joinaggregate": [
+                  {"op": "mean", "field": "v", "as": "m"},
+                  {"op": "stdev", "field": "v", "as": "sd"}
+                ],
+                "groupby": ["cat"]
+              },
+              {
+                "description": "How many months this category actually has. A line needs two points; the review row is twelve transactions in a single month, so without this its row renders empty - which reads as nothing to see, the exact opposite of what it means.",
+                "joinaggregate": [{"op": "count", "as": "n"}],
+                "groupby": ["cat"]
+              },
+              {"calculate": "max(datum.m - datum.sd, 0)", "as": "lo"},
+              {"calculate": "datum.m + datum.sd", "as": "hi"},
+              {"description": "Two deviations, not one. The band is drawn at one - that is what usual looks like - but a mark that fires on one in six months is decoration. At two it fires on the months actually worth opening.", "calculate": "datum.v > datum.m + 2 * datum.sd ? 1 : 0", "as": "outside"}
+            ],
+            "layer": [
+              {
+                "mark": {"type": "area", "color": "#D9D2C6", "opacity": 0.35},
+                "encoding": {
+                  "y": {"field": "lo", "type": "quantitative", "axis": null},
+                  "y2": {"field": "hi"}
+                }
+              },
+              {
+                "mark": {"type": "line", "color": "#1B4D4B", "strokeWidth": 1.2},
+                "encoding": {"y": {"field": "v", "type": "quantitative", "axis": null}}
+              },
+              {
+                "description": "A category with a single month, drawn as the point the line cannot be.",
+                "transform": [{"filter": "datum.n === 1"}],
+                "mark": {"type": "point", "color": "#1B4D4B", "size": 18, "filled": true},
+                "encoding": {"y": {"field": "v", "type": "quantitative", "axis": null}}
+              },
+              {
+                "description": "Months above the band. The only strong colour in the panel, and it marks the thing worth opening.",
+                "transform": [{"filter": "datum.outside === 1"}],
+                "mark": {"type": "point", "color": "#A8321E", "size": 22, "filled": true},
+                "encoding": {
+                  "y": {"field": "v", "type": "quantitative", "axis": null},
+                  "tooltip": [
+                    {"field": "cat", "type": "nominal", "title": "Category"},
+                    {"field": "t", "type": "temporal", "title": "Month", "format": "%b %Y"},
+                    {"field": "v", "type": "quantitative", "title": "Spent", "format": ",.2f"},
+                    {"field": "hi", "type": "quantitative", "title": "Usual ceiling", "format": ",.2f"}
+                  ]
                 }
               }
+            ],
+            "encoding": {
+              "x": {"field": "t", "type": "temporal", "axis": null}
             }
+          }
+        },
+        {
+          "title": "vs last year",
+          "description": "Direction and size in one mark, read against a drawn zero. No axis: the bar is the comparison, and a scale would invite reading absolute values that the sparkline already gives.",
+          "transform": [{"filter": "datum.k === \'s\'"}],
+          "bounds": "flush",
+          "facet": {
+            "row": {
+              "field": "cat", "type": "nominal", "title": null,
+              "sort": {"op": "max", "field": "ord", "order": "descending"},
+              "header": {"labels": false}
+            }
+          },
+          "spec": {
+            "width": 130,
+            "height": 26,
+            "transform": [
+              {
+                "description": "Favourable is not the same direction for income as for spend, and neither for a review backlog - more of that is simply worse.",
+                "calculate": "datum.kind === \'Income\' ? (datum.delta >= 0 ? \'better\' : \'worse\') : (datum.delta <= 0 ? \'better\' : \'worse\')",
+                "as": "dir"
+              }
+            ],
+            "layer": [
+              {
+                "mark": {"type": "bar", "height": 9, "cornerRadius": 1},
+                "encoding": {
+                  "x": {"field": "delta", "type": "quantitative", "axis": null},
+                  "x2": {"datum": 0},
+                  "color": {
+                    "field": "dir", "type": "nominal", "legend": null,
+                    "scale": {"domain": ["better", "worse"], "range": ["#2C6E4A", "#A8321E"]}
+                  },
+                  "tooltip": [
+                    {"field": "cat", "type": "nominal", "title": "Category"},
+                    {"field": "prior", "type": "quantitative", "title": "Last year", "format": ",.2f"},
+                    {"field": "current", "type": "quantitative", "title": "This year", "format": ",.2f"},
+                    {"field": "delta", "type": "quantitative", "title": "Change", "format": "+,.2f"}
+                  ]
+                }
+              },
+              {
+                "mark": {"type": "rule", "color": "#8A8378", "strokeWidth": 1},
+                "encoding": {"x": {"datum": 0}}
+              }
+            ]
+          }
+        },
+        {
+          "title": "this year",
+          "description": "Direct labels rather than a fourth axis. At thirteen rows the numbers fit, and a number you can read is worth more than a bar you have to measure.",
+          "transform": [{"filter": "datum.k === \'s\'"}],
+          "bounds": "flush",
+          "facet": {
+            "row": {
+              "field": "cat", "type": "nominal", "title": null,
+              "sort": {"op": "max", "field": "ord", "order": "descending"},
+              "header": {"labels": false}
+            }
+          },
+          "spec": {
+            "width": 74,
+            "height": 26,
+            "mark": {"type": "text", "align": "right", "font": "IBM Plex Mono", "fontSize": 10, "color": "#17181A"},
+            "encoding": {
+              "x": {"datum": 74, "axis": null, "scale": {"domain": [0, 74]}},
+              "text": {"field": "current", "type": "quantitative", "format": ",.0f"}
+            }
+          }
+        },
+        {
+          "title": "of which recurring",
+          "description": "The saving column. A merchant billing in four months or more is a standing cost, and standing costs are the ones where cancelling saves twelve times - so the filled part of the bar is the part worth attacking.",
+          "transform": [{"filter": "datum.k === \'s\'"}],
+          "bounds": "flush",
+          "facet": {
+            "row": {
+              "field": "cat", "type": "nominal", "title": null,
+              "sort": {"op": "max", "field": "ord", "order": "descending"},
+              "header": {"labels": false}
+            }
+          },
+          "spec": {
+            "width": 130,
+            "height": 26,
+            "layerNote": "Income is filtered out in the layers rather than in the panel, and the distinction matters. Filtering the panel would drop Salary and Freelance from this facet\'s row domain, leaving twelve rows against the other panels\' fourteen - the alignment breaks again, one column short. Filtering inside the layers leaves the rows in place and empty, which is the honest reading anyway: there is no standing cost to cancel in a salary. It also hands the shared x scale back to Rent, so the spend bars are readable instead of being slivers next to a full-width 43,661.",
+            "layer": [
+              {
+                "description": "The whole category, faint - the ground the recurring part is read against.",
+                "transform": [{"filter": "datum.kind !== \'Income\'"}],
+                "mark": {"type": "bar", "height": 9, "color": "#E6E0D4", "cornerRadius": 1},
+                "encoding": {"x": {"field": "current", "type": "quantitative", "axis": null}}
+              },
+              {
+                "transform": [{"filter": "datum.kind !== \'Income\'"}],
+                "mark": {"type": "bar", "height": 9, "color": "#6B4E8A", "cornerRadius": 1},
+                "encoding": {
+                  "x": {"field": "recur", "type": "quantitative"},
+                  "tooltip": [
+                    {"field": "cat", "type": "nominal", "title": "Category"},
+                    {"field": "current", "type": "quantitative", "title": "Spent this year", "format": ",.2f"},
+                    {"field": "recur", "type": "quantitative", "title": "Of which recurring", "format": ",.2f"}
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "resolve": {"scale": {"x": "independent", "y": "independent", "color": "independent"}}
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- What is behind the clicked row.
+          -- ------------------------------------------------------------------
+          container ctnDashDetail (class: 'card ledger-card') {
+            container ctnDashDetailHead (class: 'ledger-chart-head') {
+              dynamictext txtDashDetailTitle (attribute: DetailTitle, rendermode: H6)
+              dynamictext txtDashDetailMeta (attribute: DetailMeta, rendermode: paragraph, class: 'text-muted')
+            }
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartDashDetail (
+              chartData: DetailData,
+              datasetName: 'table',
+              chartHeight: 340,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": 820,
+  "height": 290,
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
+  },
+  "mark": {"type": "circle", "size": 42, "opacity": 0.7, "color": "#1B4D4B"},
+  "encoding": {
+    "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
+    "y": {"field": "v", "type": "quantitative",
+          "scale": {"zero": false},
+          "axis": {"title": "EUR", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+    "tooltip": [
+      {"field": "m", "type": "nominal", "title": "Merchant"},
+      {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+      {"field": "acc", "type": "nominal", "title": "Account"},
+      {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+    ]
+  }
+}')
           }
         }
       }

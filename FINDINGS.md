@@ -3369,3 +3369,127 @@ a runtime already serving from that folder.
 
 This had been hit once before and written off as "a running app process had lost
 its deployment"; the mechanism is above, and the trigger was the tests.
+
+### 94. Vega-Lite sizes facet rows to their content, so a table built from side-by-side faceted panels drifts out of alignment
+
+Not an mxcli finding — a Vega-Lite one — but it cost a deploy cycle and the
+diagnosis is worth writing down, because the symptom points at the wrong thing.
+
+The dashboard is a Tufte-style table: one row per category, four columns
+(sparkline, year-on-year delta, this year's total, recurring share). Vega-Lite
+cannot put a concatenation inside a facet, so the only way to build it is the
+other way round — an `hconcat` of four separately faceted panels, each faceted
+on the same field, with the same sort and the same declared row height:
+
+```json
+"spec": {"width": 300, "height": 26}
+...
+"config": {"facet": {"spacing": 3}}
+```
+
+Same height, same spacing, same sort, same fourteen categories. The rows still
+did not line up. At the top of the table the label sat 13px below its number;
+by the bottom row the drift was a full row, so "Needs review" was reading
+against Subscriptions' total.
+
+Measuring the rendered scenegraph rather than the screenshot showed why:
+
+```
+concat_1_concat_0_cell: rows=14 first=164 last=569 gaps=29,31,32
+concat_1_concat_1_cell: rows=14 first=164 last=567 gaps=31
+concat_1_concat_2_cell: rows=14 first=164 last=541 gaps=29
+```
+
+Three panels, three different row pitches — and the sparkline panel's pitch is
+not even constant, varying row by row between 29 and 32.
+
+**Facet layout defaults to `bounds: "full"`, which sizes each row to its
+content's bounds rather than to the declared height.** Any mark that overflows
+the 26px cell pushes its own row taller: the outlier dots (`point`, `size: 22`)
+straddle the sparkline, so a row whose outlier sits near the top or bottom of
+its band grows — which is exactly why that panel's pitch varies with the data.
+The `vs last year` panel has a `rule` drawn to the row edge and grows by a
+constant 2px. The `this year` panel is plain text, overflows nothing, and is the
+only one at the declared 29px pitch. Nothing is wrong with any single panel; the
+table is wrong because the panels disagree.
+
+The fix is one property per panel:
+
+```json
+"bounds": "flush"
+```
+
+which lays rows out on their declared size and lets marks overflow visually.
+All four panels then measure identically:
+
+```
+concat_1_concat_0_cell: rows=14 first=164 last=541 gaps=29
+concat_1_concat_1_cell: rows=14 first=164 last=541 gaps=29
+concat_1_concat_2_cell: rows=14 first=164 last=541 gaps=29
+```
+
+**The general rule: whenever alignment across concatenated faceted panels
+carries meaning — which is the whole point of a small-multiples table — set
+`bounds: "flush"` on every panel.** Equal `height` is not sufficient, because
+`height` is an input to the layout, not a guarantee about it.
+
+`flush` has a cost, and it is worth knowing before choosing it: the layout stops
+measuring content, including the row header. The category labels are drawn to
+the left of the panel origin, the view is only as wide as the layout says, and
+so the longest label was cut off by the SVG viewport — a *clip*, not a
+truncation, so there was no ellipsis to give it away and `labelLimit` had nothing
+to do with it. The fix is to reserve the space the layout no longer computes,
+with `padding.left`.
+
+### Two more ways the same table came apart
+
+Both were introduced while fixing something real, and both are the same shape:
+a change that is locally correct and breaks an invariant three panels away.
+
+**A transform that aggregates away the sort field silently reorders one panel.**
+The model emits a row per category per month per *account*, so a category held
+on two accounts arrives as two values at the same x — and a line mark does not
+aggregate, it joins them in order. Every multi-account category drew a sawtooth.
+The fix is a `sum` aggregate inside the facet spec, grouped by category and
+month. What that also did was drop `ord`, the field the *facet row sort* is
+computed on. Nothing errored. The row domain is built from the data as the spec
+leaves it, so panel 0 fell back to alphabetical while the other three panels
+stayed on the sort — four columns, each labelled correctly, describing four
+different categories per row. Keeping `ord` in the `groupby` is the whole fix.
+
+**Filtering a panel changes its row domain; filtering its layers does not.**
+The recurring-cost column shares one x scale across rows, so Salary at 43,661
+compressed every spend bar to a sliver — and a salary has no standing cost to
+cancel, so it should not be in that scale at all. Filtering income out at the
+*panel* level would have removed Salary and Freelance from that facet's row
+domain: twelve rows against the other panels' fourteen, and the table is
+misaligned again. Filtering inside the two layers leaves the rows in place and
+empty, which is the honest reading, and hands the scale back to Rent.
+
+The invariant worth stating: **every panel in the table must produce the same
+facet domain, in the same order.** A check for it is four lines against the
+compiled view, and it catches both of the above before a deploy:
+
+```js
+for (let i = 0; i < 4; i++) console.log(view.data(`concat_1_concat_${i}_row_domain`))
+```
+
+### Method
+
+Three notes, all of which paid for themselves several times over:
+
+- **Do not measure a screenshot.** The first diagnosis was made from pixel
+  positions in a captured PNG, which was scaled relative to the viewport and
+  gave non-integer pitches that fitted no hypothesis. Reading `y` straight off
+  the Vega scenegraph gave exact numbers immediately.
+- **Compile and render the spec in node, not in the app.**
+  `widgets-src/vegachart/x.mjs` extracts the spec from the MDL page file;
+  `m.mjs` runs it headless against synthetic rows shaped like the real dataset
+  and prints the row pitch of every panel; `o.mjs` prints each panel's row
+  domain; `h.mjs` locates the header label against its row; `v.mjs` sweeps
+  candidate fixes over all of it. Testing five variants took three seconds;
+  testing one variant through the app takes three minutes.
+- **Shape the synthetic data like the real data, including its awkward parts.**
+  `o.mjs` emits two accounts for one category precisely because that is the case
+  that broke the sparklines. Synthetic data that is uniformly well-behaved
+  reproduces nothing.

@@ -178,3 +178,21 @@ These apply to every later phase:
   `pgrep -f mxcli` matches the invoking shell and kills the command chain.
 - Record every mxcli bug, surprise, or workaround in `FINDINGS.md`, numbered, with
   the exact command and its output.
+- **Check a chart spec locally before deploying it.** A round trip through
+  `mxcli exec` + `mx check` + restart is about three minutes; compiling and
+  rendering the same spec in node is about three seconds. The harness lives in
+  `widgets-src/vegachart/`:
+
+  ```bash
+  cd widgets-src/vegachart
+  node x.mjs ../../Ledger/mdlsource/22-dashboard-page.mdl /tmp/spec.json  # pull the spec out of the MDL
+  node m.mjs /tmp/spec.json    # row pitch of every faceted panel
+  node o.mjs /tmp/spec.json    # each panel's facet row domain, in order
+  node h.mjs /tmp/spec.json    # header label position against its row
+  node v.mjs /tmp/spec.json    # sweep candidate fixes over all of the above
+  ```
+
+  It renders headless against synthetic rows shaped like the real dataset and
+  reads geometry off the Vega scenegraph. Measure the scenegraph, never a
+  screenshot — a captured PNG is scaled by the viewport and gives numbers that
+  fit no hypothesis. See finding 94.
