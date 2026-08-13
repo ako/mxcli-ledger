@@ -1,0 +1,147 @@
+-- ============================================================================
+-- 24 - Insights: the aggregate views
+-- ============================================================================
+-- Six charts, four views, one retrieve each. The alternative — pulling every
+-- transaction into a microflow and grouping it there — is not available: MDL
+-- has no map, so "total per category per month" would be a nested loop over
+-- 900 rows per bucket. OQL has GROUP BY, so the database does it.
+--
+-- These are also the first views in the app that are *not* constrained to
+-- 2026. Everything the Dashboard and Cashflow read (VMatrixActual,
+-- VCategoryBudget, VMerchantSpend) hard-codes the year, which is what makes
+-- seeding 2025 history additive: no figure on those screens moves. The
+-- Insights page is the one place that wants both years, so its views carry Yr
+-- as a column and let the caller decide.
+--
+-- Every view carries AccountName and groups by it, which is what makes an
+-- account filter possible at all. It also makes each view finer-grained than
+-- the chart that reads it — a month/category now spans one row per account —
+-- so the specs aggregate with `"aggregate": "sum"` rather than the model
+-- re-grouping. Summing in the spec is free; summing in MDL would need a map.
+--
+-- Mirrors are excluded throughout: an internal transfer books on both accounts
+-- and would double every savings figure.
+-- ============================================================================
+
+/**
+ * Signed total per category per month, both years.
+ *
+ * Feeds the stream graph (which needs the sign to put income above the axis
+ * and spend below) and the year-over-year comparison (which needs the same
+ * month window on both years to compare like with like).
+ *
+ * GroupTypeName is 'Income' or 'Expense' via cast on the enum, the same way
+ * VMatrixActual derives it. ColorHex rides along so the charts can use the
+ * taxonomy's own palette rather than inventing one.
+ */
+create or modify view entity Ledger.VMonthCategory (
+  Yr: integer,
+  MonthIndex: integer,
+  CategoryName: string(100),
+  GroupName: string(50),
+  GroupTypeName: string(200),
+  ColorHex: string(10),
+  AccountName: string(100),
+  Total: decimal,
+  TxCount: integer
+) as (
+  select
+    datepart(YEAR, t.TxDate) as Yr,
+    datepart(MONTH, t.TxDate) as MonthIndex,
+    c.Name as CategoryName,
+    g.Name as GroupName,
+    cast(g.GroupType as string) as GroupTypeName,
+    g.ColorHex as ColorHex,
+    a.Name as AccountName,
+    sum(t.Amount) as Total,
+    count(t.id) as TxCount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false
+  group by datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate),
+           c.Name, g.Name, cast(g.GroupType as string), g.ColorHex, a.Name
+);
+/
+
+/**
+ * Spend per calendar day.
+ *
+ * Expenses only — a calendar of net flow would show one enormous green square
+ * on payday and tell you nothing about spending. The date is carried whole
+ * rather than as week/weekday numbers, because Vega-Lite's timeUnit derives
+ * both from a date and computing ISO week numbers in MDL would be a bug farm.
+ */
+create or modify view entity Ledger.VDaySpend (
+  TxDate: datetime,
+  Yr: integer,
+  CategoryName: string(100),
+  AccountName: string(100),
+  Total: decimal,
+  TxCount: integer
+) as (
+  select
+    t.TxDate as TxDate,
+    datepart(YEAR, t.TxDate) as Yr,
+    c.Name as CategoryName,
+    a.Name as AccountName,
+    sum(t.Amount) as Total,
+    count(t.id) as TxCount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
+  group by t.TxDate, datepart(YEAR, t.TxDate), c.Name, a.Name
+);
+/
+
+/**
+ * Spend per merchant per month.
+ *
+ * One row per month a merchant billed in, which makes the count of those rows
+ * the recurrence signal — and recurrence is the whole point: a merchant
+ * appearing in eleven months of twelve is a subscription, and a subscription
+ * is a thing you can cancel. One large purchase is not a saving opportunity,
+ * however big it was.
+ *
+ * The obvious shape for this was one row per merchant-year carrying
+ * `count(distinct datepart(MONTH, t.TxDate))`. OQL rejects it:
+ *
+ *   CE0174 Column 't.TxDate' cannot both be aggregated and appear in the
+ *          GROUP BY clause
+ *
+ * — a datepart of a column in GROUP BY counts as that column being grouped, so
+ * no other datepart of it may be aggregated in the same query. Grouping one
+ * level finer and counting the rows costs nothing: the caller reads this
+ * sorted by merchant and accumulates in a single pass.
+ */
+create or modify view entity Ledger.VMerchantMonth (
+  Merchant: string(200),
+  CategoryName: string(100),
+  GroupName: string(50),
+  Yr: integer,
+  MonthIndex: integer,
+  AccountName: string(100),
+  Total: decimal,
+  TxCount: integer
+) as (
+  select
+    t.Merchant as Merchant,
+    c.Name as CategoryName,
+    g.Name as GroupName,
+    datepart(YEAR, t.TxDate) as Yr,
+    datepart(MONTH, t.TxDate) as MonthIndex,
+    a.Name as AccountName,
+    sum(t.Amount) as Total,
+    count(t.id) as TxCount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
+  group by t.Merchant, c.Name, g.Name,
+           datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate), a.Name
+);
+/

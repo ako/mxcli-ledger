@@ -70,8 +70,8 @@
         }
     }
 
-    // Atlas sizes nav rows for a 48px icon slot. This app has no glyphs, so the
-    // rows are all whitespace; the prototype's are 8px/10px.
+    // Atlas sizes nav rows for a 48px icon slot, which is generous next to a
+    // 13.5px label; the prototype's rows are 8px/10px.
     li {
         margin-bottom: 2px;
     }
@@ -82,6 +82,63 @@
         height: auto !important;
         line-height: 1.35;
         border-radius: 3px;
+    }
+}
+
+// Not styled here: the open sidebar clips 'Categories & rules' to 'Categories &'.
+// The row needs 205px of content in a 160px box, and narrowing Atlas' 52px glyph
+// slot to 30 still leaves it 23px short - so this is a caption that is too long
+// for a 224px sidebar rather than a slot that is too wide, and the honest fixes
+// are a shorter caption or a wider sidebar. Measured in a container where IBM
+// Plex is unavailable (see the README's known gaps), so the real shortfall is
+// smaller than 45px and possibly zero.
+
+// The collapsed rail.
+//
+// Atlas puts the open/closed state on the scroll container rather than on the
+// sidebar, so this is the same selector Atlas' own layout uses. Everything
+// below exists because the rail is 52px and this file spends most of that on
+// padding and on a wordmark written for 224px.
+.mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open) > .region-sidebar {
+    .mx-navigationtree {
+        padding: 8px 0;
+
+        // 'Ledger' does not fit in 52px, and half a word reads as a rendering
+        // fault rather than as a mark. One letter is a mark.
+        &::before {
+            content: 'L';
+            padding: 18px 0 0;
+            text-align: center;
+        }
+
+        .navbar-inner {
+            padding: 0;
+
+            // Two words of letter-spaced uppercase mono have nowhere to go at
+            // this width. The rule under them still separates the mark from the
+            // menu, so it stays and the words go.
+            &::before {
+                content: '';
+                margin: 12px 0;
+                padding: 0;
+            }
+        }
+
+        // Atlas gives the glyph `flex-basis: var(--navsidebar-width-closed)`,
+        // so the icon wants the full 52px. The 10px of padding on the tree and
+        // another 10 on the anchor left it 12, and the icons overflowed the
+        // rail instead of sitting in it.
+        //
+        // No centring here, deliberately. The row is still icon *plus* caption
+        // and the caption is only ever clipped, never removed - so the row's
+        // content is about 130px wide inside a 52px box. `justify-content:
+        // center` centres that overflow, which pushes the icon off the left
+        // edge and leaves the first few letters of the caption showing in its
+        // place. Left-aligned, the icon lands on its 52px and the caption falls
+        // off the right where the sidebar clips it.
+        li a {
+            padding: 8px 0 !important;
+        }
     }
 }
 

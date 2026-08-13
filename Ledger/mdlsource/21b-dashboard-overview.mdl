@@ -1,0 +1,435 @@
+-- ============================================================================
+-- 21b - Dashboard: the overview table
+-- ============================================================================
+-- One chart replaces the sunburst and the sankey.
+--
+-- Those two each answered one question well and neither answered it densely: a
+-- donut spends a whole screen on thirteen numbers, and a sankey spends one on
+-- about twenty. Both are shape-first — you read the picture, then hunt for the
+-- figure. Neither shows a trend, an outlier, or anything you could act on.
+--
+-- What replaces them is a table of sparklines, which is the form Tufte designed
+-- for exactly this: one row per category, and in that row everything you would
+-- otherwise open four screens to compare —
+--
+--   the shape        twenty months of spend, against the band it usually
+--                    occupies, so an unusual month is visible as a departure
+--                    rather than as a number you have to remember
+--   the level        the latest month, direct-labelled, no axis lookup
+--   the trend        this year against the same months of last year
+--   the opportunity  how much of the category is standing cost, because that
+--                    is the part cancelling actually removes
+--
+-- and the whole thing fits above the fold at thirteen rows.
+--
+-- Uncategorised transactions are a row in the same table rather than a badge
+-- somewhere else. They are a category the way "unlabelled" is a category, they
+-- want exactly the same four readings, and a row cannot be dismissed the way a
+-- number in a corner can.
+--
+-- The model emits facts, one flat table, discriminated by `k`:
+--
+--   k = 'm'   a month of a category   -> the sparklines and the net strip
+--   k = 's'   a category, summarised  -> the delta and recurring columns
+--
+-- Everything that can be derived from those rows is derived in the spec: the
+-- net strip is an aggregate of the monthly rows, and the normal band is a
+-- window over them. Only the two things a chart cannot see — which merchants
+-- recur, and which transactions are unlike their category — are computed here,
+-- because both need rows at a grain the chart never receives.
+-- ============================================================================
+
+/** Everything the dashboard binds to. */
+create or modify non-persistent entity Ledger.OverviewContext (
+  /** The flat table: monthly rows and category summaries */
+  TableData: string,
+  /** e.g. '20 months · 13 categories · 12 need review' */
+  SubText: string(200),
+  /** The clicked row's datum, as JSON */
+  SelectedPoint: string,
+  /** Transactions behind the clicked category */
+  DetailData: string,
+  /** The clicked category */
+  DetailTitle: string(80),
+  /** e.g. '77 transactions · € 4,484' */
+  DetailMeta: string(140)
+);
+/
+
+/**
+ * How much of each category is standing cost.
+ *
+ * A merchant billing in four months or more is a subscription rather than a
+ * purchase, and the distinction is the whole point of the column: cancelling a
+ * subscription saves twelve times, cancelling a purchase saves nothing because
+ * it already happened.
+ *
+ * Grouped in a single pass at two levels — merchant inside category — because
+ * MDL has no map and a nested loop over merchants would be quadratic. The rows
+ * arrive sorted by category then merchant, so a key change is a flush: the
+ * merchant flush decides whether that merchant counts as recurring, and the
+ * category flush emits the total. Both need a final flush after the loop, which
+ * is the part that is easy to leave out and silently drops the last category.
+ *
+ * @param $Rows VMerchantMonth, sorted by CategoryName then Merchant
+ * @param $Year The year to summarise
+ * @returns A delimited list, ',Category=amount' per category
+ */
+create or modify microflow Ledger.CALC_RecurringByCategory (
+  $Rows: list of Ledger.VMerchantMonth,
+  $Year: integer
+)
+returns string as $Result
+folder 'Dashboard'
+begin
+  declare $Result string = ',';
+  declare $CurCat string = '';
+  declare $CurMerchant string = '';
+  declare $MerchantTotal decimal = 0;
+  declare $MerchantMonths integer = 0;
+  declare $LastMonth integer = 0;
+  declare $CatRecurring decimal = 0;
+
+  loop $R in $Rows
+  begin
+    if $R/Yr = $Year then
+      @annotation 'Merchant boundary: decide whether the one just finished was recurring, and add it to the category if so'
+      if $R/Merchant != $CurMerchant or $R/CategoryName != $CurCat then
+        if $MerchantMonths >= 4 then
+          set $CatRecurring = $CatRecurring + $MerchantTotal;
+        end if;
+        set $CurMerchant = $R/Merchant;
+        set $MerchantTotal = 0;
+        set $MerchantMonths = 0;
+        set $LastMonth = 0;
+      end if;
+
+      @annotation 'Category boundary: emit the category just finished, then start the next'
+      if $R/CategoryName != $CurCat then
+        if $CurCat != '' then
+          set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00') + ',';
+        end if;
+        set $CurCat = $R/CategoryName;
+        set $CatRecurring = 0;
+      end if;
+
+      set $MerchantTotal = $MerchantTotal + $R/Total;
+      if $R/MonthIndex != $LastMonth then
+        set $MerchantMonths = $MerchantMonths + 1;
+        set $LastMonth = $R/MonthIndex;
+      end if;
+    end if;
+  end loop;
+
+  @annotation 'The last merchant and the last category have no successor to flush them'
+  if $MerchantMonths >= 4 then
+    set $CatRecurring = $CatRecurring + $MerchantTotal;
+  end if;
+  if $CurCat != '' then
+    set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00') + ',';
+  end if;
+
+  return $Result;
+end;
+/
+
+/**
+ * Reads one value back out of CALC_RecurringByCategory's delimited list.
+ *
+ * A delimited string is standing in for a map, which MDL does not have. It is
+ * bounded and readable at thirteen entries; it would not be at transaction
+ * scale, and the alternative there is a second view rather than a longer string.
+ *
+ * @param $List The delimited list
+ * @param $Key The category name
+ * @returns The amount, or 0 when absent
+ */
+create or modify microflow Ledger.GET_DelimitedValue (
+  $List: string,
+  $Key: string
+)
+returns decimal as $Value
+folder 'Dashboard'
+begin
+  declare $Value decimal = 0;
+  declare $Needle string = '';
+  declare $At integer = -1;
+  declare $Rest string = '';
+  declare $End integer = -1;
+
+  set $Needle = ',' + $Key + '=';
+  set $At = find($List, $Needle);
+  if $At < 0 then
+    return 0;
+  end if;
+
+  set $Rest = substring($List, $At + length($Needle), length($List) - $At - length($Needle));
+  set $End = find($Rest, ',');
+  if $End >= 0 then
+    set $Rest = substring($Rest, 0, $End);
+  end if;
+
+  set $Value = parseDecimal($Rest);
+  return $Value;
+end;
+/
+
+/**
+ * This year's total per category, as a delimited list.
+ *
+ * Exists so every row of the table - monthly and summary alike - can carry the
+ * same ordering key. The four columns are separate faceted panels, and a facet
+ * sorts itself: give two panels different sort fields and they quietly disagree
+ * about which row is which, which is a misalignment no error reports and the eye
+ * reads as fact.
+ *
+ * @param $Rows VMonthCategory, sorted by CategoryName
+ * @param $Year The current year
+ * @param $Through Last month with data
+ * @returns ',Category=amount' per category
+ */
+create or modify microflow Ledger.CALC_CurrentByCategory (
+  $Rows: list of Ledger.VMonthCategory,
+  $Year: integer,
+  $Through: integer
+)
+returns string as $Result
+folder 'Dashboard'
+begin
+  declare $Result string = ',';
+  declare $Cur string = '';
+  declare $Total decimal = 0;
+
+  loop $C in $Rows
+  begin
+    if $C/CategoryName != $Cur then
+      if $Cur != '' then
+        set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00') + ',';
+      end if;
+      set $Cur = $C/CategoryName;
+      set $Total = 0;
+    end if;
+    if $C/Yr = $Year and $C/MonthIndex <= $Through then
+      set $Total = $Total + $C/Total;
+    end if;
+  end loop;
+
+  if $Cur != '' then
+    set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00') + ',';
+  end if;
+
+  return $Result;
+end;
+/
+
+/**
+ * Builds the whole table: monthly rows, then one summary row per category.
+ *
+ * @returns The dashboard's context object
+ */
+create or modify microflow Ledger.DS_OverviewContext ()
+returns Ledger.OverviewContext as $Context
+folder 'Dashboard'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+  declare $Month string = '';
+  declare $CurCat string = '';
+  declare $Prior decimal = 0;
+  declare $Current decimal = 0;
+  declare $Recur decimal = 0;
+  declare $Through integer = 0;
+  declare $Year integer = 2026;
+  declare $CatCount integer = 0;
+  declare $UncatCount integer = 0;
+  declare $UncatTotal decimal = 0;
+  declare $Kind string = '';
+  declare $Grp string = '';
+
+  retrieve $Months from Ledger.VMonthCategory sort by CategoryName asc, Yr asc, MonthIndex asc;
+  retrieve $Merchants from Ledger.VMerchantMonth sort by CategoryName asc, Merchant asc, Yr asc, MonthIndex asc;
+  retrieve $Matrix from Ledger.VMatrixActual sort by SortKey asc;
+  @annotation 'Absence of an association is a negation in XPath, not a comparison with empty (MDL rejects the latter and says so)'
+  retrieve $Uncat from Ledger.Transaction where [not(Ledger.Transaction_Category/Ledger.Category)];
+
+  $ThroughCalc = call microflow Ledger.CALC_ReportingThrough (Rows = $Matrix);
+  set $Through = $ThroughCalc;
+
+  $RecurList = call microflow Ledger.CALC_RecurringByCategory (Rows = $Merchants, Year = $Year);
+  $OrderList = call microflow Ledger.CALC_CurrentByCategory (Rows = $Months, Year = $Year, Through = $Through);
+
+  @annotation 'Monthly rows, one per category per month per account. The spec sums across accounts and derives the net strip from these same rows - nothing is emitted twice.'
+  loop $R in $Months
+  begin
+    if $R/MonthIndex < 10 then
+      set $Month = toString($R/Yr) + '-0' + toString($R/MonthIndex) + '-01';
+    else
+      set $Month = toString($R/Yr) + '-' + toString($R/MonthIndex) + '-01';
+    end if;
+
+    $Ord = call microflow Ledger.GET_DelimitedValue (List = $OrderList, Key = $R/CategoryName);
+    set $Json = $Json + $Sep
+      + '{"k":"m","cat":"' + $R/CategoryName + '"'
+      + ',"grp":"' + $R/GroupName + '"'
+      + ',"kind":"' + $R/GroupTypeName + '"'
+      + ',"t":"' + $Month + '"'
+      + ',"ord":' + formatDecimal($Ord, '0.00')
+      + ',"v":' + formatDecimal($R/Total, '0.00') + '}';
+    set $Sep = ',';
+  end loop;
+
+  @annotation 'Uncategorised months, emitted as a category of their own so the table needs no special case for them'
+  loop $U in $Uncat
+  begin
+    if $U/IsMirror = false then
+      set $Json = $Json + $Sep
+        + '{"k":"m","cat":"Needs review"'
+        + ',"grp":"Review","kind":"Expense"'
+        + ',"t":"' + formatDateTime($U/TxDate, 'yyyy-MM') + '-01"'
+        + ',"ord":0.5'
+        + ',"v":' + formatDecimal($U/Amount, '0.00') + '}';
+      set $Sep = ',';
+      set $UncatCount = $UncatCount + 1;
+      set $UncatTotal = $UncatTotal + $U/Amount;
+    end if;
+  end loop;
+
+  @annotation 'Category summaries. Prior and current cover the same months of both years, so a partial year is never compared against a whole one.'
+  loop $S in $Months
+  begin
+    if $S/CategoryName != $CurCat then
+      if $CurCat != '' then
+        $Rc = call microflow Ledger.GET_DelimitedValue (List = $RecurList, Key = $CurCat);
+        set $Recur = $Rc;
+        set $Json = $Json + $Sep
+          + '{"k":"s","cat":"' + $CurCat + '"'
+          + ',"grp":"' + $Grp + '","kind":"' + $Kind + '"'
+          + ',"prior":' + formatDecimal($Prior, '0.00')
+          + ',"current":' + formatDecimal($Current, '0.00')
+          + ',"delta":' + formatDecimal($Current - $Prior, '0.00')
+          + ',"ord":' + formatDecimal($Current, '0.00')
+          + ',"recur":' + formatDecimal($Recur, '0.00') + '}';
+        set $Sep = ',';
+        set $CatCount = $CatCount + 1;
+      end if;
+      set $CurCat = $S/CategoryName;
+      set $Grp = $S/GroupName;
+      set $Kind = $S/GroupTypeName;
+      set $Prior = 0;
+      set $Current = 0;
+    end if;
+
+    if $S/MonthIndex <= $Through then
+      if $S/Yr = $Year then
+        set $Current = $Current + $S/Total;
+      else
+        if $S/Yr = $Year - 1 then
+          set $Prior = $Prior + $S/Total;
+        end if;
+      end if;
+    end if;
+  end loop;
+
+  @annotation 'Last category has no successor to flush it'
+  if $CurCat != '' then
+    $Rc2 = call microflow Ledger.GET_DelimitedValue (List = $RecurList, Key = $CurCat);
+    set $Json = $Json + $Sep
+      + '{"k":"s","cat":"' + $CurCat + '"'
+      + ',"grp":"' + $Grp + '","kind":"' + $Kind + '"'
+      + ',"prior":' + formatDecimal($Prior, '0.00')
+      + ',"current":' + formatDecimal($Current, '0.00')
+      + ',"delta":' + formatDecimal($Current - $Prior, '0.00')
+      + ',"ord":' + formatDecimal($Current, '0.00')
+      + ',"recur":' + formatDecimal($Rc2, '0.00') + '}';
+    set $Sep = ',';
+    set $CatCount = $CatCount + 1;
+  end if;
+
+  @annotation 'The review row gets a summary too, so it sizes and sorts like any other'
+  if $UncatCount > 0 then
+    set $Json = $Json + $Sep
+      + '{"k":"s","cat":"Needs review","grp":"Review","kind":"Expense"'
+      + ',"prior":0,"current":' + formatDecimal($UncatTotal, '0.00')
+      + ',"delta":' + formatDecimal($UncatTotal, '0.00')
+      + ',"ord":0.5,"recur":0}';
+  end if;
+
+  $UncatText = call microflow Ledger.FMT_Euro (Amount = $UncatTotal);
+
+  $Context = create Ledger.OverviewContext (
+    TableData = '[' + $Json + ']',
+    SubText = toString($CatCount) + ' categories · ' + toString($UncatCount)
+      + ' transactions need review (' + $UncatText + ')',
+    SelectedPoint = '',
+    DetailData = '[]',
+    DetailTitle = '',
+    DetailMeta = 'Click a category to list what is behind it.');
+
+  return $Context;
+end;
+/
+
+/**
+ * Handles a click on a category row: lists that category's transactions.
+ *
+ * @param $Context The dashboard context, carrying the clicked datum
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_SelectOverviewCategory (
+  $Context: Ledger.OverviewContext
+)
+returns boolean as $Done
+folder 'Dashboard'
+begin
+  declare $Done boolean = true;
+  declare $Lines string = '';
+  declare $Sep string = '';
+  declare $Total decimal = 0;
+  declare $Count integer = 0;
+
+  $CatName = call microflow Ledger.GET_JsonValue (Json = $Context/SelectedPoint, Key = 'cat');
+
+  if $CatName = '' then
+    return $Done;
+  end if;
+
+  retrieve $All from Ledger.VTransactionLine sort by Amount desc;
+
+  loop $R in $All
+  begin
+    if $R/CategoryName = $CatName and $Count < 40 then
+      set $Lines = $Lines + $Sep
+        + '{"m":"' + $R/Merchant + '"'
+        + ',"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+        + ',"acc":"' + $R/AccountName + '"'
+        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+      set $Sep = ',';
+      set $Count = $Count + 1;
+    end if;
+    if $R/CategoryName = $CatName then
+      set $Total = $Total + $R/Amount;
+    end if;
+  end loop;
+
+  $TotalText = call microflow Ledger.FMT_Euro (Amount = $Total);
+
+  change $Context (
+    DetailData = '[' + $Lines + ']',
+    DetailTitle = $CatName,
+    DetailMeta = $TotalText + ' in total · largest ' + toString($Count) + ' shown'
+  ) refresh;
+
+  return $Done;
+end;
+/
+
+grant execute on microflow Ledger.CALC_CurrentByCategory to Ledger.User;
+/
+grant execute on microflow Ledger.CALC_RecurringByCategory to Ledger.User;
+/
+grant execute on microflow Ledger.GET_DelimitedValue to Ledger.User;
+/
+grant execute on microflow Ledger.DS_OverviewContext to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_SelectOverviewCategory to Ledger.User;
+/

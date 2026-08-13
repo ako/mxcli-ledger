@@ -104,10 +104,17 @@ $btn-bordered: false; // Default value false, set to true if you want this effec
   --shadow-medium: 0 0 0 0;
   --shadow-large: 0 0 0 0;
 
-  /* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
-     closed width equal to the open one is what keeps it from collapsing to a
-     48px strip of clipped labels. */
-  --navsidebar-width-closed: 224px;
+  /* Sidebar: dark, 224px open, a 52px icon rail closed.
+
+     These were both pinned to 224px back when the menu had no icons — a
+     collapsed rail would then have shown nothing but clipped labels, so the
+     workaround was to stop it collapsing at all. The menu has icons now, and
+     the workaround became the bug: Atlas gives the glyph
+     `flex-basis: var(--closed-sidebar-width)` while closed, so a 224px closed
+     width made every icon as wide as the whole row and pushed its caption out
+     of a sidebar that clips its overflow. That is what "collapsing hides the
+     labels but the panel stays wide" was. */
+  --navsidebar-width-closed: 52px;
   --navsidebar-width-open: 224px;
   --navsidebar-bg: var(--ledger-sidebar);
   --navsidebar-color: #B9BBBE;

@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 82 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 95 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -20,29 +20,60 @@ records which, and how they were verified.
 
 ### Dashboard
 
-Spend for the year as a three-level donut — category group, category, merchant —
-over a single OQL view aggregated per merchant and rolled up in memory. Clicking
-any level of the breakdown lists the transactions behind it.
+One chart. One row per category, and in that row the four things you would
+otherwise open four screens to compare.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-The total, **€ 29,566**, is computed here from the merchant view. The Cashflow
-screen arrives at the same number from an entirely different query, and Groceries
-comes to € 4,484 on both. That agreement is the test.
+A net strip across the top — income above the axis, spend below, net through
+the middle, twenty months. Then the table: each category's own twenty months
+against the band it usually occupies, this year against the same months of last
+year as a bar either side of zero, the year's total direct-labelled, and how
+much of it is standing cost. Clicking a row lists what is behind it.
 
-Below it, a sankey answers what the sunburst structurally cannot — where the
-money came from and how much survived. Every ring above is a *share of spend*,
-so income never appears there and the surplus is invisible. The sankey runs
-income categories into one Income node and out again into the expense groups,
-on into their categories, and into what was not spent. It balances by
-construction: **€ 45,118 in · € 29,566 out · € 15,552 kept**, the same three
-figures the Cashflow KPI strip reports, and each group's outgoing links sum
-back to it (Housing 10,227 + 1,459 + 563 = 12,249).
+The readings are meant to be made in that order and to lead somewhere. A red
+dot is a month more than two deviations above that category's own normal:
+six of them over 280 category-months, which is about the rate at which a mark
+still means "open this". At one deviation it fired on one month in six and was
+decoration. The delta bars are coloured by *favourable* rather than by sign, so
+income falling and spend rising are both red — Freelance is down € 1,505 on
+last year, Rent up € 590. The recurring column is the saving column: a merchant
+billing in four months or more is a standing cost, and the filled part of the
+bar is the part cancelling actually removes. Income rows are blank there, which
+is the honest reading — there is no standing cost to cancel in a salary.
 
-Plotly's `sankey` trace ships in the Charts.mpk bundle, so it goes through the
-same CustomChart escape hatch as the sunburst. Its links reference nodes by
-array index rather than by id, which fixes the build order: the hub is emitted
-first so it is always node 0.
+**Uncategorised transactions are a row in the table, not a badge in a corner.**
+They get the same four readings as anything else, they sort in with everything
+else, and a row cannot be dismissed the way a number off to one side can. Today
+that row reads € 764 across twelve transactions, all in one month — which is
+why it renders as a point rather than a line.
+
+Clicking a row opens what is behind it — every transaction in that category,
+against a scale that starts where the data does rather than at zero, because
+zero is not a value any grocery shop ever charged:
+
+![Dashboard detail](docs/screenshots/dashboard-detail.png)
+
+Every figure was read back out of Postgres: Salary € 43,661, Rent € 11,813,
+Freelance € 7,520, down to Subscriptions € 514 and the € 764 review row, all
+fourteen matching the rendered column exactly. Groceries reports € 11,783 over
+220 transactions, largest 40 plotted — also the figure in the panel above.
+
+This replaced a sunburst and a sankey, both Plotly through the CustomChart
+escape hatch. Each answered one question and neither answered it densely — a
+donut spent a screen on thirteen numbers, a sankey spent one on about twenty,
+and both were shape-first: you read the picture, then went hunting for the
+figure. Neither showed a trend, an outlier, or anything you could act on.
+
+The replacement is Vega-Lite through the project's own widget, and the whole
+table is one spec: an `hconcat` of four faceted panels sharing a row order,
+because Vega-Lite cannot put a concatenation *inside* a facet. Panels that must
+align is the fragile part of that arrangement, and two ways of breaking it are
+in finding 94 — facet rows default to sizing themselves to their content, and a
+transform that aggregates away the sort field drops one panel back to
+alphabetical order while the others hold. Both were found by rendering the spec
+headless in node and reading the row geometry off the scenegraph, which turns a
+three-minute deploy into a three-second check.
 
 ### Cashflow
 
@@ -58,9 +89,120 @@ unfavourable direction:
 
 ![Cashflow in variance mode](docs/screenshots/cashflow-variance.png)
 
-Months that have not happened yet are blank rather than zero. A zero actual
-against a full budget would read as maximally under budget and paint the second
-half of the year green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md).
+Months with no data are blank rather than zero. A zero actual against a full
+budget would read as maximally under budget and paint the rest of the year
+green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md). "No data" is not
+the same as "in the future": bank data arrives in arrears, so the window is the
+earlier of months elapsed and months with any activity (finding 83).
+
+Below the matrix, the same thirteen categories as a small-multiple grid — a
+twelve-month line over its budget envelope, with over-budget months marked:
+
+![Cashflow sparklines](docs/screenshots/cashflow-sparklines.png)
+
+This one is not Plotly. It is Vega-Lite through
+[`widgets-src/vegachart`](./widgets-src/vegachart), a pluggable widget built for
+this project, and it is here because `facet` is an operator: the grid falls out
+of the data instead of being thirteen hand-placed subplots. The widget takes the
+**spec and the data separately** — the spec is a static property, committed and
+diffable, and the microflow emits only a table of rows. Nothing assembles a
+chart payload at runtime, which is the opposite of how the Plotly charts it
+replaced were built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
+reachable through the same widget for what Vega-Lite cannot express.
+
+Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
+a narrow column had been skimmed past for weeks; thirteen lines diving to the
+axis was visible immediately.
+
+### Insights
+
+Six charts over one datasource, all Vega-Lite through the project's own widget.
+The page reads two years: 2025 in full and 2026 to date.
+
+![Insights filter](docs/screenshots/insights-filter.png)
+
+One filter drives all six: a period, a category and an account. The controls
+write to the same object the charts read, so applying a change is one microflow
+and one `change … refresh` rather than six datasources re-running independently
+— which also sidesteps the datasource-refresh problem in finding 68. Filtering
+to Groceries takes the scatter from 820 points to 211, matching SQL exactly.
+
+The period rounds outward to whole months for the monthly charts and is exact
+for the day-level ones, because the aggregate views are grouped by month.
+
+**Income against spend.** Income stacks above the axis, spend below, and the
+dark line is the net — where it sits above zero, the month paid for itself.
+
+![Stream graph](docs/screenshots/insights-stream.png)
+
+**Every expense, over time**, on a log scale so a € 5 coffee and € 1,500 of rent
+can share an axis. The flat band near the top is rent; the one along the bottom
+is subscriptions.
+
+![Scatter](docs/screenshots/insights-scatter.png)
+
+**Spend by day** — a row per year, a column per week, a cell per day. The empty
+cells are days nothing was spent at all, which a monthly total cannot show you.
+
+![Calendar heatmap](docs/screenshots/insights-calendar.png)
+
+**Standing costs**, ranked by monthly average projected over a year. Merchants
+billing in fewer than four months are excluded: a single large purchase is not a
+saving opportunity however big it was. Savings transfers are excluded too —
+they are booked as expenses everywhere else in this app, correctly, but
+cancelling one saves nothing.
+
+![Standing costs](docs/screenshots/insights-savings.png)
+
+**This year against last**, over the same months of both years so a partial year
+is not compared against a whole one. Colour reads favourability rather than
+direction, which is not the same thing for income as for spend.
+
+![Year over year](docs/screenshots/insights-yoy.png)
+
+**Transactions unlike the rest of their category** — each compared against its
+own category's mean rather than a global one, since € 1,500 is unremarkable for
+Rent and extraordinary for Coffee.
+
+![Outliers](docs/screenshots/insights-outliers.png)
+
+The last two charts read the *same dataset*. The scatter is every expense over
+time; the outlier view is the same points with the ones unlike their neighbours
+called out, and the calling-out is a `joinaggregate` in the spec — not a second
+query, not a second microflow. That is the argument for a grammar over a chart
+library, in one line.
+
+#### Two kinds of interaction
+
+The charts respond to a drag and to a click, and the two work in completely
+different ways — which is the more interesting half of the story.
+
+**Brushing costs nothing.** Drag across the dates on the scatter and the bars
+beneath it re-total to that range:
+
+![Brushing the scatter](docs/screenshots/insights-brush.png)
+
+Measured: 568 of 820 points dim, and **zero server calls** during the drag. The
+rows are already in the browser, so a range is a `param` and a `filter` — no
+query, no microflow, no round trip. Both views have to live in one spec, though:
+a Vega-Lite selection is scoped to its own view, so six separate widgets cannot
+share a brush without signalling between them by hand.
+
+**Clicking has to leave the browser**, because the answer is not in the payload.
+Clicking a calendar day asks which merchants made up that day's total, and the
+calendar only carries a date and a sum:
+
+![Clicking a day](docs/screenshots/insights-dayclick.png)
+
+The widget writes the clicked datum as JSON, a microflow reads a field out of it
+and builds the panel. 10 August 2026 returns three transactions totalling
+€ 2,409.16 — exactly what Postgres reports for that day.
+
+Getting that round trip exact took finding 92: a clicked mark's datum is an
+output of the rendering pipeline, not an echo of what was sent. Temporal fields
+come back as epoch milliseconds, and an aggregated mark carries only the fields
+the spec groups by — so the date has to be carried a second time, as a plain
+string the spec references but never parses.
 
 ### Budgets
 
@@ -110,36 +252,47 @@ files apply in dependency order:
 | `06`–`11` | Cashflow matrix, shared views, inspector |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
-| `20`–`22` | Dashboard sunburst and income-to-spend sankey |
+| `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
+| `21b`–`22` | Dashboard: the overview table and what is behind a row |
+| `23` | Cashflow sparkline grid, through the project's own Vega widget |
+| `24`–`26` | Insights: aggregate views, payloads, six charts |
+| `27` | Navigation — the single owner of the menu, applied last |
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
 [`docs/observability.md`](./docs/observability.md).
 
-Both drilldowns are keyed on `cast(id as string)` rather than on display names.
-A view entity cannot carry an association, but it can expose an id, and a view
+Drilldowns are keyed on `cast(id as string)` rather than on display names. A
+view entity cannot carry an association, but it can expose an id, and a view
 constrained on that column returns exactly what an association join returns —
-so the cashflow inspector and the sunburst reach their rows without ever
-holding the object. See finding 74.
+so the cashflow inspector reaches its rows without ever holding the object. See
+finding 74.
 
 The set is **re-applied from scratch** rather than patched, so the numbering is
 the build order and every file is idempotent (`create or modify` throughout).
 
 ```bash
 cd Ledger
+mxcli widget init -p Ledger.mpr                          # required first — see below
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
 ~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
 mxcli test tests/*.test.mdl -p Ledger.mpr --local        # microflow tests
 mxcli run --local --ensure-db                            # run it
 ```
 
-Two rules learned the hard way and worth stating up front:
+Three rules learned the hard way and worth stating up front:
 
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
   couple pass both and only show up at runtime.
 - **`DESCRIBE` is how you find out what was actually serialized.** More than one
   finding came from comparing authored MDL against what came back.
+- **`mxcli widget init` is a build step, not a setup step.** mxcli writes a
+  widget instance from a definition cached under `Ledger/.mxcli/`, which is
+  gitignored and does not refresh when a `.mpk` changes. Skip it after a package
+  upgrade and every Data Grid 2 the set authors describes a widget that no
+  longer exists — six CE0463 errors, with nothing before `mx check` to say so.
+  See finding 87.
 
 ### Toolchain
 
@@ -162,19 +315,33 @@ Monospace on every number is the largest single fidelity win, and it is not
 decoration: a fourteen-column matrix of currency only scans if the digits line
 up.
 
+The sidebar collapses to a 52px icon rail and opens to the prototype's 224px:
+
+| collapsed | open |
+|---|---|
+| ![Sidebar collapsed](docs/screenshots/sidebar-collapsed.png) | ![Sidebar open](docs/screenshots/sidebar-open.png) |
+
+It did not, for a while, and the reason is a good illustration of what token
+overrides cost: the closed width had been pinned to the open one back when the
+menu had no icons, and once icons arrived Atlas' own rule — which gives the
+glyph `flex-basis: var(--closed-sidebar-width)` — turned that into a 224px icon
+slot that pushed every caption out of view. Finding 95 has the measurements.
+
 ---
 
 ## Known gaps
 
 Stated rather than hidden:
 
-- **The app does not currently build from a clone.** Widgets were updated in
-  Studio Pro, but `.gitignore` carries `*.mpk`, so the packages never travelled
-  with the commit and `mx check` reports 116 CE0463 errors against the stale
-  ones. [`docs/widget-recovery.md`](./docs/widget-recovery.md) is the work order;
-  findings 81–82 are the diagnosis. That commit is also the one exception to
-  "authored entirely through mxcli" — it added the navigation menu icons, which
-  MDL can neither read nor write.
+- **Three of the seven menu icons are not the ones Studio Pro had.** MDL's
+  `ICON` reaches icon-collection icons only; the Accounts item carried a glyph
+  icon and Categories & rules an image icon, neither of which is authorable.
+  Both were placeholders, so file 27 authors collection icons in their place
+  and the whole set is reproducible again. `DESCRIBE` now names what it cannot
+  carry instead of dropping it silently — see finding 81, which is how the icons
+  came to be understood at all. The third, Transactions, was carried faithfully
+  and still had to be replaced: it pointed at `Atlas_Styling`, a collection
+  whose CSS prefix Atlas' own navigation rules do not match — see finding 95.
 - **The chart itself is not clickable.** Three independent blockers, all recorded
   in `FINDINGS.md` 67–69: MDL silently drops an `action`-typed property on a
   pluggable widget; writing a widget attribute does not re-run a datasource over
@@ -193,13 +360,14 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              82 numbered findings — the main deliverable alongside the app
+FINDINGS.md              95 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
 docs/widget-recovery.md  open work order — restoring the widget packages
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
+widgets-src/vegachart/   the project's own pluggable widget (Vega-Lite / Vega)
 Ledger/tests/            microflow tests (mxcli test --local)
 Ledger/theme/            Atlas token overrides
 Ledger/themesource/      component styling

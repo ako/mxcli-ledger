@@ -148,13 +148,7 @@ create or replace page Ledger.Budgets_Overview
 }
 /
 
-create or replace navigation Responsive
-  home page Ledger.Cashflow_Overview
-  menu (
-    menu item 'Cashflow' page Ledger.Cashflow_Overview;
-    menu item 'Budgets' page Ledger.Budgets_Overview;
-    menu item 'Transactions' page Ledger.Transaction_Overview;
-    menu item 'Accounts' page Ledger.Account_Overview;
-    menu item 'Categories & rules' page Ledger.Category_Overview;
-  );
-/
+-- Navigation is not written here. It used to be written by four files, each
+-- carrying the menu as it stood at that point, so running any one of them on
+-- its own silently reverted the menu to an older shape — a trap this project
+-- fell into twice. It now has a single owner: 27-navigation.mdl.

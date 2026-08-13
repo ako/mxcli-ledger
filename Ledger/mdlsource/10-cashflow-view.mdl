@@ -278,11 +278,76 @@ end;
 /
 
 /**
+ * The last month the report can honestly speak about.
+ *
+ * CALC_ElapsedThrough answers a calendar question — which months have happened
+ * — and that is the right question for a date, but not for a report. A month
+ * can be elapsed and hold nothing: bank data arrives in arrears, and the demo
+ * seed stops at the previous month end. Such a month has a full budget and a
+ * zero actual, which is not "spent nothing", it is "we do not know yet".
+ *
+ * Reporting on it anyway is the exact mistake blank future months exist to
+ * avoid (PROTOTYPE-ANALYSIS §5.3): the matrix printed € 0 across every row for
+ * the current month and heat-shaded it as wildly under budget, and the over-
+ * budget KPI counted one phantom miss per category because a zero actual is
+ * always more than 2% away from its budget.
+ *
+ * So the window is the earlier of the two: months elapsed, and months with any
+ * activity at all. Only the trailing edge moves — a category that genuinely
+ * booked nothing in March still shows its zero, because some other category
+ * has a March transaction.
+ *
+ * Takes the rows rather than retrieving them: every caller has already
+ * retrieved VMatrixActual, and this is a datasource path where one avoidable
+ * query per page load is worth avoiding (docs/observability.md).
+ *
+ * @param $Rows VMatrixActual, as already retrieved by the caller
+ * @returns 1-12, or 0 when there is no data at all
+ */
+create or modify microflow Ledger.CALC_ReportingThrough (
+  $Rows: list of Ledger.VMatrixActual
+)
+returns integer as $Through
+folder 'Cashflow'
+begin
+  declare $Through integer = 0;
+  declare $LastWithData integer = 0;
+  declare $M integer = 1;
+
+  $Elapsed = call microflow Ledger.CALC_ElapsedThrough ();
+  set $Through = $Elapsed;
+
+  @annotation 'Category rows only: Group and Net are roll-ups of them, so a month empty across categories is empty everywhere.'
+  loop $R in $Rows
+  begin
+    if $R/RowKind = 'Category' then
+      set $M = 1;
+      while $M <= 12
+      begin
+        $A = call microflow Ledger.GET_ViewActual (V = $R, MonthIndex = $M);
+        if $A != 0 and $M > $LastWithData then
+          set $LastWithData = $M;
+        end if;
+        set $M = $M + 1;
+      end while;
+    end if;
+  end loop;
+
+  if $LastWithData < $Through then
+    set $Through = $LastWithData;
+  end if;
+
+  return $Through;
+end;
+/
+
+/**
  * Builds the report context: mode, subheading and the four headline figures.
  *
- * KPIs cover elapsed months only. Including future months would add their
- * zero actuals to spend and count every future cell as massively under
- * budget.
+ * KPIs cover reported months only — see CALC_ReportingThrough. Including
+ * months with no data would add their zero actuals to spend and count every
+ * such cell as massively under budget, whether the month is in the future or
+ * merely not yet loaded.
  *
  * Reads the same two view entities the matrix reads, rather than calling
  * CALC_Actual and CALC_Budget per category per month. Those helpers are one
@@ -313,11 +378,12 @@ begin
   declare $A decimal = 0;
   declare $B decimal = 0;
 
-  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
-  set $Through = $ThroughCalc;
-
   retrieve $ViewRows from Ledger.VMatrixActual sort by SortKey asc;
   retrieve $KpiBudgets from Ledger.VCategoryBudget sort by SortKey asc;
+
+  @annotation 'Reporting window, not the calendar: a month that is elapsed but holds no data would add a full budget against a zero actual, inflating the over-budget count by one per category and painting the whole column as under budget. The retrieve comes first so the rows can be passed in rather than fetched twice.'
+  $ThroughCalc = call microflow Ledger.CALC_ReportingThrough (Rows = $ViewRows);
+  set $Through = $ThroughCalc;
 
   loop $V in $ViewRows
   begin

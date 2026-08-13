@@ -45,7 +45,9 @@ create or modify microflow Ledger.Seed_CategoryTransactions (
   $JitterPercent: integer,
   $SeedBase: integer,
   $IsIncome: boolean,
-  $ThroughMonth: integer
+  $ThroughMonth: integer,
+  $Year: integer,
+  $LevelPermille: integer
 )
 returns integer as $Created
 folder 'Demo data'
@@ -75,9 +77,13 @@ begin
   @annotation 'One month per iteration; stops at the current month'
   while $Month <= $ThroughMonth
   begin
-    -- Days per month for 2026. 2026 is not a leap year, so February has 28.
+    @annotation 'Leap years by the divisible-by-4 rule only. Correct for every year this app seeds, and the century exceptions are more than a demo seeder needs to carry.'
     if $Month = 2 then
-      set $DaysInMonth = 28;
+      if $Year mod 4 = 0 then
+        set $DaysInMonth = 29;
+      else
+        set $DaysInMonth = 28;
+      end if;
     else
       if $Month = 4 or $Month = 6 or $Month = 9 or $Month = 11 then
         set $DaysInMonth = 30;
@@ -87,9 +93,9 @@ begin
     end if;
 
     if $Month < 10 then
-      set $MonthKey = '2026-0' + toString($Month);
+      set $MonthKey = toString($Year) + '-0' + toString($Month);
     else
-      set $MonthKey = '2026-' + toString($Month);
+      set $MonthKey = toString($Year) + '-' + toString($Month);
     end if;
 
     -- Per-month drift, roughly -13% to +15%, so months differ from each other.
@@ -116,8 +122,10 @@ begin
       -- Amount: baseline share, jittered.
       set $Seed = ($Seed * 75 + 74) mod 65537;
       set $FactorPermille = 1000 + ((($Seed mod 1000) - 500) * 2 * $JitterPercent div 100);
+      @annotation 'LevelPermille shifts a whole category-year against its baseline, which is what gives the year-over-year view something to find: energy up, restaurants down, and so on. 1000 leaves the baseline alone.'
       set $Amount = round(($Category/BaselineBudget div $TxPerMonth)
-        * ($DriftPermille div 1000) * ($FactorPermille div 1000), 2);
+        * ($DriftPermille div 1000) * ($FactorPermille div 1000)
+        * ($LevelPermille div 1000), 2);
 
       if $IsIncome then
         set $Signed = $Amount;
@@ -128,8 +136,8 @@ begin
       set $Seed = ($Seed * 75 + 74) mod 65537;
       set $Day = ($Seed mod $DaysInMonth) + 1;
 
-      @annotation 'dateTime() only accepts literals, so step off 1 January'
-      set $TxDate = addDays(addMonths(dateTime(2026, 1, 1), $Month - 1), $Day - 1);
+      @annotation 'dateTime() only accepts literals, so step off 1 January 2026 — back a year for history, then forward by month and day'
+      set $TxDate = addDays(addMonths(addYears(dateTime(2026, 1, 1), $Year - 2026), $Month - 1), $Day - 1);
 
       if $IsIncome then
         set $Description = 'SEPA overboeking';

@@ -1,10 +1,30 @@
 # Restoring the widget packages
 
-**Status: open. The app does not build from `main` as it stands.**
+**Status: done (2026-08-13). `mx check` reports 0 errors and `Ledger/widgets/`
+is committed.** Kept as the record of what was run and what bit along the way —
+findings 81–86 in [`FINDINGS.md`](../FINDINGS.md) carry the diagnosis.
 
-This is a work order for a session that starts cold. Everything needed to
-execute it is below; the background is findings 81–82 in
-[`FINDINGS.md`](../FINDINGS.md).
+What actually happened, against the plan below:
+
+- The eight pinned widgets went in with `mxcli marketplace install <id>
+  --version <v>`, which is type-aware and copies a widget straight into
+  `widgets/`. Data Grid 2, Gallery and the grid filters came out of the Data
+  Widgets 3.11.3 module package (`unzip -j … 'widgets/*.mpk'`), leaving the
+  model alone since `themesource/` was already current. That took 116 errors
+  to 2.
+- The last two were Atlas_Core native phone layouts on Feedback 3.4.0.
+  Extracting *all* of Atlas Core 4.3.8's bundled widgets to fix them went to
+  **78 errors**: the module ships Image 1.5.0 and Combo box 2.6.1, older than
+  the standalone packages the model wants. Taking only Feedback and re-pinning
+  those two settled it at 0. See finding 85.
+- `*.mpk` is out of `.gitignore` and `Ledger/widgets/` is committed (12 MB).
+  That is the part that actually fixes finding 82 — and it became
+  non-negotiable once the project gained a widget of its own, which no one can
+  fetch from the Marketplace.
+- **The icon trap below is now closed** (2026-08-13). mxcli gained
+  `MENU ITEM … ICON`, file 22 authors all six, and a re-apply preserves them —
+  verified. The section is kept for the record and for the one edge that
+  remains.
 
 ---
 
@@ -128,32 +148,44 @@ Both look like the fix and both make things worse:
    through CustomChart, so the bundled Plotly version is worth confirming.
 8. Update `FINDINGS.md` 82 with what worked, and this file's status line.
 
-## The icon trap
+## The icon trap — closed
 
-**This is not fixed by the work order above, and step 5 will trigger it.**
+**Resolved 2026-08-13. A full re-apply now preserves the menu icons.**
 
-`mdlsource/22-dashboard-page.mdl` owns the navigation block. `create or replace
-navigation` deletes and recreates the menu items rather than updating them —
-every item comes back with a new object id — so the icons are not preserved,
-they are discarded with the objects that held them. All six read back `(none)`
-afterwards, with no warning and no change in the `mx check` count. Both engines
-do it; `--engine legacy` is not a way out.
+It used to be that `mdlsource/22-dashboard-page.mdl`'s navigation block deleted
+all six icons and reported success — `create or replace navigation` deletes and
+recreates the menu items rather than updating them, so anything the grammar
+could not express went with the objects that held it. That mechanism has not
+changed, but mxcli gained `MENU ITEM … PAGE … ICON Module.Collection.Name`, so
+the icons are authored in file 22 and survive.
 
-Until MDL can round-trip icons, either:
+Two things to know if you touch them:
 
-- skip the `create or replace navigation` block in file 22 when re-applying, or
-- accept the loss and have the icons re-added in Studio Pro afterwards.
+- **Hyphenated Atlas names must be double-quoted**, and the reference is a model
+  reference into an icon collection rather than a string, so an unknown name is
+  rejected instead of written through:
+  `icon Atlas_Core.Atlas."align-center"`. Browse the 366 available names with
+  `DESCRIBE ICON COLLECTION Atlas_Core.Atlas`.
+- **`ICON` covers icon-collection icons only.** Glyph icons (a numeric code) and
+  image icons (an image reference) still cannot be authored. `DESCRIBE` now says
+  so in a comment on the line where the icon would have been, rather than
+  dropping it in silence.
 
-The icons as committed, should they need restoring by hand:
+What the app has now, and what Studio Pro originally had:
 
-| Menu item | Kind | Value |
+| Menu item | Now (authored in file 22) | Was |
 |---|---|---|
-| Dashboard | Icon collection | `Atlas_Core.Atlas.align-center` |
-| Cashflow | Icon collection | `Atlas_Core.Atlas.align-bottom` |
-| Budgets | Icon collection | `Atlas_Core.Atlas_Filled.alert-circle` |
-| Transactions | Icon collection | `Atlas_Core.Atlas_Styling.aligncontent-horizontal-space-between` |
-| Accounts | Glyph | code `9999` |
-| Categories & rules | Image | `System.Images.Close` |
+| Dashboard | `Atlas_Core.Atlas."align-center"` | same |
+| Cashflow | `Atlas_Core.Atlas."align-bottom"` | same |
+| Budgets | `Atlas_Core.Atlas_Filled."alert-circle"` | same |
+| Transactions | `Atlas_Core.Atlas_Styling."aligncontent-horizontal-space-between"` | same |
+| Accounts | `Atlas_Core.Atlas."credit-card"` | glyph icon, code `9999` |
+| Categories & rules | `Atlas_Core.Atlas."tag-group"` | image icon, `System.Images.Close` |
+
+The last two changed because they could not be authored. Both were placeholders,
+so substituting collection icons that mean something cost nothing and bought a
+reproducible file set. An app whose glyph icons were deliberate would have to
+choose between reproducibility and its icons — worth knowing before re-applying.
 
 To read the icons back out of the model — there is no mxcli command for it,
 because that is the bug — decode the navigation unit's BSON. The unit is the

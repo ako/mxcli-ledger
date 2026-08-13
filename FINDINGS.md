@@ -2622,7 +2622,14 @@ The app had been authored entirely through mxcli up to this point. Commit
 Marketplace versions, and icons added to the six navigation menu items. Both
 halves broke on the way back.
 
-### 81. Navigation menu-item icons are invisible to MDL, and the documented round-trip deletes them
+### 81. Navigation menu-item icons are invisible to MDL, and the documented round-trip deletes them *(FIXED for collection icons, verified)*
+
+> **Fixed upstream, 2026-08-13.** mxcli gained `MENU ITEM … PAGE … ICON
+> Module.Collection.Name`, and `DESCRIBE NAVIGATION` now emits it. The fix and
+> its remaining edge are recorded at the end of this entry; the original
+> diagnosis is left intact because the mechanism it identified has *not*
+> changed — items are still deleted and recreated, and the grammar's coverage
+> is still what decides what survives.
 
 Six menu items carried icons, deliberately spanning all three kinds Mendix
 supports:
@@ -2730,6 +2737,41 @@ create or delete only the difference. Then menu items inherit the same guarantee
 the profile already has, and the grammar's coverage stops being the thing that
 decides what survives.
 
+**How it was fixed (2026-08-13).** The grammar route, as expected — and the
+part worth praising is what it does with the cases it *cannot* carry.
+`DESCRIBE NAVIGATION` now emits:
+
+```
+    menu item 'Dashboard' page Ledger.Dashboard icon Atlas_Core.Atlas."align-center";
+    …
+    menu item 'Accounts' page Ledger.Account_Overview;
+    -- icon a numeric glyph code (Forms$GlyphIcon) is not reproducible by CREATE NAVIGATION; set it in Studio Pro
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+    -- icon System.Images.Close (Forms$ImageIcon) is not reproducible by CREATE NAVIGATION; set it in Studio Pro
+```
+
+`ICON` covers `Forms$IconCollectionIcon` only, so two of this app's six — a
+glyph icon and an image icon — still cannot be authored. But the loss is no
+longer silent, which was the actual defect: the round-trip now states what it
+is about to drop, in the output you are about to re-apply, at the exact line
+where the information used to disappear. **A tool that cannot represent
+something and says so is in a completely different class from one that
+represents it as nothing.** More surfaces should do this.
+
+Verified by applying the emitted MDL to a copy and reading the icons back:
+the four collection icons round-trip exactly; the glyph and image icons come
+back absent, as advertised. Menu item ids still change on every write, so the
+delete-and-recreate mechanism above is unchanged — the grammar now simply
+covers the common case.
+
+The app authors all six as collection icons (`22-dashboard-page.mdl`). The two
+that could not round-trip were placeholders — glyph code 9999 and a generic
+close cross — so they became `credit-card` and `tag-group`, which both mean
+something and keep the file set reproducible. That trade is only free because
+they were placeholders; an app whose glyph icons were deliberate would have to
+choose between reproducibility and its icons, and should know that before it
+re-applies.
+
 **Consequence for this project.** `mdlsource/22-dashboard-page.mdl` owns the
 navigation block, and this app's stated method is to re-apply all 24 files from
 scratch rather than patch. That normal build now silently reverts the icons, so
@@ -2832,3 +2874,726 @@ and the outbound proxy both work.
 Packages are as much a part of a Mendix app's source as the `.mpr`; leaving them
 out produces a repository that only builds on the machine that authored it, and
 nothing warns you until a widget version moves.
+
+---
+
+## Phase 11 — custom charting (2026-08-13)
+
+A custom pluggable widget rendering Vega-Lite, and the first chart through it:
+the cashflow matrix as a small-multiple sparkline grid. Three of these four are
+about getting a widget of one's own into an MDL-authored project; the first is
+about what happened when the same numbers were drawn more densely.
+
+### 83. Elapsed is not the same as reported — the matrix was printing € 0 for a month it had no data for
+
+Not an mxcli finding. An app defect, recorded because of *how* it was found:
+it had been shipping in plain sight and the denser rendering made it obvious in
+one glance.
+
+`CALC_ElapsedThrough` answers a calendar question — which months have happened —
+and the matrix used it to decide which cells to fill. But a month can be elapsed
+and hold nothing: bank data arrives in arrears, and this app's seed stops at the
+previous month end. The current month therefore had a full budget, a zero
+actual, and was rendered as a real figure:
+
+```
+CATEGORY   JAN      …   JUL      AUG    SEP  OCT
+Salary     € 5,309  …   € 5,541  € 0
+Rent       € 1,557  …   € 1,680  € 0
+```
+
+Every row read `€ 0` for August, heat-shaded as wildly under budget, while
+September and October were correctly blank. This is exactly the misreading that
+blanking future months exists to prevent (PROTOTYPE-ANALYSIS §5.3) — the app
+had the principle written down and the boundary in the wrong place.
+
+It also cost the over-budget KPI. The income test is
+`budget - actual > budget * 0.02`, so a zero actual is always a miss: both
+income categories contributed a phantom over-budget cell (`5200 > 104`,
+`900 > 18`). The expense test, `actual - budget > budget * 0.02`, is false at
+zero — so the count was inflated by exactly two. It reads 40 now.
+
+**A table hid it; a chart could not.** `€ 0` in a narrow column is easy to skim
+past, and this one had been skimmed past for weeks. The same value as a line is
+a plunge to the axis in all thirteen panels at once, and it was the first thing
+visible on the first render. Denser encoding is not only prettier — it has less
+room to hide a wrong number in.
+
+The fix is a second window, `CALC_ReportingThrough`: the earlier of months
+elapsed and months with any activity. Only the trailing edge moves, so a
+category that genuinely booked nothing in March still shows its zero, because
+some other category has a March transaction. It takes the already-retrieved
+`VMatrixActual` list as a parameter rather than retrieving again — MDL list
+parameters (`$Rows: list of Ledger.VMatrixActual`) work fine and are the right
+tool on a datasource path.
+
+The totals never moved: € 45,118 income before and after, because adding a zero
+month changes a sum but not by anything.
+
+### 84. `ALTER PAGE … INSERT` has no idempotent form, which a re-appliable source set needs
+
+Every other statement this project writes is `create or modify` or
+`create or replace`, which is what makes `mdlsource/` re-appliable — the stated
+method is to rebuild from scratch rather than patch. `ALTER PAGE` breaks that
+pattern:
+
+```
+$ mxcli exec mdlsource/23-cashflow-sparklines.mdl -p Ledger.mpr
+Replaced microflow: Ledger.DS_SparklineData
+Error: failed to insert: duplicate widget name 'lgSparkRow': a widget with this name already exists on the page
+```
+
+There is no `INSERT … IF NOT EXISTS`, and no `DROP WIDGET … IF EXISTS` to pair
+with it, so the file cannot make itself safe to re-run. Note also that the
+statements before the failure had already been applied — the script is not
+atomic, so a re-run leaves the model half-updated.
+
+In the canonical flow it is survivable: file 11 recreates the page from scratch
+before file 23 inserts into it, so applying the whole set in order works. But
+iterating on one file — the normal way anyone develops — does not, and the
+workaround is a manual `DROP WIDGET` between runs. Either guard would fix it,
+and `DROP WIDGET … IF EXISTS` is the smaller change.
+
+### 85. A module package is not authoritative for the widgets it bundles
+
+Worth knowing before running `marketplace install` on a module.
+
+Restoring the widget packages (finding 82) went 116 errors → 2, both remaining
+ones on Atlas_Core's native phone layouts, using Feedback 3.4.0 where Atlas Core
+4.3.8 ships 3.6.1. Taking the widgets out of the Atlas Core package looked like
+the obvious fix and made things much worse:
+
+```
+$ unzip -o -j AtlasCore-4.3.8.mpk 'widgets/*.mpk' -d widgets/
+$ mx check Ledger.mpr
+The app contains: 78 errors.
+```
+
+Atlas Core bundles its own copies of Image and Combo box — at **1.5.0** and
+**2.6.1**, against the **1.6.0** and **2.9.0** the model was authored against
+and that `widgets-appstore-metadata.json` pins. A module ships whatever versions
+it was built against, which for a widely-depended-on module like Atlas Core is
+often behind the standalone package.
+
+So a module package is a source of *a* version, not *the* version. Take only
+the widgets that are actually missing:
+
+```
+$ unzip -o -j AtlasCore-4.3.8.mpk 'widgets/com.mendix.widget.native.Feedback.mpk' -d widgets/
+$ mxcli marketplace install 118579 --version 1.6.0 -p Ledger.mpr   # Image
+$ mxcli marketplace install 219304 --version 2.9.0 -p Ledger.mpr   # Combo box
+$ mx check Ledger.mpr
+The app contains: 0 errors.
+```
+
+`mxcli marketplace install` is type-aware and got this right on its own for the
+eight standalone widgets — it copies a widget into `widgets/` and, for a module
+already present, refuses and reports rather than overwriting. The trap is only
+in reaching into a module package by hand, which is still necessary for Data
+Grid 2 and Gallery because they have no standalone listing.
+
+### 86. Authoring a pluggable widget for an MDL-driven project works, with two snags
+
+The path is short and none of it needs Studio Pro. A hand-written widget project
+(`package.json`, `src/package.xml`, `src/VegaChart.xml`, one `.tsx`),
+`pluggable-widgets-tools build:web`, and the `.mpk` lands in the project's
+`widgets/` folder by way of `config.projectPath`. Then:
+
+```
+$ mxcli widget extract --mpk widgets/ledger.widget.web.VegaChart.mpk
+  Widget ID:  ledger.widget.web.vegachart.VegaChart
+  MDL name:   VEGACHART
+  Properties: 6
+  Output:     .mxcli/widgets/vegachart.def.json
+```
+
+and the widget is placeable from MDL like any built-in, with every property
+carried through — including a multi-line string property holding a 60-line JSON
+spec, which is what makes a spec-as-data widget authorable this way at all.
+`mx check` is clean and the widget renders.
+
+Two things cost time:
+
+**`mxcli widget extract` needs `--mpk`, and its error does not say so.** Passing
+the file positionally — which is what the command's own shape suggests — prints
+a full usage dump ending in `required flag(s) "mpk" not set`, with the
+positional argument silently ignored.
+
+**Mendix's base tsconfig cannot resolve modern package types.**
+`@mendix/pluggable-widgets-tools` 11.12.1 sets `moduleResolution: "node"`,
+which predates the `exports` field. vega-embed 7 publishes its types only
+through `exports`, so the build fails with `TS2307: Cannot find module
+'vega-embed'` even though Rollup resolves and bundles the package correctly.
+One override in the project's own tsconfig fixes it:
+
+```json
+{ "compilerOptions": { "moduleResolution": "bundler" } }
+```
+
+Worth flagging because the failure names the module, not the resolution mode,
+and the obvious readings — package missing, types missing, wrong version — are
+all wrong. The base config also sets `jsx: "react-jsx"`, so the
+`import { createElement }` that Mendix widget examples still open with is now an
+unused import and `noUnusedLocals` fails the build on it.
+
+### 87. The widget definition cache is gitignored and does not refresh when a package changes
+
+Found while verifying that finding 81's fix had made the source set re-appliable
+again. It had — but the re-apply exposed something else.
+
+Applying all 25 `mdlsource/` files to a copy of the working project produced a
+model that failed `mx check`, where the project itself was clean:
+
+```
+The app contains: 6 errors.
+      1 at Data grid 2 'dgBudgets'
+      1 at Data grid 2 'dgCategories'
+      1 at Data grid 2 'dgMatrix'
+      1 at Data grid 2 'dgNeedsReview'
+      1 at Data grid 2 'dgRules'
+      1 at Data grid 2 'dgTransactions'
+```
+
+Every MDL-authored Data Grid 2, and only those — CE0463 again, from the other
+direction this time. Finding 82 was stale *packages* against a current model.
+This is a current package against a stale *schema*: mxcli writes a widget
+instance from `.mxcli/widgets/<name>.def.json`, extracted from whichever `.mpk`
+was installed when it was first written. Data Grid 2 had since moved 3.4.0 →
+3.11.3, so every grid mxcli wrote described a widget that no longer exists.
+
+Nothing warns. The authoring pass succeeds, `mxcli check` passes, and the model
+is broken in a way only `mx check` reports — which is the same shape as several
+earlier findings and the reason this project treats `mx check` as the authority.
+
+`mxcli widget init` is the refresh, and it detects the drift on its own once
+asked:
+
+```
+$ mxcli widget init -p Ledger.mpr
+  ~ pluggable    DATAGRID             com.mendix.widget.web.datagrid.Datagrid
+Extracted: 0 new, 3 refreshed, 31 up to date, 9 skipped (built-in or unparseable)
+```
+
+Re-applying the four page files afterwards took it back to 0 errors.
+
+**The cache is gitignored** — `Ledger/.gitignore:31` is `.mxcli/` — which is the
+right call, since it is derived from the packages. But that makes it a build
+input that no clone starts with and nothing regenerates automatically, so the
+documented build recipe was incomplete. Verified against a true fresh-clone
+simulation — copy the project, delete `.mxcli/`, then:
+
+```
+$ mxcli widget init -p Ledger.mpr
+$ for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
+all 25 files applied cleanly
+$ mx check Ledger.mpr
+The app contains: 0 errors.
+```
+
+`widget init` now leads the recipe in the README. The general rule is worth
+stating plainly: **after any widget package changes, refresh the definitions
+before authoring anything that uses them.** Upgrading a package silently
+invalidates every stored instance mxcli would write next.
+
+---
+
+## Phase 12 — six charts on a grammar (2026-08-13)
+
+An Insights page: stream graph, scatter, calendar heatmap, standing costs,
+year-over-year, and a miscategorisation view. Six charts, five datasets, four
+queries. What they cost was mostly not what was expected.
+
+### 88. OQL will not aggregate one `datepart` of a column while grouping by another
+
+A merchant that bills in most months is a subscription, so "how many distinct
+months did this merchant appear in" is the whole recurrence signal. The natural
+query is one row per merchant-year carrying that count:
+
+```sql
+select t.Merchant, datepart(YEAR, t.TxDate) as Yr,
+       count(distinct datepart(MONTH, t.TxDate)) as MonthsActive
+from Ledger.Transaction as t
+group by t.Merchant, datepart(YEAR, t.TxDate)
+```
+
+```
+[error] [CE0174] "Error(s) in OQL query: Column 't.TxDate' cannot both be
+        aggregated and appear in the GROUP BY clause." at Entity 'Ledger.VMerchantYear'
+```
+
+`datepart(YEAR, t.TxDate)` in the GROUP BY makes `t.TxDate` a grouped column, and
+`datepart(MONTH, t.TxDate)` inside an aggregate makes it an aggregated one — even
+though the two expressions are disjoint by construction. A month and a year of
+the same timestamp are as independent as any two columns; the check appears to
+work on the underlying column rather than on the expression over it.
+
+The workaround costs nothing here: group one level finer, one row per
+merchant-month, and count rows in the caller. But the caller then has to group
+in MDL, which has no map — so it reads the view sorted by merchant and
+accumulates in a single pass, flushing when the key changes and once more at the
+end. That trailing flush is the part that is easy to forget and silently drops
+the last merchant.
+
+Worth knowing before designing a view around a distinct count of a date part.
+
+### 89. A pluggable widget's stylesheet only reaches the bundle if the component imports it — and `"width": "container"` fails silently without it
+
+The Vega widget shipped with `src/ui/VegaChart.css`, containing exactly the rule
+that matters:
+
+```css
+.vega-chart { width: 100%; }
+```
+
+Nothing imported it. Mendix's build does not pick up `src/ui/*.css` on its own —
+it has to be `import "./ui/VegaChart.css"` in the component — so the rule never
+reached the bundle and the host div collapsed.
+
+**The failure is invisible in every way that usually helps.** The widget
+rendered. `mx check` was clean, the console was silent, no error boundary
+tripped, the SVG existed in the DOM with the right height, and the marks were
+all there — 67 on one chart, 850 on another. They were simply laid out inside
+zero width:
+
+```
+{"i": 0, "hostW": 0, "kind": "svg", "w": 0, "hgt": 280, "marks": 67}
+{"i": 2, "hostW": 1005, "kind": "svg", "w": 1005, "hgt": 241, "marks": 475}
+```
+
+Index 2 is the calendar, the one chart with a fixed `"width": 900` rather than
+`"width": "container"`. A spec that asks for its container's width gets zero when
+the container has no width, and zero is a legal width — so Vega renders a
+correct, complete, invisible chart.
+
+Two things generalise. **A chart that draws nothing is not obviously different
+from a chart with no data**, so the first instinct is to go looking at the
+payload, which was fine all along; measuring the host element found it in one
+step. And **`"width": "container"` makes a spec depend on CSS**, which is a
+coupling worth knowing you have taken on — the fixed-width chart was immune.
+
+### 90. Page-spanning state needs a single owner, and navigation is page-spanning state
+
+Not an mxcli bug — a design lesson this project paid for twice before naming it,
+recorded because the shape recurs.
+
+Navigation was written by four files: `05`, `11`, `16` and `22`, each carrying
+the menu as it stood when that slice was built. Applying the set in order worked,
+because the last writer won. Applying any single file did not: running `11` on
+its own reverted the menu to a four-item version from before Budgets and the
+Dashboard existed, silently and successfully.
+
+```
+$ grep -l 'create or replace navigation' mdlsource/*.mdl
+mdlsource/05-pages-foundation.mdl
+mdlsource/11-cashflow-page.mdl
+mdlsource/16-budgets-page.mdl
+mdlsource/22-dashboard-page.mdl
+```
+
+The trap is a property of the statement: `CREATE OR REPLACE NAVIGATION` replaces
+the *whole profile*, so every file that touches it must know about every page
+that exists — which none of them can, since they run before the later ones. Each
+file was locally correct and the set was globally wrong.
+
+Navigation now lives in `27-navigation.mdl` alone, applying last, after every
+page it names exists. That also made adding an Insights item a one-line change
+rather than a decision about which of four files to edit.
+
+The general rule, which is worth stating because MDL will keep offering
+whole-object replacement statements: **if a statement replaces an object that
+spans the whole app, exactly one file may issue it, and it must be the last one
+that needs to.** The same reasoning applies to `ALTER SETTINGS` and to project
+security.
+
+### 91. Adding a column to a view's GROUP BY silently changed what a row count meant downstream
+
+Making the Insights charts filterable by account meant carrying `AccountName`
+into the three aggregate views and grouping by it. That is a one-line change per
+view, and it looked free.
+
+It was not, because one downstream microflow was counting *rows* as a proxy for
+something else. `BUILD_SavingsData` decides which merchants are recurring:
+
+```
+set $CurMonths = $CurMonths + 1;      -- one row per month, before
+```
+
+VMerchantMonth had been grouped by merchant, category and month, so a row *was*
+a month and counting rows counted months. After the change it is grouped by
+account too, so a merchant billing two cards in March is two rows and one month.
+The count inflates, and it does not merely inflate a label — it is the divisor
+in the annual projection (`total / months * 12`), so every multi-account
+merchant's ranking silently shifts.
+
+The fix is to count the key rather than the rows:
+
+```
+if $R/MonthIndex != $CurLastMonth then
+  set $CurMonths = $CurMonths + 1;
+  set $CurLastMonth = $R/MonthIndex;
+end if;
+```
+
+**Nothing would have caught this.** `mx check` passes either way — the types are
+identical and the query is valid. The chart still renders, still ranks, still
+looks entirely reasonable; only the numbers are wrong, and only for merchants
+that use more than one account. It was found by reasoning about the change, not
+by running it.
+
+The general shape is worth naming, because a grouped view invites it: **a row
+count is only a count of the thing you mean while the grain stays the same, and
+the grain is set somewhere else.** Any microflow that counts rows from a view is
+coupled to that view's GROUP BY, invisibly and without a reference the tooling
+can follow. `SHOW REFERENCES OF` finds the entity, not the assumption.
+
+The charts had the opposite problem and it cost nothing: they also became
+finer-grained than the buckets they draw, and a spec absorbs that with one
+keyword — `"aggregate": "sum"` on the encoding. Summing in the spec is free.
+Summing in MDL would need a map it does not have. The same change was a bug on
+one side of the split and a no-op on the other, which is a fair summary of why
+the split is there.
+
+### 92. A clicked mark's datum is not the row you sent it
+
+Wiring a click from a Vega chart back into Mendix works — the widget writes the
+clicked datum as JSON, a microflow reads a field out of it, and a detail panel
+is built from the model. What took the time was that the datum arriving at the
+handler is not the row the model emitted, in two independent ways.
+
+The payload for a calendar day goes out as:
+
+```json
+{"d":"2026-08-10","v":2409.16,"n":3}
+```
+
+and the datum for the rect that renders it comes back as:
+
+```
+week_d=Sun Dec 25 2011 00:00:00 GMT
+day_d=Wed Jan 04 2012 00:00:00 GMT
+d=1735689600000
+year_d=Wed Jan 01 2025 00:00:00 GMT
+sum_v=119.83000000000001
+sum_n=2
+```
+
+**A temporal field is epoch milliseconds.** `d` was sent as `"2026-08-10"` and
+returns as `1735689600000`. Vega parses fields it is told are temporal, and the
+parsed value is a number — not a `Date`, so a widget converting `Date` instances
+back to ISO (which this one does) never sees it. Reading it as a date in MDL
+would mean carrying a Long through `addMilliseconds`, for a value that was a
+clean string before the chart touched it.
+
+**An aggregated mark carries only its groupby.** `v` and `n` are gone, replaced
+by `sum_v` and `sum_n`; the timeUnit-derived `week_d`, `day_d` and `year_d` are
+present because they are what the encoding groups by. Any field the spec does
+not reference is dropped before the mark exists. The two effects compound: the
+one field that survived was the one that had been mangled.
+
+The fix is to make the click contract explicit rather than inferring it from the
+chart's own encoding — carry the key twice:
+
+```
++ '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'      -- what the chart draws
++ ',"day":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'    -- what the click reads
+```
+
+and pull the second into the groupby so the aggregate cannot discard it:
+
+```json
+"detail": {"field": "day", "type": "nominal"}
+```
+
+One calendar cell is one date, so grouping by it adds no marks — it only stops
+the field being dropped. The handler then reads `day`, a plain string that no
+encoding parses, and the round trip is exact: clicking 10 August 2026 returns
+three transactions totalling € 2,409.16, which is what Postgres reports for that
+day.
+
+**The general lesson is that a chart's datum is an output of the rendering
+pipeline, not an echo of the input.** Anything a click needs to send back should
+be carried as its own field, in a type the spec has no reason to transform, and
+referenced by the spec so it survives aggregation. Relying on a field the chart
+happens to encode couples the click handler to the visual design — change the
+encoding and the click breaks, silently, with `mx check` clean and the chart
+still rendering perfectly.
+
+### 93. `mxcli test --local` rebuilds the deployment folder underneath a running app, leaving a white screen
+
+Symptom: the app serves HTTP 200, `mx check` is clean, the runtime log is quiet,
+and the browser shows nothing at all. No error, no partial render — a blank
+page.
+
+The one useful signal is in the network panel:
+
+```
+dist/index.js?639222440940684304 :: net::ERR_ABORTED   (404)
+```
+
+`index.html` is served, the client bundle is not. And the reason is that
+`deployment/web/dist/` no longer exists:
+
+```
+$ ls Ledger/deployment/web/dist/
+ls: cannot access 'Ledger/deployment/web/dist/': No such file or directory
+```
+
+**What removed it was the test runner.** The app had been started at 18:49 and
+had bundled its web client successfully (`Web client bundled in 1m1.026s`).
+`mxcli test --local` was then run against the same project, and it rebuilds the
+deployment directory for its own purposes:
+
+```
+$ ls -la --time-style=+%H:%M:%S Ledger/deployment/
+drwxr-xr-x 13 root root 4096 18:55:02 .
+$ ls -la --time-style=+%H:%M:%S Ledger/.mxcli/
+-rw-r--r--  1 root root 98015 18:55:21 test-runtime.log
+```
+
+A test run has no use for a web client, so its build does not produce one — and
+because it writes into the *same* `deployment/` the running app is serving from,
+the live bundle is deleted rather than duplicated. The running runtime keeps
+serving `index.html` from the same directory, so nothing appears to be wrong
+from the server's side. The failure is entirely in the browser and entirely
+silent.
+
+**The fix is a restart**, which rebuilds the client. Nothing is lost and the
+model is untouched — this is not corruption, only a missing artefact.
+
+**The rule is: do not run `mxcli test --local` while `mxcli run` is live.** That
+is the same shape as the rule this project already had about `mx check` during a
+`--watch` loop, and for the same underlying reason — two tools sharing one
+build directory, one of them assuming it owns it. Worth mxcli either using a
+scratch deployment directory for test runs, or refusing to start when it can see
+a runtime already serving from that folder.
+
+This had been hit once before and written off as "a running app process had lost
+its deployment"; the mechanism is above, and the trigger was the tests.
+
+### 94. Vega-Lite sizes facet rows to their content, so a table built from side-by-side faceted panels drifts out of alignment
+
+Not an mxcli finding — a Vega-Lite one — but it cost a deploy cycle and the
+diagnosis is worth writing down, because the symptom points at the wrong thing.
+
+The dashboard is a Tufte-style table: one row per category, four columns
+(sparkline, year-on-year delta, this year's total, recurring share). Vega-Lite
+cannot put a concatenation inside a facet, so the only way to build it is the
+other way round — an `hconcat` of four separately faceted panels, each faceted
+on the same field, with the same sort and the same declared row height:
+
+```json
+"spec": {"width": 300, "height": 26}
+...
+"config": {"facet": {"spacing": 3}}
+```
+
+Same height, same spacing, same sort, same fourteen categories. The rows still
+did not line up. At the top of the table the label sat 13px below its number;
+by the bottom row the drift was a full row, so "Needs review" was reading
+against Subscriptions' total.
+
+Measuring the rendered scenegraph rather than the screenshot showed why:
+
+```
+concat_1_concat_0_cell: rows=14 first=164 last=569 gaps=29,31,32
+concat_1_concat_1_cell: rows=14 first=164 last=567 gaps=31
+concat_1_concat_2_cell: rows=14 first=164 last=541 gaps=29
+```
+
+Three panels, three different row pitches — and the sparkline panel's pitch is
+not even constant, varying row by row between 29 and 32.
+
+**Facet layout defaults to `bounds: "full"`, which sizes each row to its
+content's bounds rather than to the declared height.** Any mark that overflows
+the 26px cell pushes its own row taller: the outlier dots (`point`, `size: 22`)
+straddle the sparkline, so a row whose outlier sits near the top or bottom of
+its band grows — which is exactly why that panel's pitch varies with the data.
+The `vs last year` panel has a `rule` drawn to the row edge and grows by a
+constant 2px. The `this year` panel is plain text, overflows nothing, and is the
+only one at the declared 29px pitch. Nothing is wrong with any single panel; the
+table is wrong because the panels disagree.
+
+The fix is one property per panel:
+
+```json
+"bounds": "flush"
+```
+
+which lays rows out on their declared size and lets marks overflow visually.
+All four panels then measure identically:
+
+```
+concat_1_concat_0_cell: rows=14 first=164 last=541 gaps=29
+concat_1_concat_1_cell: rows=14 first=164 last=541 gaps=29
+concat_1_concat_2_cell: rows=14 first=164 last=541 gaps=29
+```
+
+**The general rule: whenever alignment across concatenated faceted panels
+carries meaning — which is the whole point of a small-multiples table — set
+`bounds: "flush"` on every panel.** Equal `height` is not sufficient, because
+`height` is an input to the layout, not a guarantee about it.
+
+`flush` has a cost, and it is worth knowing before choosing it: the layout stops
+measuring content, including the row header. The category labels are drawn to
+the left of the panel origin, the view is only as wide as the layout says, and
+so the longest label was cut off by the SVG viewport — a *clip*, not a
+truncation, so there was no ellipsis to give it away and `labelLimit` had nothing
+to do with it. The fix is to reserve the space the layout no longer computes,
+with `padding.left`.
+
+### Two more ways the same table came apart
+
+Both were introduced while fixing something real, and both are the same shape:
+a change that is locally correct and breaks an invariant three panels away.
+
+**A transform that aggregates away the sort field silently reorders one panel.**
+The model emits a row per category per month per *account*, so a category held
+on two accounts arrives as two values at the same x — and a line mark does not
+aggregate, it joins them in order. Every multi-account category drew a sawtooth.
+The fix is a `sum` aggregate inside the facet spec, grouped by category and
+month. What that also did was drop `ord`, the field the *facet row sort* is
+computed on. Nothing errored. The row domain is built from the data as the spec
+leaves it, so panel 0 fell back to alphabetical while the other three panels
+stayed on the sort — four columns, each labelled correctly, describing four
+different categories per row. Keeping `ord` in the `groupby` is the whole fix.
+
+**Filtering a panel changes its row domain; filtering its layers does not.**
+The recurring-cost column shares one x scale across rows, so Salary at 43,661
+compressed every spend bar to a sliver — and a salary has no standing cost to
+cancel, so it should not be in that scale at all. Filtering income out at the
+*panel* level would have removed Salary and Freelance from that facet's row
+domain: twelve rows against the other panels' fourteen, and the table is
+misaligned again. Filtering inside the two layers leaves the rows in place and
+empty, which is the honest reading, and hands the scale back to Rent.
+
+The invariant worth stating: **every panel in the table must produce the same
+facet domain, in the same order.** A check for it is four lines against the
+compiled view, and it catches both of the above before a deploy:
+
+```js
+for (let i = 0; i < 4; i++) console.log(view.data(`concat_1_concat_${i}_row_domain`))
+```
+
+### Method
+
+Three notes, all of which paid for themselves several times over:
+
+- **Do not measure a screenshot.** The first diagnosis was made from pixel
+  positions in a captured PNG, which was scaled relative to the viewport and
+  gave non-integer pitches that fitted no hypothesis. Reading `y` straight off
+  the Vega scenegraph gave exact numbers immediately.
+- **Compile and render the spec in node, not in the app.**
+  `widgets-src/vegachart/x.mjs` extracts the spec from the MDL page file;
+  `m.mjs` runs it headless against synthetic rows shaped like the real dataset
+  and prints the row pitch of every panel; `o.mjs` prints each panel's row
+  domain; `h.mjs` locates the header label against its row; `v.mjs` sweeps
+  candidate fixes over all of it. Testing five variants took three seconds;
+  testing one variant through the app takes three minutes.
+- **Shape the synthetic data like the real data, including its awkward parts.**
+  `o.mjs` emits two accounts for one category precisely because that is the case
+  that broke the sparklines. Synthetic data that is uniformly well-behaved
+  reproduces nothing.
+
+### 95. A theme workaround outlived the problem it worked around, and Atlas turned it into a broken collapse
+
+Reported symptom: the left menu does not collapse to a thin icon rail — the
+panel stays wide, collapsing hides *some* of the labels, expanding shows all of
+them again.
+
+Three separate causes, and the interesting one is that the first was a
+deliberate choice that had simply gone stale.
+
+**1. The closed width was pinned to the open width.** `custom-variables.scss`
+carried this, with its reasoning attached:
+
+```scss
+/* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+   closed width equal to the open one is what keeps it from collapsing to a
+   48px strip of clipped labels. */
+--navsidebar-width-closed: 224px;
+--navsidebar-width-open: 224px;
+```
+
+That was correct when it was written: the menu had no icons, so a 48px rail
+would have shown nothing but the first two letters of each caption. Icons were
+added later (finding 81), which made the workaround unnecessary — and worse than
+unnecessary, because Atlas hangs behaviour off that token:
+
+```scss
+& > a {
+    .glyphicon, .mx-icon-lined, .mx-icon-filled {
+        flex-basis: var(--closed-sidebar-width);
+    }
+}
+```
+
+With the closed width at 224px, every glyph claimed the entire row while closed
+and pushed its caption out of a sidebar that clips its overflow. **The labels
+were never hidden; they were shoved sideways.** That is the whole of "collapsing
+hides the labels but the panel stays wide".
+
+Measured from the running app, before and after `--navsidebar-width-closed: 52px`:
+
+```
+before   sidebarW 224   iconW 224   (caption pushed past the clip)
+after    sidebarW  52   iconW  52   (caption clipped, icon on its slot)
+```
+
+**2. One menu item used an icon from a collection Atlas' navigation rules do not
+match.** `Transactions` carried `Atlas_Core.Atlas_Styling."aligncontent-horizontal-space-between"`.
+That collection is real and the icon renders, but it has a different CSS prefix:
+
+```
+| Icon Collection          | Prefix              | Icons |
+| Atlas_Core.Atlas_Styling | Atlas_Core_Controls |    38 |
+| Atlas_Core.Atlas_Filled  | mx-icon             |   366 |
+| Atlas_Core.Atlas         | mx-icon             |   366 |
+```
+
+Atlas' navigation styling matches `.glyphicon, .mx-icon-lined, .mx-icon-filled`,
+so an `Atlas_Core_Controls-*` glyph is skipped by every one of those rules —
+including the `flex-basis` rule above. That is why exactly one caption stayed
+visible while the other six were pushed away, and why the symptom read as "some
+labels" rather than "the labels". Re-pointed at `Atlas_Core.Atlas."cash-payment-bill"`.
+
+**The general rule: an icon collection's prefix is part of its contract.**
+`mxcli` validates that the icon *exists* — which it does — but nothing checks
+that the collection is the one the surrounding component styles for. Two
+collections named in the same completion list are not interchangeable.
+
+**3. The project's own sidebar CSS was written for 224px only.** With the rail
+working, the wordmark `::before` ('Ledger', 19px serif) and the kicker
+('Household finances', letter-spaced uppercase mono) were clipped mid-word, and
+20px of padding on the tree plus 20 on the anchor left 12px for a 52px icon slot,
+so the icons overflowed the rail instead of sitting in it. Atlas expresses the
+state on the scroll container rather than on the sidebar, so the collapsed rules
+hang off the selector Atlas uses itself:
+
+```scss
+.mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open) > .region-sidebar { … }
+```
+
+At 52px the wordmark becomes `L`, the kicker becomes the rule that was under it,
+and the paddings go to zero.
+
+One trap inside that: `justify-content: center` on the row seems obviously right
+and is wrong. The caption is still in the row — only ever clipped, never removed
+— so the row's content is ~130px wide inside a 52px box, and centring that
+overflow pushes the icon off the left edge and leaves the first few letters of
+the caption sitting where the icon should be. Left-aligned, the icon lands on
+its 52px and the caption falls off the right, where the sidebar clips it.
+
+One thing this did **not** fix: at 224px open, the longest caption still clips —
+'Categories & rules' reads as 'Categories &'. The row wants 205px of content in a
+160px box, and narrowing Atlas' 52px glyph slot to 30px leaves it 23px short, so
+that is a caption too long for the sidebar rather than a slot too wide. Both
+honest fixes (a shorter caption, a wider sidebar) change a decision the prototype
+made, so neither was taken unilaterally. The measurement is also from a container
+where IBM Plex cannot be fetched, so the real shortfall is smaller than 45px and
+may be zero.
+
+The lesson worth keeping is the first one. **A workaround should carry the
+condition that justifies it, not just the reasoning that motivated it** — the
+comment here explained itself perfectly and still went silently wrong, because
+the thing it was compensating for ("this app has no glyphs", stated in a second
+comment in a second file) stopped being true.

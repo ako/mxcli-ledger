@@ -24,19 +24,19 @@ Auto-generated. See individual files for property details, child slots, and obje
 | `PLUGGABLEWIDGET` | SPRINTRFEEDBACK | `SprintrFeedbackWidget.SprintrFeedback` | Feedback | 13 |
 | `PLUGGABLEWIDGET` | STARRATING | `com.mendix.widget.custom.starrating.StarRating` | Rating | 6 |
 | `PLUGGABLEWIDGET` | SWITCH | `com.mendix.widget.custom.switch.Switch` | Switch | 2 |
-| `PLUGGABLEWIDGET` | FEEDBACK | `com.mendix.widget.native.feedback.Feedback` | Feedback | 0 |
+| `PLUGGABLEWIDGET` | FEEDBACK | `com.mendix.widget.native.feedback.Feedback` | Feedback | 14 |
 | `PLUGGABLEWIDGET` | ACCESSIBILITYHELPER | `com.mendix.widget.web.accessibilityhelper.AccessibilityHelper` | Accessibility helper | 3 |
 | `PLUGGABLEWIDGET` | ACCORDION | `com.mendix.widget.web.accordion.Accordion` | Accordion | 10 |
 | `PLUGGABLEWIDGET` | BARCODESCANNER | `com.mendix.widget.web.barcodescanner.BarcodeScanner` | Barcode Scanner | 10 |
 | `PLUGGABLEWIDGET` | COMBOBOX | `com.mendix.widget.web.combobox.Combobox` | Combo box | 52 |
-| `PLUGGABLEWIDGET` | DATAGRID | `com.mendix.widget.web.datagrid.Datagrid` | Data grid 2 | 40 |
+| `PLUGGABLEWIDGET` | DATAGRID | `com.mendix.widget.web.datagrid.Datagrid` | Data grid 2 | 56 |
 | `PLUGGABLEWIDGET` | DATAGRIDDATEFILTER | `com.mendix.widget.web.datagriddatefilter.DatagridDateFilter` | Date filter | 16 |
 | `PLUGGABLEWIDGET` | DATAGRIDDROPDOWNFILTER | `com.mendix.widget.web.datagriddropdownfilter.DatagridDropdownFilter` | Drop-down filter | 25 |
 | `PLUGGABLEWIDGET` | DATAGRIDNUMBERFILTER | `com.mendix.widget.web.datagridnumberfilter.DatagridNumberFilter` | Number filter | 12 |
 | `PLUGGABLEWIDGET` | DATAGRIDTEXTFILTER | `com.mendix.widget.web.datagridtextfilter.DatagridTextFilter` | Text filter | 12 |
 | `PLUGGABLEWIDGET` | DROPDOWNSORT | `com.mendix.widget.web.dropdownsort.DropdownSort` | Drop-down sort | 5 |
 | `PLUGGABLEWIDGET` | FIELDSET | `com.mendix.widget.web.fieldset.Fieldset` | Fieldset | 2 |
-| `PLUGGABLEWIDGET` | GALLERY | `com.mendix.widget.web.gallery.Gallery` | Gallery | 33 |
+| `PLUGGABLEWIDGET` | GALLERY | `com.mendix.widget.web.gallery.Gallery` | Gallery | 45 |
 | `PLUGGABLEWIDGET` | HTMLELEMENT | `com.mendix.widget.web.htmlelement.HTMLElement` | HTML Element | 12 |
 | `PLUGGABLEWIDGET` | IMAGE | `com.mendix.widget.web.image.Image` | Image | 21 |
 | `PLUGGABLEWIDGET` | LANGUAGESELECTOR | `com.mendix.widget.web.languageselector.LanguageSelector` | Language selector | 6 |
@@ -44,8 +44,9 @@ Auto-generated. See individual files for property details, child slots, and obje
 | `PLUGGABLEWIDGET` | SELECTIONHELPER | `com.mendix.widget.web.selectionhelper.SelectionHelper` | Selection helper | 5 |
 | `PLUGGABLEWIDGET` | TIMELINE | `com.mendix.widget.web.timeline.Timeline` | Timeline | 18 |
 | `PLUGGABLEWIDGET` | TOOLTIP | `com.mendix.widget.web.tooltip.Tooltip` | Tooltip | 7 |
-| `PLUGGABLEWIDGET` | TREENODE | `com.mendix.widget.web.treenode.TreeNode` | Tree node | 14 |
+| `PLUGGABLEWIDGET` | TREENODE | `com.mendix.widget.web.treenode.TreeNode` | Tree node | 16 |
 | `PLUGGABLEWIDGET` | VIDEOPLAYER | `com.mendix.widget.web.videoplayer.VideoPlayer` | Video Player | 15 |
+| `PLUGGABLEWIDGET` | VEGACHART | `ledger.widget.web.vegachart.VegaChart` | Vega Chart | 8 |
 
 **Usage in MDL:**
 ```sql

@@ -11,7 +11,6 @@ bin/
 
 # Mendix build output
 *.mda
-*.mpk
 deployment/
 javasource/**/*.class
 
@@ -48,3 +47,9 @@ Ledger/deployment/
 # themesource/, and not what the runtime serves. Tracking it meant a dirty
 # tree after every run.
 Ledger/theme-cache/
+
+# Widget source: the build tree, not the source. dist/ is rebuilt by
+# `npm run build`, which also copies the .mpk into Ledger/widgets/ — and that
+# .mpk *is* committed, because nobody can fetch a project's own widget from the
+# Marketplace (see FINDINGS 82).
+widgets-src/*/dist/
