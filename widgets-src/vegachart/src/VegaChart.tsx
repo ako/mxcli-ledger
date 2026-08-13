@@ -3,6 +3,12 @@ import embed, { Result as EmbedResult, VisualizationSpec } from "vega-embed";
 
 import { VegaChartContainerProps } from "../typings/VegaChartProps";
 
+// Not decoration: a spec using `"width": "container"` measures this element, and
+// without the width rule below it measures zero and the chart draws nothing —
+// silently, since an empty chart is not an error. The stylesheet only reaches
+// the bundle if it is imported here.
+import "./ui/VegaChart.css";
+
 /**
  * Parse a JSON string, returning the message rather than throwing.
  *

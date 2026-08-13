@@ -3094,3 +3094,113 @@ The app contains: 0 errors.
 stating plainly: **after any widget package changes, refresh the definitions
 before authoring anything that uses them.** Upgrading a package silently
 invalidates every stored instance mxcli would write next.
+
+---
+
+## Phase 12 — six charts on a grammar (2026-08-13)
+
+An Insights page: stream graph, scatter, calendar heatmap, standing costs,
+year-over-year, and a miscategorisation view. Six charts, five datasets, four
+queries. What they cost was mostly not what was expected.
+
+### 88. OQL will not aggregate one `datepart` of a column while grouping by another
+
+A merchant that bills in most months is a subscription, so "how many distinct
+months did this merchant appear in" is the whole recurrence signal. The natural
+query is one row per merchant-year carrying that count:
+
+```sql
+select t.Merchant, datepart(YEAR, t.TxDate) as Yr,
+       count(distinct datepart(MONTH, t.TxDate)) as MonthsActive
+from Ledger.Transaction as t
+group by t.Merchant, datepart(YEAR, t.TxDate)
+```
+
+```
+[error] [CE0174] "Error(s) in OQL query: Column 't.TxDate' cannot both be
+        aggregated and appear in the GROUP BY clause." at Entity 'Ledger.VMerchantYear'
+```
+
+`datepart(YEAR, t.TxDate)` in the GROUP BY makes `t.TxDate` a grouped column, and
+`datepart(MONTH, t.TxDate)` inside an aggregate makes it an aggregated one — even
+though the two expressions are disjoint by construction. A month and a year of
+the same timestamp are as independent as any two columns; the check appears to
+work on the underlying column rather than on the expression over it.
+
+The workaround costs nothing here: group one level finer, one row per
+merchant-month, and count rows in the caller. But the caller then has to group
+in MDL, which has no map — so it reads the view sorted by merchant and
+accumulates in a single pass, flushing when the key changes and once more at the
+end. That trailing flush is the part that is easy to forget and silently drops
+the last merchant.
+
+Worth knowing before designing a view around a distinct count of a date part.
+
+### 89. A pluggable widget's stylesheet only reaches the bundle if the component imports it — and `"width": "container"` fails silently without it
+
+The Vega widget shipped with `src/ui/VegaChart.css`, containing exactly the rule
+that matters:
+
+```css
+.vega-chart { width: 100%; }
+```
+
+Nothing imported it. Mendix's build does not pick up `src/ui/*.css` on its own —
+it has to be `import "./ui/VegaChart.css"` in the component — so the rule never
+reached the bundle and the host div collapsed.
+
+**The failure is invisible in every way that usually helps.** The widget
+rendered. `mx check` was clean, the console was silent, no error boundary
+tripped, the SVG existed in the DOM with the right height, and the marks were
+all there — 67 on one chart, 850 on another. They were simply laid out inside
+zero width:
+
+```
+{"i": 0, "hostW": 0, "kind": "svg", "w": 0, "hgt": 280, "marks": 67}
+{"i": 2, "hostW": 1005, "kind": "svg", "w": 1005, "hgt": 241, "marks": 475}
+```
+
+Index 2 is the calendar, the one chart with a fixed `"width": 900` rather than
+`"width": "container"`. A spec that asks for its container's width gets zero when
+the container has no width, and zero is a legal width — so Vega renders a
+correct, complete, invisible chart.
+
+Two things generalise. **A chart that draws nothing is not obviously different
+from a chart with no data**, so the first instinct is to go looking at the
+payload, which was fine all along; measuring the host element found it in one
+step. And **`"width": "container"` makes a spec depend on CSS**, which is a
+coupling worth knowing you have taken on — the fixed-width chart was immune.
+
+### 90. Page-spanning state needs a single owner, and navigation is page-spanning state
+
+Not an mxcli bug — a design lesson this project paid for twice before naming it,
+recorded because the shape recurs.
+
+Navigation was written by four files: `05`, `11`, `16` and `22`, each carrying
+the menu as it stood when that slice was built. Applying the set in order worked,
+because the last writer won. Applying any single file did not: running `11` on
+its own reverted the menu to a four-item version from before Budgets and the
+Dashboard existed, silently and successfully.
+
+```
+$ grep -l 'create or replace navigation' mdlsource/*.mdl
+mdlsource/05-pages-foundation.mdl
+mdlsource/11-cashflow-page.mdl
+mdlsource/16-budgets-page.mdl
+mdlsource/22-dashboard-page.mdl
+```
+
+The trap is a property of the statement: `CREATE OR REPLACE NAVIGATION` replaces
+the *whole profile*, so every file that touches it must know about every page
+that exists — which none of them can, since they run before the later ones. Each
+file was locally correct and the set was globally wrong.
+
+Navigation now lives in `27-navigation.mdl` alone, applying last, after every
+page it names exists. That also made adding an Insights item a one-line change
+rather than a decision about which of four files to edit.
+
+The general rule, which is worth stating because MDL will keep offering
+whole-object replacement statements: **if a statement replaces an object that
+spans the whole app, exactly one file may issue it, and it must be the last one
+that needs to.** The same reasoning applies to `ALTER SETTINGS` and to project
+security.

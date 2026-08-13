@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 87 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 90 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -26,18 +26,24 @@ any level of the breakdown lists the transactions behind it.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-The total, **€ 29,566**, is computed here from the merchant view. The Cashflow
-screen arrives at the same number from an entirely different query, and Groceries
-comes to € 4,484 on both. That agreement is the test.
+The total is computed here from the merchant view; the Cashflow screen arrives
+at the same number from an entirely different query. That agreement is the test,
+and it is the agreement rather than the figure that matters — the seed generates
+transactions up to the current date, so every total on these screens moves with
+the calendar (finding 80). At the time of writing the window is January to
+August 2026.
 
 Below it, a sankey answers what the sunburst structurally cannot — where the
 money came from and how much survived. Every ring above is a *share of spend*,
 so income never appears there and the surplus is invisible. The sankey runs
 income categories into one Income node and out again into the expense groups,
 on into their categories, and into what was not spent. It balances by
-construction: **€ 45,118 in · € 29,566 out · € 15,552 kept**, the same three
-figures the Cashflow KPI strip reports, and each group's outgoing links sum
-back to it (Housing 10,227 + 1,459 + 563 = 12,249).
+construction: **income in · spend out · the rest kept**, the same three figures
+the Cashflow KPI strip reports, and each group's outgoing links sum back to it.
+Over January–July 2026 that was € 45,118 in, € 29,566 out, € 15,552 kept, and
+those three still reconcile exactly when the window is pinned to those months —
+which is how the 2025 history added later was shown to be additive rather than
+disruptive.
 
 Plotly's `sankey` trace ships in the Charts.mpk bundle, so it goes through the
 same CustomChart escape hatch as the sunburst. Its links reference nodes by
@@ -82,6 +88,53 @@ reachable through the same widget for what Vega-Lite cannot express.
 Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
 a narrow column had been skimmed past for weeks; thirteen lines diving to the
 axis was visible immediately.
+
+### Insights
+
+Six charts over one datasource, all Vega-Lite through the project's own widget.
+The page reads two years: 2025 in full and 2026 to date.
+
+**Income against spend.** Income stacks above the axis, spend below, and the
+dark line is the net — where it sits above zero, the month paid for itself.
+
+![Stream graph](docs/screenshots/insights-stream.png)
+
+**Every expense, over time**, on a log scale so a € 5 coffee and € 1,500 of rent
+can share an axis. The flat band near the top is rent; the one along the bottom
+is subscriptions.
+
+![Scatter](docs/screenshots/insights-scatter.png)
+
+**Spend by day** — a row per year, a column per week, a cell per day. The empty
+cells are days nothing was spent at all, which a monthly total cannot show you.
+
+![Calendar heatmap](docs/screenshots/insights-calendar.png)
+
+**Standing costs**, ranked by monthly average projected over a year. Merchants
+billing in fewer than four months are excluded: a single large purchase is not a
+saving opportunity however big it was. Savings transfers are excluded too —
+they are booked as expenses everywhere else in this app, correctly, but
+cancelling one saves nothing.
+
+![Standing costs](docs/screenshots/insights-savings.png)
+
+**This year against last**, over the same months of both years so a partial year
+is not compared against a whole one. Colour reads favourability rather than
+direction, which is not the same thing for income as for spend.
+
+![Year over year](docs/screenshots/insights-yoy.png)
+
+**Transactions unlike the rest of their category** — each compared against its
+own category's mean rather than a global one, since € 1,500 is unremarkable for
+Rent and extraordinary for Coffee.
+
+![Outliers](docs/screenshots/insights-outliers.png)
+
+The last two charts read the *same dataset*. The scatter is every expense over
+time; the outlier view is the same points with the ones unlike their neighbours
+called out, and the calling-out is a `joinaggregate` in the spec — not a second
+query, not a second microflow. That is the argument for a grammar over a chart
+library, in one line.
 
 ### Budgets
 
@@ -133,6 +186,8 @@ files apply in dependency order:
 | `17`–`19` | Rules engine |
 | `20`–`22` | Dashboard sunburst and income-to-spend sankey |
 | `23` | Cashflow sparkline grid, through the project's own Vega widget |
+| `24`–`26` | Insights: aggregate views, payloads, six charts |
+| `27` | Navigation — the single owner of the menu, applied last |
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
@@ -222,7 +277,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              87 numbered findings — the main deliverable alongside the app
+FINDINGS.md              90 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

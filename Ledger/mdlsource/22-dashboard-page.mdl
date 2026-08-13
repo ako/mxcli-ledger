@@ -166,39 +166,7 @@ create or replace page Ledger.Dashboard
 }
 /
 
--- ============================================================================
--- Navigation, icons included.
---
--- The icons were added in Studio Pro (commit b1856a7) and used to be destroyed
--- by this block: `create or replace navigation` does not update menu items, it
--- deletes and recreates them, so anything the grammar could not express was
--- gone rather than preserved — silently, reporting success (FINDINGS 81).
--- mxcli now has `ICON`, so the icons are authored here and survive a re-apply.
---
--- Two details worth knowing. Hyphenated Atlas names must be double-quoted, and
--- the reference is a model reference into an icon collection, not a string —
--- an unknown name is rejected rather than written through. Browse them with
--- `DESCRIBE ICON COLLECTION Atlas_Core.Atlas` (366 icons).
---
--- The last two icons are not what Studio Pro had. `ICON` covers
--- Forms$IconCollectionIcon only; Accounts carried a Forms$GlyphIcon (numeric
--- code 9999) and Categories & rules a Forms$ImageIcon (System.Images.Close),
--- and neither is reachable from MDL — DESCRIBE now says so in a comment rather
--- than dropping them in silence. Both were placeholders, so they are authored
--- here as collection icons that mean something instead, which is what makes
--- this file reproducible. To keep the originals, set them in Studio Pro and
--- accept that a re-apply resets them to these.
--- ============================================================================
-create or replace navigation Responsive
-  home page Ledger.Dashboard
-  menu (
-    menu item 'Dashboard' page Ledger.Dashboard icon Atlas_Core.Atlas."align-center";
-    menu item 'Cashflow' page Ledger.Cashflow_Overview icon Atlas_Core.Atlas."align-bottom";
-    menu item 'Budgets' page Ledger.Budgets_Overview icon Atlas_Core.Atlas_Filled."alert-circle";
-    menu item 'Transactions' page Ledger.Transaction_Overview icon Atlas_Core.Atlas_Styling."aligncontent-horizontal-space-between";
-    -- was a glyph icon (code 9999), which MDL cannot express
-    menu item 'Accounts' page Ledger.Account_Overview icon Atlas_Core.Atlas."credit-card";
-    -- was System.Images.Close, an image icon, which MDL cannot express
-    menu item 'Categories & rules' page Ledger.Category_Overview icon Atlas_Core.Atlas."tag-group";
-  );
-/
+-- Navigation is not written here. It used to be written by four files, each
+-- carrying the menu as it stood at that point, so running any one of them on
+-- its own silently reverted the menu to an older shape — a trap this project
+-- fell into twice. It now has a single owner: 27-navigation.mdl.

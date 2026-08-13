@@ -1,0 +1,367 @@
+-- ============================================================================
+-- 25 - Insights: the payloads
+-- ============================================================================
+-- Five datasets, six charts. The scatter and the miscategorisation view read
+-- the same rows — one is "every expense over time, coloured by category" and
+-- the other is "the same points, with the ones unlike their neighbours called
+-- out" — so the difference between them lives in the spec, not here. That is
+-- the split this page is built to demonstrate: the model emits facts, the spec
+-- decides what they mean.
+--
+-- Every builder takes its rows as a list parameter rather than retrieving.
+-- DS_InsightsContext does the retrieving, once, so the page costs one query per
+-- view instead of one per chart (docs/observability.md).
+--
+-- Amounts go through formatDecimal('0.00'): a Decimal stringifies with a long
+-- tail and small values come out in scientific notation (FINDINGS 19), neither
+-- of which is valid JSON.
+-- ============================================================================
+
+/** Everything the Insights page binds to. */
+create or modify non-persistent entity Ledger.InsightsContext (
+  /** Signed monthly totals per category, both years */
+  StreamData: string,
+  /** One row per expense transaction — feeds the scatter and the outlier view */
+  TxData: string,
+  /** Spend per calendar day */
+  CalendarData: string,
+  /** Recurring merchants with a projected annual cost */
+  SavingsData: string,
+  /** Per-category totals for the same window in both years */
+  YoYData: string,
+  /** e.g. 'Jan-Aug 2026 against Jan-Aug 2025' */
+  WindowText: string(160)
+);
+/
+
+/**
+ * Signed monthly totals: income positive, expense negative.
+ *
+ * The sign is applied here rather than in the spec because it is a fact about
+ * the row, not a rendering choice — an expense is money leaving. A stacked area
+ * over mixed signs then puts income above the axis and spend below with no
+ * further instruction.
+ *
+ * @param $Rows VMonthCategory
+ * @returns JSON array
+ */
+create or modify microflow Ledger.BUILD_StreamData (
+  $Rows: list of Ledger.VMonthCategory
+)
+returns string as $Json
+folder 'Insights'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+  declare $Signed decimal = 0;
+  declare $Month string = '';
+
+  loop $R in $Rows
+  begin
+    if $R/GroupTypeName = 'Income' then
+      set $Signed = $R/Total;
+    else
+      set $Signed = 0 - $R/Total;
+    end if;
+
+    @annotation 'An ISO first-of-month so Vega-Lite reads the axis as time rather than as thirteen unrelated labels'
+    if $R/MonthIndex < 10 then
+      set $Month = toString($R/Yr) + '-0' + toString($R/MonthIndex) + '-01';
+    else
+      set $Month = toString($R/Yr) + '-' + toString($R/MonthIndex) + '-01';
+    end if;
+
+    set $Json = $Json + $Sep
+      + '{"t":"' + $Month + '"'
+      + ',"cat":"' + $R/CategoryName + '"'
+      + ',"grp":"' + $R/GroupName + '"'
+      + ',"kind":"' + $R/GroupTypeName + '"'
+      + ',"color":"' + $R/ColorHex + '"'
+      + ',"v":' + formatDecimal($Signed, '0.00') + '}';
+    set $Sep = ',';
+  end loop;
+
+  return '[' + $Json + ']';
+end;
+/
+
+/**
+ * One row per expense transaction.
+ *
+ * Income is excluded: a salary is an order of magnitude above every expense
+ * and would flatten the whole scatter into a band at the bottom. Filtered on
+ * GroupTypeName rather than on the group's display name.
+ *
+ * @param $Rows VTransactionLine
+ * @returns JSON array
+ */
+create or modify microflow Ledger.BUILD_TxData (
+  $Rows: list of Ledger.VTransactionLine
+)
+returns string as $Json
+folder 'Insights'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+
+  loop $R in $Rows
+  begin
+    if $R/GroupTypeName = 'Expense' then
+      set $Json = $Json + $Sep
+        + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+        + ',"cat":"' + $R/CategoryName + '"'
+        + ',"grp":"' + $R/GroupName + '"'
+        + ',"m":"' + $R/Merchant + '"'
+        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+      set $Sep = ',';
+    end if;
+  end loop;
+
+  return '[' + $Json + ']';
+end;
+/
+
+/**
+ * Spend per calendar day.
+ *
+ * @param $Rows VDaySpend
+ * @returns JSON array
+ */
+create or modify microflow Ledger.BUILD_CalendarData (
+  $Rows: list of Ledger.VDaySpend
+)
+returns string as $Json
+folder 'Insights'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+
+  loop $R in $Rows
+  begin
+    set $Json = $Json + $Sep
+      + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+      + ',"v":' + formatDecimal($R/Total, '0.00')
+      + ',"n":' + toString($R/TxCount) + '}';
+    set $Sep = ',';
+  end loop;
+
+  return '[' + $Json + ']';
+end;
+/
+
+/**
+ * Recurring merchants, with what they cost over a year.
+ *
+ * A merchant that bills in most months is a standing cost, and standing costs
+ * are the ones worth attacking — cancelling one saves twelve times. A single
+ * large purchase is not a saving opportunity however big it was, so anything
+ * appearing in fewer than four months is dropped.
+ *
+ * The projection is the monthly average times twelve rather than the raw total,
+ * because the current year is partial: comparing eight months of one merchant
+ * against twelve of another would rank them wrongly.
+ *
+ * Grouped in a single pass over rows sorted by merchant, which is the only
+ * grouping MDL affords — there is no map, and a nested loop over every merchant
+ * would be quadratic. The pass flushes when the key changes and once more at
+ * the end, which is the part that is easy to get wrong.
+ *
+ * @param $Rows VMerchantMonth for one year, sorted by Merchant
+ * @param $Year The year being summarised
+ * @returns JSON array
+ */
+create or modify microflow Ledger.BUILD_SavingsData (
+  $Rows: list of Ledger.VMerchantMonth,
+  $Year: integer
+)
+returns string as $Json
+folder 'Insights'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+  declare $CurMerchant string = '';
+  declare $CurCategory string = '';
+  declare $CurTotal decimal = 0;
+  declare $CurMonths integer = 0;
+  declare $CurTx integer = 0;
+  declare $Projected decimal = 0;
+
+  loop $R in $Rows
+  begin
+    @annotation 'Money moved to your own savings account is booked as an expense everywhere else in this app, and correctly so - it leaves the current account, and the matrix and the sankey both need it to balance. It is wrong *here*: this chart ranks costs by what cancelling them would save, and cancelling a savings transfer saves nothing. It was the second-largest row before this line, at a projected EUR 8,087.'
+    if $R/Yr = $Year and $R/CategoryName != 'Savings transfer' then
+      @annotation 'Key change: flush the merchant just finished before starting the next'
+      if $R/Merchant != $CurMerchant then
+        if $CurMonths >= 4 then
+          set $Projected = round(($CurTotal div $CurMonths) * 12, 2);
+          set $Json = $Json + $Sep
+            + '{"m":"' + $CurMerchant + '"'
+            + ',"cat":"' + $CurCategory + '"'
+            + ',"months":' + toString($CurMonths)
+            + ',"tx":' + toString($CurTx)
+            + ',"spent":' + formatDecimal($CurTotal, '0.00')
+            + ',"year":' + formatDecimal($Projected, '0.00') + '}';
+          set $Sep = ',';
+        end if;
+        set $CurMerchant = $R/Merchant;
+        set $CurCategory = $R/CategoryName;
+        set $CurTotal = 0;
+        set $CurMonths = 0;
+        set $CurTx = 0;
+      end if;
+
+      set $CurTotal = $CurTotal + $R/Total;
+      set $CurMonths = $CurMonths + 1;
+      set $CurTx = $CurTx + $R/TxCount;
+    end if;
+  end loop;
+
+  @annotation 'The last merchant has no successor to trigger its flush'
+  if $CurMonths >= 4 then
+    set $Projected = round(($CurTotal div $CurMonths) * 12, 2);
+    set $Json = $Json + $Sep
+      + '{"m":"' + $CurMerchant + '"'
+      + ',"cat":"' + $CurCategory + '"'
+      + ',"months":' + toString($CurMonths)
+      + ',"tx":' + toString($CurTx)
+      + ',"spent":' + formatDecimal($CurTotal, '0.00')
+      + ',"year":' + formatDecimal($Projected, '0.00') + '}';
+  end if;
+
+  return '[' + $Json + ']';
+end;
+/
+
+/**
+ * Each category's total for the same month window in both years.
+ *
+ * The window matters more than anything else here. The current year is partial,
+ * so comparing it against a complete prior year would report every category as
+ * collapsing — the comparison has to be Jan-to-August against Jan-to-August,
+ * not Jan-to-August against Jan-to-December. $Through is that boundary and
+ * comes from the same reporting window the Cashflow matrix uses.
+ *
+ * @param $Rows VMonthCategory, both years
+ * @param $Through Last month to include, on both years
+ * @param $CurrentYear The year being compared back from
+ * @returns JSON array
+ */
+create or modify microflow Ledger.BUILD_YoYData (
+  $Rows: list of Ledger.VMonthCategory,
+  $Through: integer,
+  $CurrentYear: integer
+)
+returns string as $Json
+folder 'Insights'
+begin
+  declare $Json string = '';
+  declare $Sep string = '';
+  declare $Cat string = '';
+  declare $Kind string = '';
+  declare $Grp string = '';
+  declare $Prior decimal = 0;
+  declare $Current decimal = 0;
+  declare $Seen string = ',';
+
+  @annotation 'One outer pass per distinct category, tracked in a delimited string because MDL has no set. Thirteen categories over roughly three hundred rows, so the quadratic shape is affordable here and would not be at transaction scale.'
+  loop $R in $Rows
+  begin
+    set $Cat = $R/CategoryName;
+    if contains($Seen, ',' + $Cat + ',') = false then
+      set $Seen = $Seen + $Cat + ',';
+      set $Kind = $R/GroupTypeName;
+      set $Grp = $R/GroupName;
+      set $Prior = 0;
+      set $Current = 0;
+
+      loop $S in $Rows
+      begin
+        if $S/CategoryName = $Cat and $S/MonthIndex <= $Through then
+          if $S/Yr = $CurrentYear then
+            set $Current = $Current + $S/Total;
+          else
+            if $S/Yr = $CurrentYear - 1 then
+              set $Prior = $Prior + $S/Total;
+            end if;
+          end if;
+        end if;
+      end loop;
+
+      if $Prior > 0 or $Current > 0 then
+        set $Json = $Json + $Sep
+          + '{"cat":"' + $Cat + '"'
+          + ',"grp":"' + $Grp + '"'
+          + ',"kind":"' + $Kind + '"'
+          + ',"prior":' + formatDecimal($Prior, '0.00')
+          + ',"current":' + formatDecimal($Current, '0.00')
+          + ',"delta":' + formatDecimal($Current - $Prior, '0.00') + '}';
+        set $Sep = ',';
+      end if;
+    end if;
+  end loop;
+
+  return '[' + $Json + ']';
+end;
+/
+
+/**
+ * The Insights page's single datasource.
+ *
+ * Four retrieves feed six charts. Doing it here rather than in each builder is
+ * what keeps the page to four queries instead of six — the same reasoning that
+ * took the Cashflow page from 2,194 SELECTs to 173.
+ *
+ * @returns The page's context object
+ */
+create or modify microflow Ledger.DS_InsightsContext ()
+returns Ledger.InsightsContext as $Context
+folder 'Insights'
+begin
+  declare $Through integer = 0;
+  declare $Year integer = 2026;
+  declare $WindowText string = '';
+
+  retrieve $Months from Ledger.VMonthCategory sort by CategoryName asc, Yr asc, MonthIndex asc;
+  retrieve $Lines from Ledger.VTransactionLine sort by TxDate asc;
+  retrieve $Days from Ledger.VDaySpend sort by TxDate asc;
+  retrieve $Merchants from Ledger.VMerchantMonth sort by Merchant asc, Yr asc, MonthIndex asc;
+  retrieve $Matrix from Ledger.VMatrixActual sort by SortKey asc;
+
+  @annotation 'The same window the matrix and the sparklines use, so the three cannot disagree about which months exist (FINDINGS 83)'
+  $ThroughCalc = call microflow Ledger.CALC_ReportingThrough (Rows = $Matrix);
+  set $Through = $ThroughCalc;
+
+  $Stream = call microflow Ledger.BUILD_StreamData (Rows = $Months);
+  $Tx = call microflow Ledger.BUILD_TxData (Rows = $Lines);
+  $Cal = call microflow Ledger.BUILD_CalendarData (Rows = $Days);
+  $Sav = call microflow Ledger.BUILD_SavingsData (Rows = $Merchants, Year = $Year);
+  $YoY = call microflow Ledger.BUILD_YoYData (Rows = $Months, Through = $Through, CurrentYear = $Year);
+
+  $MonthName = call microflow Ledger.FMT_MonthName (MonthIndex = $Through);
+  set $WindowText = 'January to ' + $MonthName + ' ' + toString($Year)
+    + ' against the same months of ' + toString($Year - 1);
+
+  $Context = create Ledger.InsightsContext (
+    StreamData = $Stream,
+    TxData = $Tx,
+    CalendarData = $Cal,
+    SavingsData = $Sav,
+    YoYData = $YoY,
+    WindowText = $WindowText);
+
+  return $Context;
+end;
+/
+
+grant execute on microflow Ledger.BUILD_StreamData to Ledger.User;
+/
+grant execute on microflow Ledger.BUILD_TxData to Ledger.User;
+/
+grant execute on microflow Ledger.BUILD_CalendarData to Ledger.User;
+/
+grant execute on microflow Ledger.BUILD_SavingsData to Ledger.User;
+/
+grant execute on microflow Ledger.BUILD_YoYData to Ledger.User;
+/
+grant execute on microflow Ledger.DS_InsightsContext to Ledger.User;
+/

@@ -45,6 +45,10 @@
  * always positive, matching how the matrix and KPIs add up) and display
  * SignedAmount (which carries the direction).
  *
+ * GroupTypeName ('Income' or 'Expense') is cast from the enum, the same way
+ * VMatrixActual derives it. It lets a caller separate the two without matching
+ * on a group's display name, which is only correct until someone renames one.
+ *
  * Pass-through string columns must declare their source's exact length:
  * CategoryGroup.Name is string(50), Category.Name and Account.Name are
  * string(100), Transaction.Merchant is string(200).
@@ -52,6 +56,7 @@
 create or modify view entity Ledger.VTransactionLine (
   GroupId: string(200),
   GroupName: string(50),
+  GroupTypeName: string(200),
   CategoryId: string(200),
   CategoryName: string(100),
   Merchant: string(200),
@@ -67,6 +72,7 @@ create or modify view entity Ledger.VTransactionLine (
   select
     cast(g.id as string) as GroupId,
     g.Name as GroupName,
+    cast(g.GroupType as string) as GroupTypeName,
     cast(c.id as string) as CategoryId,
     c.Name as CategoryName,
     t.Merchant as Merchant,

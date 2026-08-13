@@ -1,0 +1,395 @@
+-- ============================================================================
+-- 26 - Insights page
+-- ============================================================================
+-- Six charts over one datasource. Each is a static Vega-Lite spec held on the
+-- widget; the model supplies rows and nothing else.
+--
+-- Two of them read the same dataset. The scatter is "every expense over time,
+-- coloured by category"; the miscategorisation view is the same points with
+-- the ones unlike their neighbours called out, and the calling-out is a
+-- joinaggregate in the spec rather than a second query. That is the argument
+-- for a grammar over a chart library in one line: the second chart cost a
+-- transform, not a pipeline.
+-- ============================================================================
+
+create or replace page Ledger.Insights (
+  Title: 'Insights',
+  Layout: Atlas_Core.Atlas_Default
+) {
+  layoutgrid lgInsights {
+    row rowInsHead {
+      column colInsHead (desktopwidth: 12) {
+        dataview dvIns (datasource: microflow Ledger.DS_InsightsContext) {
+          dynamictext txtInsHeading (content: 'Insights', rendermode: H2)
+          dynamictext txtInsWindow (attribute: WindowText, rendermode: paragraph, class: 'text-muted')
+
+          -- ------------------------------------------------------------------
+          -- 1. Where the money goes, month by month
+          -- ------------------------------------------------------------------
+          container ctnStream (class: 'card ledger-card') {
+            dynamictext lblStream (content: 'Income against spend, by month', rendermode: H6)
+            dynamictext subStream (content: 'Income stacks above the axis, spend below. The dark line is the net — where it sits above zero, the month paid for itself.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartStream (
+              chartData: StreamData,
+              datasetName: 'table',
+              chartHeight: 330,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": "container",
+  "height": 280,
+  "autosize": {"type": "fit", "contains": "padding"},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"},
+    "legend": {"labelFont": "IBM Plex Sans", "labelFontSize": 10, "titleFontSize": 10,
+               "labelColor": "#17181A", "titleColor": "#8A8378", "symbolType": "square"}
+  },
+  "layer": [
+    {
+      "description": "Stacked bands. Detail by category keeps each one its own band while the colour stays at group level - thirteen hues would be a colour puzzle, five is a legend you can hold in your head.",
+      "mark": {"type": "area", "interpolate": "monotone", "opacity": 0.85},
+      "encoding": {
+        "y": {"field": "v", "type": "quantitative", "stack": "zero",
+              "axis": {"title": null, "format": ",.0f", "grid": true}},
+        "color": {
+          "field": "grp", "type": "nominal", "title": "Group",
+          "description": "The four expense groups carry the taxonomy''s own ColorHex. Income does not: the palette gives it #2C6E4A against Housing''s #1B4D4B, which are indistinguishable side by side, and this is the only chart that puts the two in one colour space. It is lightened rather than replaced so it still reads as the same family.",
+          "scale": {"domain": ["Income", "Housing", "Daily living", "Lifestyle", "Financial"],
+                    "range": ["#4E9E74", "#1B4D4B", "#8A5A2B", "#6B4E8A", "#3A4A6B"]}
+        },
+        "detail": {"field": "cat", "type": "nominal"},
+        "tooltip": [
+          {"field": "cat", "type": "nominal", "title": "Category"},
+          {"field": "t", "type": "temporal", "title": "Month", "format": "%b %Y"},
+          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+        ]
+      }
+    },
+    {
+      "description": "Net. Summed in the spec rather than in a second query, because the rows to add are already here.",
+      "transform": [{"aggregate": [{"op": "sum", "field": "v", "as": "net"}], "groupby": ["t"]}],
+      "mark": {"type": "line", "color": "#17181A", "strokeWidth": 1.6, "interpolate": "monotone"},
+      "encoding": {
+        "y": {"field": "net", "type": "quantitative"},
+        "tooltip": [{"field": "net", "type": "quantitative", "title": "Net", "format": ",.2f"}]
+      }
+    },
+    {
+      "description": "Zero. The line the net is read against.",
+      "mark": {"type": "rule", "color": "#8A8378", "strokeWidth": 1},
+      "encoding": {"y": {"datum": 0}}
+    }
+  ],
+  "encoding": {
+    "x": {"field": "t", "type": "temporal", "axis": {"title": null, "format": "%b %y", "tickCount": 12, "grid": false}}
+  }
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 2. Every expense, over time
+          -- ------------------------------------------------------------------
+          container ctnScatter (class: 'card ledger-card') {
+            dynamictext lblScatter (content: 'Every expense, over time', rendermode: H6)
+            dynamictext subScatter (content: 'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Anything sitting well above its own colour is worth a look.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartScatter (
+              chartData: TxData,
+              datasetName: 'table',
+              chartHeight: 380,
+              renderer: 'canvas',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": "container",
+  "height": 330,
+  "autosize": {"type": "fit", "contains": "padding"},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"},
+    "legend": {"labelFont": "IBM Plex Sans", "labelFontSize": 10, "titleFontSize": 10,
+               "labelColor": "#17181A", "titleColor": "#8A8378", "columns": 2, "symbolSize": 40}
+  },
+  "mark": {"type": "circle", "size": 26, "opacity": 0.6},
+  "encoding": {
+    "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
+    "y": {
+      "field": "v", "type": "quantitative",
+      "description": "Log, because expenses span three orders of magnitude and a linear axis would press every small category flat against the floor.",
+      "scale": {"type": "log"},
+      "axis": {"title": "Amount (EUR, log)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}
+    },
+    "color": {"field": "cat", "type": "nominal", "title": "Category", "scale": {"scheme": "tableau20"}},
+    "tooltip": [
+      {"field": "m", "type": "nominal", "title": "Merchant"},
+      {"field": "cat", "type": "nominal", "title": "Category"},
+      {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+      {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+    ]
+  }
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 3. Spend by day
+          -- ------------------------------------------------------------------
+          container ctnCalendar (class: 'card ledger-card') {
+            dynamictext lblCalendar (content: 'Spend by day', rendermode: H6)
+            dynamictext subCalendar (content: 'A row per year, a column per week, a cell per day. Dark cells are heavy days; the empty ones are days nothing was spent at all.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartCalendar (
+              chartData: CalendarData,
+              datasetName: 'table',
+              chartHeight: 300,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 8, "labelColor": "#8A8378",
+             "domainColor": null, "tickColor": null, "grid": false},
+    "header": {"labelFont": "IBM Plex Sans", "labelFontSize": 11, "labelColor": "#17181A", "labelAnchor": "start"},
+    "legend": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "titleFontSize": 10,
+               "labelColor": "#8A8378", "titleColor": "#8A8378", "gradientLength": 120}
+  },
+  "facet": {"row": {"field": "d", "timeUnit": "year", "type": "ordinal", "title": null}},
+  "spec": {
+    "width": 900,
+    "height": 96,
+    "description": "Week-of-year across, day-of-week down. Both are timeUnits off the date itself - deriving ISO week numbers in the model would be a bug farm for no gain.",
+    "mark": {"type": "rect", "cornerRadius": 1, "stroke": "#FFFFFF", "strokeWidth": 1.5},
+    "encoding": {
+      "x": {"field": "d", "timeUnit": "week", "type": "ordinal", "title": null, "axis": {"labelExpr": "\'\'"}},
+      "y": {"field": "d", "timeUnit": "day", "type": "ordinal", "title": null,
+            "axis": {"labelExpr": "datum.label[0]"}},
+      "color": {"field": "v", "type": "quantitative", "title": "EUR",
+                "scale": {"scheme": "oranges", "type": "sqrt"}},
+      "tooltip": [
+        {"field": "d", "type": "temporal", "title": "Day", "format": "%a %e %b %Y"},
+        {"field": "v", "type": "quantitative", "title": "Spent", "format": ",.2f"},
+        {"field": "n", "type": "quantitative", "title": "Transactions"}
+      ]
+    }
+  }
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 4. Standing costs
+          -- ------------------------------------------------------------------
+          container ctnSavings (class: 'card ledger-card') {
+            dynamictext lblSavings (content: 'Standing costs, and what a year of each is worth', rendermode: H6)
+            dynamictext subSavings (content: 'Merchants billing in four months or more, ranked by monthly average projected over a year. These are the ones where cancelling saves twelve times, which is what makes them worth the attention.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartSavings (
+              chartData: SavingsData,
+              datasetName: 'table',
+              chartHeight: 440,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": 840,
+  "height": 380,
+  "description-padding": "Explicit left padding. The theme pulls IBM Plex from a CDN that is not always reachable, so Vega measures the axis labels in the fallback face and lays out for metrics the browser then does not use - the longest category name loses its first letter off the left edge. Reserving the space is cheaper than depending on when a font arrives.",
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"},
+    "legend": {"labelFont": "IBM Plex Sans", "labelFontSize": 10, "titleFontSize": 10,
+               "labelColor": "#17181A", "titleColor": "#8A8378"}
+  },
+  "encoding": {
+    "y": {"field": "m", "type": "nominal", "sort": {"field": "year", "order": "descending"},
+          "axis": {"title": null, "labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A"}}
+  },
+  "layer": [
+    {
+      "mark": {"type": "bar", "height": 11, "cornerRadiusEnd": 1},
+      "encoding": {
+        "x": {"field": "year", "type": "quantitative",
+              "axis": {"title": "Projected annual cost (EUR)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+        "color": {"field": "cat", "type": "nominal", "title": "Category", "scale": {"scheme": "tableau20"}},
+        "tooltip": [
+          {"field": "m", "type": "nominal", "title": "Merchant"},
+          {"field": "cat", "type": "nominal", "title": "Category"},
+          {"field": "months", "type": "quantitative", "title": "Months billed"},
+          {"field": "tx", "type": "quantitative", "title": "Transactions"},
+          {"field": "spent", "type": "quantitative", "title": "Spent so far", "format": ",.2f"},
+          {"field": "year", "type": "quantitative", "title": "Projected year", "format": ",.2f"}
+        ]
+      }
+    },
+    {
+      "description": "The figure on the bar. A bar you have to measure against an axis is a bar you have to work at.",
+      "mark": {"type": "text", "align": "left", "dx": 4, "fontSize": 9, "font": "IBM Plex Mono", "color": "#8A8378"},
+      "encoding": {
+        "x": {"field": "year", "type": "quantitative"},
+        "text": {"field": "year", "type": "quantitative", "format": ",.0f"}
+      }
+    }
+  ]
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 5. This year against last
+          -- ------------------------------------------------------------------
+          container ctnYoY (class: 'card ledger-card') {
+            dynamictext lblYoY (content: 'This year against last', rendermode: H6)
+            dynamictext subYoY (content: 'The same months of both years, so a partial year is not compared against a whole one. Grey is last year, the filled dot is this year, and the colour says whether the move was in your favour — which is not the same direction for income as for spend.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartYoY (
+              chartData: YoYData,
+              datasetName: 'table',
+              chartHeight: 420,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "description-padding": "Explicit left padding. The theme pulls IBM Plex from a CDN that is not always reachable, so Vega measures the axis labels in the fallback face and lays out for metrics the browser then does not use - the longest category name loses its first letter off the left edge. Reserving the space is cheaper than depending on when a font arrives.",
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
+  },
+  "transform": [
+    {
+      "description": "Favourable is direction-dependent: more income is good, more spend is not. Savings transfer is neither - it is booked as an expense because the money leaves the current account, but putting more aside is not a cost that grew, so it is left grey rather than being called a loss.",
+      "calculate": "datum.cat === \'Savings transfer\' ? \'neutral\' : (datum.kind === \'Income\' ? (datum.delta >= 0 ? \'better\' : \'worse\') : (datum.delta <= 0 ? \'better\' : \'worse\'))",
+      "as": "direction"
+    }
+  ],
+  "facet": {
+    "row": {"field": "kind", "type": "nominal", "title": null,
+            "sort": ["Income", "Expense"],
+            "header": {"labelFont": "IBM Plex Sans", "labelFontSize": 11, "labelColor": "#17181A", "labelAnchor": "start"}}
+  },
+  "description": "Faceted by kind with an independent x on each. Salary is two orders of magnitude above Subscriptions, so one shared axis pinned every expense category into the leftmost inch and made the comparison unreadable - which is the failure a small multiple exists to fix.",
+  "resolve": {"scale": {"x": "independent", "y": "independent"}},
+  "spec": {
+    "width": 780,
+    "height": {"step": 22},
+    "encoding": {
+      "y": {"field": "cat", "type": "nominal", "sort": {"field": "current", "order": "descending"},
+            "axis": {"title": null, "labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A"}}
+    },
+    "layer": [
+      {
+        "mark": {"type": "rule", "color": "#D9D2C6", "strokeWidth": 2},
+        "encoding": {
+          "x": {"field": "prior", "type": "quantitative",
+                "axis": {"title": "EUR over the window", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+          "x2": {"field": "current"}
+        }
+      },
+      {
+        "description": "Last year: hollow, so it reads as the reference rather than as a value in its own right.",
+        "mark": {"type": "point", "filled": false, "fill": "#FFFFFF", "color": "#8A8378", "size": 55, "strokeWidth": 1.5},
+        "encoding": {"x": {"field": "prior", "type": "quantitative"}}
+      },
+      {
+        "mark": {"type": "point", "filled": true, "size": 75},
+        "encoding": {
+          "x": {"field": "current", "type": "quantitative"},
+          "color": {"field": "direction", "type": "nominal", "legend": null,
+                    "scale": {"domain": ["better", "worse", "neutral"], "range": ["#2C6E4A", "#A8321E", "#8A8378"]}},
+          "tooltip": [
+            {"field": "cat", "type": "nominal", "title": "Category"},
+            {"field": "prior", "type": "quantitative", "title": "Last year", "format": ",.2f"},
+            {"field": "current", "type": "quantitative", "title": "This year", "format": ",.2f"},
+            {"field": "delta", "type": "quantitative", "title": "Change", "format": "+,.2f"}
+          ]
+        }
+      }
+    ]
+  }
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 6. Transactions unlike their category
+          -- ------------------------------------------------------------------
+          container ctnOutliers (class: 'card ledger-card') {
+            dynamictext lblOutliers (content: 'Transactions unlike the rest of their category', rendermode: H6)
+            dynamictext subOutliers (content: 'Each row is one category, each dot a transaction. The red ones sit more than two and a half standard deviations above their own category mean — not proof of a wrong category, but the shortest list worth checking.', rendermode: paragraph, class: 'text-muted')
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOutliers (
+              chartData: TxData,
+              datasetName: 'table',
+              chartHeight: 440,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": 840,
+  "height": 380,
+  "description-padding": "Explicit left padding. The theme pulls IBM Plex from a CDN that is not always reachable, so Vega measures the axis labels in the fallback face and lays out for metrics the browser then does not use - the longest category name loses its first letter off the left edge. Reserving the space is cheaper than depending on when a font arrives.",
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
+  },
+  "transform": [
+    {
+      "description": "The whole detector, in one transform. Each transaction is compared against its own category rather than against a global average - EUR 1,500 is unremarkable for Rent and extraordinary for Coffee. This is the same dataset the scatter above draws; the difference between the two charts is these four lines.",
+      "joinaggregate": [
+        {"op": "mean", "field": "v", "as": "catMean"},
+        {"op": "stdev", "field": "v", "as": "catSd"}
+      ],
+      "groupby": ["cat"]
+    },
+    {"calculate": "(datum.v - datum.catMean) / max(datum.catSd, 0.01)", "as": "z"}
+  ],
+  "encoding": {
+    "y": {"field": "cat", "type": "nominal", "sort": {"field": "v", "op": "max", "order": "descending"},
+          "axis": {"title": null, "labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A"}},
+    "x": {"field": "v", "type": "quantitative", "scale": {"type": "log"},
+          "axis": {"title": "Amount (EUR, log)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}}
+  },
+  "layer": [
+    {
+      "description": "The category as it normally behaves. Faint, because it is context rather than the finding.",
+      "mark": {"type": "circle", "size": 14, "opacity": 0.22, "color": "#6B6257"}
+    },
+    {
+      "transform": [{"filter": "datum.z > 2.5"}],
+      "mark": {"type": "circle", "size": 55, "opacity": 0.95, "color": "#A8321E"},
+      "encoding": {
+        "tooltip": [
+          {"field": "m", "type": "nominal", "title": "Merchant"},
+          {"field": "cat", "type": "nominal", "title": "Filed under"},
+          {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"},
+          {"field": "catMean", "type": "quantitative", "title": "Category mean", "format": ",.2f"},
+          {"field": "z", "type": "quantitative", "title": "Deviations above", "format": ".1f"}
+        ]
+      }
+    }
+  ]
+}')
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+grant view on page Ledger.Insights to Ledger.User;
+/
