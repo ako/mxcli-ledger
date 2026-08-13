@@ -1,4 +1,6 @@
 .vega-chart {
+    /* A chart wired to onClick should look clickable. */
+
     width: 100%;
 }
 
@@ -21,4 +23,14 @@
     border: 1px solid rgba(168, 50, 30, 0.25);
     border-radius: 2px;
     white-space: pre-wrap;
+}
+
+/* Marks only — the background and axes are not selections, so the cursor
+   should not promise that they are. */
+.vega-chart-clickable .mark-symbol path,
+.vega-chart-clickable .mark-rect path,
+.vega-chart-clickable .mark-arc path,
+.vega-chart-clickable .mark-area path,
+.vega-chart-clickable .mark-rule path {
+    cursor: pointer;
 }

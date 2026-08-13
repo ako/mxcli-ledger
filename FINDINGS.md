@@ -3252,3 +3252,68 @@ keyword — `"aggregate": "sum"` on the encoding. Summing in the spec is free.
 Summing in MDL would need a map it does not have. The same change was a bug on
 one side of the split and a no-op on the other, which is a fair summary of why
 the split is there.
+
+### 92. A clicked mark's datum is not the row you sent it
+
+Wiring a click from a Vega chart back into Mendix works — the widget writes the
+clicked datum as JSON, a microflow reads a field out of it, and a detail panel
+is built from the model. What took the time was that the datum arriving at the
+handler is not the row the model emitted, in two independent ways.
+
+The payload for a calendar day goes out as:
+
+```json
+{"d":"2026-08-10","v":2409.16,"n":3}
+```
+
+and the datum for the rect that renders it comes back as:
+
+```
+week_d=Sun Dec 25 2011 00:00:00 GMT
+day_d=Wed Jan 04 2012 00:00:00 GMT
+d=1735689600000
+year_d=Wed Jan 01 2025 00:00:00 GMT
+sum_v=119.83000000000001
+sum_n=2
+```
+
+**A temporal field is epoch milliseconds.** `d` was sent as `"2026-08-10"` and
+returns as `1735689600000`. Vega parses fields it is told are temporal, and the
+parsed value is a number — not a `Date`, so a widget converting `Date` instances
+back to ISO (which this one does) never sees it. Reading it as a date in MDL
+would mean carrying a Long through `addMilliseconds`, for a value that was a
+clean string before the chart touched it.
+
+**An aggregated mark carries only its groupby.** `v` and `n` are gone, replaced
+by `sum_v` and `sum_n`; the timeUnit-derived `week_d`, `day_d` and `year_d` are
+present because they are what the encoding groups by. Any field the spec does
+not reference is dropped before the mark exists. The two effects compound: the
+one field that survived was the one that had been mangled.
+
+The fix is to make the click contract explicit rather than inferring it from the
+chart's own encoding — carry the key twice:
+
+```
++ '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'      -- what the chart draws
++ ',"day":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'    -- what the click reads
+```
+
+and pull the second into the groupby so the aggregate cannot discard it:
+
+```json
+"detail": {"field": "day", "type": "nominal"}
+```
+
+One calendar cell is one date, so grouping by it adds no marks — it only stops
+the field being dropped. The handler then reads `day`, a plain string that no
+encoding parses, and the round trip is exact: clicking 10 August 2026 returns
+three transactions totalling € 2,409.16, which is what Postgres reports for that
+day.
+
+**The general lesson is that a chart's datum is an output of the rendering
+pipeline, not an echo of the input.** Anything a click needs to send back should
+be carried as its own field, in a type the spec has no reason to transform, and
+referenced by the spec so it survives aggregation. Relying on a field the chart
+happens to encode couples the click handler to the visual design — change the
+encoding and the click breaks, silently, with `mx check` clean and the chart
+still rendering perfectly.

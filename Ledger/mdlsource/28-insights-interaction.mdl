@@ -1,0 +1,185 @@
+-- ============================================================================
+-- 28 - Insights: clicking a chart, and brushing one
+-- ============================================================================
+-- Two different kinds of interaction, and the difference is the point.
+--
+-- **Brushing** is a spec change and nothing else. Dragging a range on the
+-- scatter re-filters the summary beneath it with no round trip, because both
+-- live in one Vega view and the data is already in the browser. It is applied
+-- in file 26, not here — there was no model work to do.
+--
+-- **Clicking** crosses back into Mendix, and that needs all of this file: the
+-- widget writes the clicked datum as JSON, a microflow reads a field out of it,
+-- and a detail list is built from the model. The two mechanisms are not
+-- competing — brushing answers "what does this range look like", clicking
+-- answers "what exactly is behind this mark", and only the second needs rows
+-- the browser does not have.
+--
+-- Why parse JSON with string functions. The widget cannot know which Mendix
+-- attributes a given chart's datum maps to — the same widget renders six
+-- different shapes on this page — so it hands back the datum whole and the
+-- caller takes what it recognises. MDL has no JSON parser and no split, so a
+-- field is located by its key and read to the next delimiter. That is narrow by
+-- design: it handles the flat, scalar objects this widget emits, and nothing
+-- else. Nested objects and escaped quotes are out of scope, and the widget
+-- strips both before sending (cleanDatum in VegaChart.tsx).
+-- ============================================================================
+
+/**
+ * Reads one field out of a flat JSON object.
+ *
+ * Returns '' when the key is absent, so a caller can ask for a field a
+ * particular chart does not carry without branching on which chart it was.
+ *
+ * @param $Json A flat JSON object, as written by the VegaChart widget
+ * @param $Key The field name, without quotes
+ * @returns The value as text, unquoted; '' when absent
+ */
+create or modify microflow Ledger.GET_JsonValue (
+  $Json: string,
+  $Key: string
+)
+returns string as $Value
+folder 'Insights'
+begin
+  declare $Value string = '';
+  declare $Needle string = '';
+  declare $At integer = -1;
+  declare $Start integer = 0;
+  declare $End integer = -1;
+  declare $Rest string = '';
+
+  set $Needle = '"' + $Key + '":';
+  set $At = find($Json, $Needle);
+
+  if $At < 0 then
+    return '';
+  end if;
+
+  set $Start = $At + length($Needle);
+  set $Rest = substring($Json, $Start, length($Json) - $Start);
+
+  @annotation 'A string value ends at its closing quote; a number or boolean ends at the next comma or the closing brace. Taking whichever delimiter comes first would misread a comma inside a quoted value, so the two cases are separated on the leading quote.'
+  if substring($Rest, 0, 1) = '"' then
+    set $Rest = substring($Rest, 1, length($Rest) - 1);
+    set $End = find($Rest, '"');
+  else
+    set $End = find($Rest, ',');
+    if $End < 0 then
+      set $End = find($Rest, '}');
+    end if;
+  end if;
+
+  if $End < 0 then
+    set $Value = $Rest;
+  else
+    set $Value = substring($Rest, 0, $End);
+  end if;
+
+  return trim($Value);
+end;
+/
+
+/**
+ * Handles a click on the calendar: lists what was spent that day.
+ *
+ * The calendar's datum carries the day and the summed amount. Everything else
+ * the panel shows — which merchants, which categories, how the day splits — is
+ * not in the browser at all, and that is precisely the case where a click has
+ * to reach the model rather than being answered by a brush.
+ *
+ * The list is built from VTransactionLine constrained on the day, honouring the
+ * page's category and account filter so the panel cannot disagree with the
+ * chart that was clicked.
+ *
+ * @param $Context The page context, carrying the clicked datum and the filter
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_SelectInsightDay (
+  $Context: Ledger.InsightsContext
+)
+returns boolean as $Done
+folder 'Insights'
+begin
+  declare $Done boolean = true;
+  declare $CatName string = '';
+  declare $AccName string = '';
+  declare $Lines string = '';
+  declare $Sep string = '';
+  declare $Total decimal = 0;
+  declare $Count integer = 0;
+
+  @annotation 'The call declares its own output variable — declaring it as well is CE0111'
+  $DayText = call microflow Ledger.GET_JsonValue (Json = $Context/SelectedPoint, Key = 'day');
+
+  if $DayText = '' then
+    return $Done;
+  end if;
+
+  if $Context/Ledger.InsightsContext_Category != empty then
+    set $CatName = $Context/Ledger.InsightsContext_Category/Ledger.Category/Name;
+  end if;
+  if $Context/Ledger.InsightsContext_Account != empty then
+    set $AccName = $Context/Ledger.InsightsContext_Account/Ledger.Account/Name;
+  end if;
+
+  retrieve $All from Ledger.VTransactionLine sort by Amount desc;
+
+  loop $R in $All
+  begin
+    if formatDateTime($R/TxDate, 'yyyy-MM-dd') = $DayText
+      and $R/GroupTypeName = 'Expense'
+      and ($CatName = '' or $R/CategoryName = $CatName)
+      and ($AccName = '' or $R/AccountName = $AccName) then
+      set $Lines = $Lines + $Sep
+        + '{"m":"' + $R/Merchant + '"'
+        + ',"cat":"' + $R/CategoryName + '"'
+        + ',"acc":"' + $R/AccountName + '"'
+        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+      set $Sep = ',';
+      set $Total = $Total + $R/Amount;
+      set $Count = $Count + 1;
+    end if;
+  end loop;
+
+  $TotalText = call microflow Ledger.FMT_Euro (Amount = $Total);
+
+  change $Context (
+    DetailData = '[' + $Lines + ']',
+    DetailTitle = $DayText,
+    DetailMeta = toString($Count) + ' transactions · ' + $TotalText
+  ) refresh;
+
+  return $Done;
+end;
+/
+
+/**
+ * Clears the day panel.
+ *
+ * @param $Context The page context
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ClearInsightDay (
+  $Context: Ledger.InsightsContext
+)
+returns boolean as $Done
+folder 'Insights'
+begin
+  declare $Done boolean = true;
+  change $Context (
+    SelectedPoint = '',
+    DetailData = '[]',
+    DetailTitle = '',
+    DetailMeta = 'Click a day in the calendar above.'
+  ) refresh;
+  return $Done;
+end;
+/
+
+grant execute on microflow Ledger.GET_JsonValue to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_SelectInsightDay to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ClearInsightDay to Ledger.User;
+/

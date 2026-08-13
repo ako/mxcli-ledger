@@ -25,6 +25,19 @@
                 <description>The name the spec uses to refer to the data (Vega-Lite: {"data": {"name": "table"}}). Leave empty to replace the spec's top-level data instead.</description>
             </property>
         </propertyGroup>
+        <propertyGroup caption="Interaction">
+            <property key="selection" type="attribute" required="false">
+                <caption>Selection</caption>
+                <description>Written with the clicked mark's datum as JSON. Only the datum's own scalar fields are included — Vega's internal bookkeeping is stripped, so what arrives is the row the model emitted.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                </attributeTypes>
+            </property>
+            <property key="onClick" type="action" required="false">
+                <caption>On click</caption>
+                <description>Runs after the selection attribute is written. Leave empty to make the chart read-only; clicks are then ignored entirely rather than being written and discarded.</description>
+            </property>
+        </propertyGroup>
         <propertyGroup caption="Appearance">
             <property key="chartHeight" type="integer" required="true" defaultValue="360">
                 <caption>Height (px)</caption>

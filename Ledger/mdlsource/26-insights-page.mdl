@@ -149,19 +149,20 @@ create or replace page Ledger.Insights (
           -- ------------------------------------------------------------------
           container ctnScatter (class: 'card ledger-card') {
             dynamictext lblScatter (content: 'Every expense, over time', rendermode: H6)
-            dynamictext subScatter (content: 'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Anything sitting well above its own colour is worth a look.', rendermode: paragraph, class: 'text-muted')
+            dynamictext subScatter (content: 'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Drag across the dates to brush a range — the bars below re-total instantly, without asking the server anything.', rendermode: paragraph, class: 'text-muted')
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartScatter (
               chartData: TxData,
               datasetName: 'table',
-              chartHeight: 380,
-              renderer: 'canvas',
+              chartHeight: 520,
+              -- SVG rather than canvas. 820 points is well inside what SVG handles here
+              -- (the outlier chart draws the same number), and keeping the marks in
+              -- the DOM means the brush can be checked by measuring rather than by
+              -- looking at a screenshot.
+              renderer: 'svg',
               showActions: false,
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "table"},
-  "width": "container",
-  "height": 330,
-  "autosize": {"type": "fit", "contains": "padding"},
   "background": null,
   "config": {
     "view": {"stroke": null},
@@ -170,23 +171,56 @@ create or replace page Ledger.Insights (
     "legend": {"labelFont": "IBM Plex Sans", "labelFontSize": 10, "titleFontSize": 10,
                "labelColor": "#17181A", "titleColor": "#8A8378", "columns": 2, "symbolSize": 40}
   },
-  "mark": {"type": "circle", "size": 26, "opacity": 0.6},
-  "encoding": {
-    "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
-    "y": {
-      "field": "v", "type": "quantitative",
-      "description": "Log, because expenses span three orders of magnitude and a linear axis would press every small category flat against the floor.",
-      "scale": {"type": "log"},
-      "axis": {"title": "Amount (EUR, log)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}
+  "description": "Two views in one spec, which is the only way a param can link them - a Vega-Lite selection is scoped to its own view, so two separate widgets could not share a brush without plumbing signals between them by hand.",
+  "vconcat": [
+    {
+      "width": 820,
+      "height": 300,
+      "params": [
+        {
+          "name": "brush",
+          "description": "An interval over the time axis only. Dragging it re-filters the bars below with no round trip, because the rows are already in the browser - the whole point of shipping data rather than pictures.",
+          "select": {"type": "interval", "encodings": ["x"]}
+        }
+      ],
+      "mark": {"type": "circle", "size": 26},
+      "encoding": {
+        "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
+        "y": {"field": "v", "type": "quantitative", "scale": {"type": "log"},
+              "axis": {"title": "Amount (EUR, log)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+        "color": {
+          "condition": {"param": "brush", "field": "cat", "type": "nominal", "title": "Category", "scale": {"scheme": "tableau20"}},
+          "value": "#D9D2C6"
+        },
+        "opacity": {"condition": {"param": "brush", "value": 0.75}, "value": 0.25},
+        "tooltip": [
+          {"field": "m", "type": "nominal", "title": "Merchant"},
+          {"field": "cat", "type": "nominal", "title": "Category"},
+          {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+        ]
+      }
     },
-    "color": {"field": "cat", "type": "nominal", "title": "Category", "scale": {"scheme": "tableau20"}},
-    "tooltip": [
-      {"field": "m", "type": "nominal", "title": "Merchant"},
-      {"field": "cat", "type": "nominal", "title": "Category"},
-      {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
-      {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
-    ]
-  }
+    {
+      "width": 820,
+      "height": 150,
+      "description": "What the brushed range adds up to, per category. With no brush it is the whole period; drag one and it becomes that range, instantly.",
+      "transform": [{"filter": {"param": "brush"}}],
+      "mark": {"type": "bar", "cornerRadiusEnd": 1},
+      "encoding": {
+        "x": {"field": "v", "type": "quantitative", "aggregate": "sum",
+              "axis": {"title": "Spend in the brushed range (EUR)", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+        "y": {"field": "cat", "type": "nominal", "sort": "-x",
+              "axis": {"title": null, "labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A"}},
+        "color": {"field": "cat", "type": "nominal", "legend": null, "scale": {"scheme": "tableau20"}},
+        "tooltip": [
+          {"field": "cat", "type": "nominal", "title": "Category"},
+          {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "Spend", "format": ",.2f"},
+          {"field": "v", "type": "quantitative", "aggregate": "count", "title": "Transactions"}
+        ]
+      }
+    }
+  ]
 }')
           }
 
@@ -202,6 +236,11 @@ create or replace page Ledger.Insights (
               chartHeight: 300,
               renderer: 'svg',
               showActions: false,
+              -- The click leaves the browser. The calendar's datum holds a day
+              -- and a total; which merchants made up that total is not in the
+              -- payload at all, so this is the case a brush cannot answer.
+              selection: SelectedPoint,
+              onClick: microflow Ledger.ACT_SelectInsightDay(Context: $currentObject),
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "table"},
@@ -226,6 +265,10 @@ create or replace page Ledger.Insights (
             "axis": {"labelExpr": "datum.label[0]"}},
       "color": {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "EUR",
                 "scale": {"scheme": "oranges", "type": "sqrt"}},
+      "detail": {
+        "field": "day", "type": "nominal",
+        "description": "Carries the string date into the groupby so it survives the aggregate and reaches the click handler. One cell is one date, so this adds no marks - it only stops the field being dropped."
+      },
       "tooltip": [
         {"field": "d", "type": "temporal", "title": "Day", "format": "%a %e %b %Y"},
         {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "Spent", "format": ",.2f"},
@@ -233,6 +276,70 @@ create or replace page Ledger.Insights (
       ]
     }
   }
+}')
+          }
+
+          -- ------------------------------------------------------------------
+          -- 3b. What the clicked day was made of
+          --
+          -- Rendered by the same widget as everything else. A bar chart is a
+          -- poor list, but a list here would mean a second data path — a
+          -- listview needs objects, and these rows exist only as JSON on the
+          -- context. Keeping it in the chart widget keeps the click's whole
+          -- round trip to one attribute out and one attribute back.
+          -- ------------------------------------------------------------------
+          container ctnDayDetail (class: 'card ledger-card') {
+            container ctnDayHead (class: 'ledger-chart-head') {
+              dynamictext lblDay (attribute: DetailTitle, rendermode: H6)
+              dynamictext subDay (attribute: DetailMeta, rendermode: paragraph, class: 'text-muted')
+            }
+            actionbutton btnClearDay (
+              caption: 'Clear',
+              action: microflow Ledger.ACT_ClearInsightDay(Context: $currentObject))
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartDayDetail (
+              chartData: DetailData,
+              datasetName: 'table',
+              chartHeight: 260,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "width": 820,
+  "height": 200,
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
+  },
+  "layer": [
+    {
+      "mark": {"type": "bar", "height": 13, "cornerRadiusEnd": 1},
+      "encoding": {
+        "y": {"field": "m", "type": "nominal", "sort": "-x",
+              "axis": {"title": null, "labelFont": "IBM Plex Sans", "labelFontSize": 10, "labelColor": "#17181A"}},
+        "x": {"field": "v", "type": "quantitative",
+              "axis": {"title": "EUR", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.2f", "grid": true}},
+        "color": {"field": "cat", "type": "nominal", "title": "Category", "scale": {"scheme": "tableau20"}},
+        "tooltip": [
+          {"field": "m", "type": "nominal", "title": "Merchant"},
+          {"field": "cat", "type": "nominal", "title": "Category"},
+          {"field": "acc", "type": "nominal", "title": "Account"},
+          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+        ]
+      }
+    },
+    {
+      "mark": {"type": "text", "align": "left", "dx": 4, "fontSize": 9, "font": "IBM Plex Mono", "color": "#8A8378"},
+      "encoding": {
+        "y": {"field": "m", "type": "nominal", "sort": "-x"},
+        "x": {"field": "v", "type": "quantitative"},
+        "text": {"field": "v", "type": "quantitative", "format": ",.2f"}
+      }
+    }
+  ]
 }')
           }
 

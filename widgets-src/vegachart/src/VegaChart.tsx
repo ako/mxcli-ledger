@@ -25,11 +25,42 @@ function parseJson<T>(raw: string, label: string): { value?: T; error?: string }
     }
 }
 
+/**
+ * A clicked mark's datum, reduced to what the model would recognise.
+ *
+ * Vega hangs its own bookkeeping on every datum — a numeric `_vgsid_`, and for
+ * aggregated marks the whole source array under `_source_`. Passing that back
+ * would be noise at best and, in the aggregate case, the entire dataset in a
+ * string attribute. Only own scalar fields survive.
+ */
+function cleanDatum(datum: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(datum)) {
+        if (key.startsWith("_")) {
+            continue;
+        }
+        const value = datum[key];
+        const type = typeof value;
+        if (value === null || type === "string" || type === "number" || type === "boolean") {
+            out[key] = value;
+        } else if (value instanceof Date) {
+            out[key] = value.toISOString().slice(0, 10);
+        }
+    }
+    return out;
+}
+
 export function VegaChart(props: VegaChartContainerProps): ReactElement {
-    const { spec, chartData, datasetName, chartHeight, renderer, showActions } = props;
+    const { spec, chartData, datasetName, chartHeight, renderer, showActions, selection, onClick } = props;
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EmbedResult | null>(null);
     const [error, setError] = useState<string>();
+
+    // The click handler is attached once per embed but reads the current props,
+    // so it is held in a ref rather than captured — re-embedding on every render
+    // just to refresh a callback would rebuild the whole scenegraph.
+    const clickRef = useRef({ selection, onClick });
+    clickRef.current = { selection, onClick };
 
     const dataValue = chartData?.status === "available" ? chartData.value : undefined;
 
@@ -89,6 +120,20 @@ export function VegaChart(props: VegaChartContainerProps): ReactElement {
                 viewRef.current?.finalize();
                 viewRef.current = result;
                 setError(undefined);
+
+                // Clicks on the chart background arrive with no item, and clicks
+                // on axes and legends arrive with an item that has no datum;
+                // neither is a selection. A chart with no onClick configured
+                // ignores clicks entirely rather than writing a value nothing
+                // reads.
+                result.view.addEventListener("click", (_event, item) => {
+                    const { selection: sel, onClick: act } = clickRef.current;
+                    if (!act?.canExecute || !item?.datum) {
+                        return;
+                    }
+                    sel?.setValue(JSON.stringify(cleanDatum(item.datum as Record<string, unknown>)));
+                    act.execute();
+                });
             })
             .catch((e: Error) => !disposed && setError(e.message));
 

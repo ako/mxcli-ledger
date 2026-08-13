@@ -3,7 +3,7 @@
  * WARNING: All changes made to this file will be overwritten
  * @author Mendix Widgets Framework Team
  */
-import { EditableValue } from "mendix";
+import { ActionValue, EditableValue } from "mendix";
 import { CSSProperties } from "react";
 
 export type RendererEnum = "svg" | "canvas";
@@ -16,6 +16,8 @@ export interface VegaChartContainerProps {
     spec: string;
     chartData?: EditableValue<string>;
     datasetName: string;
+    selection?: EditableValue<string>;
+    onClick?: ActionValue;
     chartHeight: number;
     renderer: RendererEnum;
     showActions: boolean;
@@ -35,6 +37,8 @@ export interface VegaChartPreviewProps {
     spec: string;
     chartData: string;
     datasetName: string;
+    selection: string;
+    onClick: {} | null;
     chartHeight: number | null;
     renderer: RendererEnum;
     showActions: boolean;

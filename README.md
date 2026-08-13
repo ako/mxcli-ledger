@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 91 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 92 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -146,6 +146,38 @@ time; the outlier view is the same points with the ones unlike their neighbours
 called out, and the calling-out is a `joinaggregate` in the spec — not a second
 query, not a second microflow. That is the argument for a grammar over a chart
 library, in one line.
+
+#### Two kinds of interaction
+
+The charts respond to a drag and to a click, and the two work in completely
+different ways — which is the more interesting half of the story.
+
+**Brushing costs nothing.** Drag across the dates on the scatter and the bars
+beneath it re-total to that range:
+
+![Brushing the scatter](docs/screenshots/insights-brush.png)
+
+Measured: 568 of 820 points dim, and **zero server calls** during the drag. The
+rows are already in the browser, so a range is a `param` and a `filter` — no
+query, no microflow, no round trip. Both views have to live in one spec, though:
+a Vega-Lite selection is scoped to its own view, so six separate widgets cannot
+share a brush without signalling between them by hand.
+
+**Clicking has to leave the browser**, because the answer is not in the payload.
+Clicking a calendar day asks which merchants made up that day's total, and the
+calendar only carries a date and a sum:
+
+![Clicking a day](docs/screenshots/insights-dayclick.png)
+
+The widget writes the clicked datum as JSON, a microflow reads a field out of it
+and builds the panel. 10 August 2026 returns three transactions totalling
+€ 2,409.16 — exactly what Postgres reports for that day.
+
+Getting that round trip exact took finding 92: a clicked mark's datum is an
+output of the rendering pipeline, not an echo of what was sent. Temporal fields
+come back as epoch milliseconds, and an aggregated mark carries only the fields
+the spec groups by — so the date has to be carried a second time, as a plain
+string the spec references but never parses.
 
 ### Budgets
 
@@ -288,7 +320,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              91 numbered findings — the main deliverable alongside the app
+FINDINGS.md              92 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
