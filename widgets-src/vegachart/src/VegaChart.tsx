@@ -1,0 +1,108 @@
+import { useEffect, useMemo, useRef, useState, ReactElement } from "react";
+import embed, { Result as EmbedResult, VisualizationSpec } from "vega-embed";
+
+import { VegaChartContainerProps } from "../typings/VegaChartProps";
+
+/**
+ * Parse a JSON string, returning the message rather than throwing.
+ *
+ * Both the spec and the data arrive as text — the spec authored by hand, the
+ * data built by a microflow — so a syntax error in either is a normal thing to
+ * hit while authoring, not an exceptional one. Showing where it broke beats a
+ * blank chart and a console trace.
+ */
+function parseJson<T>(raw: string, label: string): { value?: T; error?: string } {
+    try {
+        return { value: JSON.parse(raw) as T };
+    } catch (e) {
+        return { error: `${label} is not valid JSON: ${(e as Error).message}` };
+    }
+}
+
+export function VegaChart(props: VegaChartContainerProps): ReactElement {
+    const { spec, chartData, datasetName, chartHeight, renderer, showActions } = props;
+    const hostRef = useRef<HTMLDivElement>(null);
+    const viewRef = useRef<EmbedResult | null>(null);
+    const [error, setError] = useState<string>();
+
+    const dataValue = chartData?.status === "available" ? chartData.value : undefined;
+
+    // The spec is static and the data is not, so they are parsed apart. Only the
+    // data changes between renders, and re-parsing a spec on every model update
+    // would be wasted work.
+    const parsedSpec = useMemo(() => parseJson<VisualizationSpec>(spec, "Specification"), [spec]);
+    const parsedData = useMemo(
+        () => (dataValue ? parseJson<unknown[]>(dataValue, "Data") : { value: undefined }),
+        [dataValue]
+    );
+
+    // Fold the data into the spec. A named dataset goes into `datasets`, which is
+    // how Vega-Lite expects a spec to reference data it does not carry itself;
+    // without a name the top-level `data` is replaced instead.
+    const resolvedSpec = useMemo(() => {
+        if (!parsedSpec.value) {
+            return undefined;
+        }
+        if (!parsedData.value) {
+            return parsedSpec.value;
+        }
+        const next = { ...(parsedSpec.value as Record<string, unknown>) };
+        if (datasetName) {
+            next.datasets = { ...((next.datasets as object) ?? {}), [datasetName]: parsedData.value };
+        } else {
+            next.data = { values: parsedData.value };
+        }
+        return next as VisualizationSpec;
+    }, [parsedSpec.value, parsedData.value, datasetName]);
+
+    useEffect(() => {
+        const message = parsedSpec.error ?? parsedData.error;
+        if (message) {
+            setError(message);
+            return;
+        }
+        if (!hostRef.current || !resolvedSpec) {
+            return;
+        }
+
+        let disposed = false;
+        // vega-embed decides between Vega and Vega-Lite from the spec's own
+        // $schema, so one widget serves both languages with no switch here.
+        embed(hostRef.current, resolvedSpec, {
+            actions: showActions,
+            renderer,
+            // The app supplies its own type scale and palette; letting Vega apply
+            // a theme on top would fight it.
+            config: { background: "transparent" }
+        })
+            .then(result => {
+                if (disposed) {
+                    result.finalize();
+                    return;
+                }
+                viewRef.current?.finalize();
+                viewRef.current = result;
+                setError(undefined);
+            })
+            .catch((e: Error) => !disposed && setError(e.message));
+
+        return () => {
+            disposed = true;
+        };
+    }, [resolvedSpec, renderer, showActions, parsedSpec.error, parsedData.error]);
+
+    // Finalize on unmount only. Vega registers listeners and, with the canvas
+    // renderer, holds a backing surface; dropping the node without finalizing
+    // leaks both.
+    useEffect(() => () => viewRef.current?.finalize(), []);
+
+    if (error) {
+        return (
+            <div className="vega-chart vega-chart-error" role="alert">
+                {error}
+            </div>
+        );
+    }
+
+    return <div className="vega-chart" ref={hostRef} style={{ height: chartHeight }} />;
+}

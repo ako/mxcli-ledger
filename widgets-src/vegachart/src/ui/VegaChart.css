@@ -1,0 +1,24 @@
+.vega-chart {
+    width: 100%;
+}
+
+.vega-chart .vega-embed {
+    width: 100%;
+}
+
+/* Vega sets its own font on text marks; the app's type scale should win. */
+.vega-chart text {
+    font-family: inherit;
+}
+
+.vega-chart-error {
+    padding: 12px 14px;
+    font-family: var(--ledger-font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a8321e;
+    background: rgba(168, 50, 30, 0.06);
+    border: 1px solid rgba(168, 50, 30, 0.25);
+    border-radius: 2px;
+    white-space: pre-wrap;
+}
