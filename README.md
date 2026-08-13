@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 94 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 95 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -315,19 +315,33 @@ Monospace on every number is the largest single fidelity win, and it is not
 decoration: a fourteen-column matrix of currency only scans if the digits line
 up.
 
+The sidebar collapses to a 52px icon rail and opens to the prototype's 224px:
+
+| collapsed | open |
+|---|---|
+| ![Sidebar collapsed](docs/screenshots/sidebar-collapsed.png) | ![Sidebar open](docs/screenshots/sidebar-open.png) |
+
+It did not, for a while, and the reason is a good illustration of what token
+overrides cost: the closed width had been pinned to the open one back when the
+menu had no icons, and once icons arrived Atlas' own rule — which gives the
+glyph `flex-basis: var(--closed-sidebar-width)` — turned that into a 224px icon
+slot that pushed every caption out of view. Finding 95 has the measurements.
+
 ---
 
 ## Known gaps
 
 Stated rather than hidden:
 
-- **Two of the six menu icons are not the ones Studio Pro had.** MDL's `ICON`
-  reaches icon-collection icons only; the Accounts item carried a glyph icon
-  and Categories & rules an image icon, neither of which is authorable. Both
-  were placeholders, so file 22 authors collection icons in their place and the
-  whole set is reproducible again. `DESCRIBE` now names what it cannot carry
-  instead of dropping it silently — see finding 81, which is how the icons came
-  to be understood at all.
+- **Three of the seven menu icons are not the ones Studio Pro had.** MDL's
+  `ICON` reaches icon-collection icons only; the Accounts item carried a glyph
+  icon and Categories & rules an image icon, neither of which is authorable.
+  Both were placeholders, so file 27 authors collection icons in their place
+  and the whole set is reproducible again. `DESCRIBE` now names what it cannot
+  carry instead of dropping it silently — see finding 81, which is how the icons
+  came to be understood at all. The third, Transactions, was carried faithfully
+  and still had to be replaced: it pointed at `Atlas_Styling`, a collection
+  whose CSS prefix Atlas' own navigation rules do not match — see finding 95.
 - **The chart itself is not clickable.** Three independent blockers, all recorded
   in `FINDINGS.md` 67–69: MDL silently drops an `action`-typed property on a
   pluggable widget; writing a widget attribute does not re-run a datasource over
@@ -346,7 +360,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              93 numbered findings — the main deliverable alongside the app
+FINDINGS.md              95 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

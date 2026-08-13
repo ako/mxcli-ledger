@@ -31,7 +31,13 @@ create or replace navigation Responsive
     menu item 'Cashflow' page Ledger.Cashflow_Overview icon Atlas_Core.Atlas."align-bottom";
     menu item 'Budgets' page Ledger.Budgets_Overview icon Atlas_Core.Atlas_Filled."alert-circle";
     menu item 'Insights' page Ledger.Insights icon Atlas_Core.Atlas."analytics-graph-bar";
-    menu item 'Transactions' page Ledger.Transaction_Overview icon Atlas_Core.Atlas_Styling."aligncontent-horizontal-space-between";
+    -- Atlas_Styling, not Atlas: a different collection with a different CSS
+    -- prefix (Atlas_Core_Controls rather than mx-icon). It renders, but Atlas'
+    -- navigation styling matches on .glyphicon/.mx-icon-lined/.mx-icon-filled,
+    -- so this one was skipped by every nav rule — including the one that gives
+    -- the glyph its width in a collapsed sidebar. The result was one menu item
+    -- whose caption stayed visible when the rest were pushed out of view.
+    menu item 'Transactions' page Ledger.Transaction_Overview icon Atlas_Core.Atlas."cash-payment-bill";
     -- was a glyph icon (code 9999), which MDL cannot express
     menu item 'Accounts' page Ledger.Account_Overview icon Atlas_Core.Atlas."credit-card";
     -- was System.Images.Close, an image icon, which MDL cannot express

@@ -3493,3 +3493,107 @@ Three notes, all of which paid for themselves several times over:
   `o.mjs` emits two accounts for one category precisely because that is the case
   that broke the sparklines. Synthetic data that is uniformly well-behaved
   reproduces nothing.
+
+### 95. A theme workaround outlived the problem it worked around, and Atlas turned it into a broken collapse
+
+Reported symptom: the left menu does not collapse to a thin icon rail — the
+panel stays wide, collapsing hides *some* of the labels, expanding shows all of
+them again.
+
+Three separate causes, and the interesting one is that the first was a
+deliberate choice that had simply gone stale.
+
+**1. The closed width was pinned to the open width.** `custom-variables.scss`
+carried this, with its reasoning attached:
+
+```scss
+/* Sidebar: dark, and permanently open at the prototype's 224px. Setting the
+   closed width equal to the open one is what keeps it from collapsing to a
+   48px strip of clipped labels. */
+--navsidebar-width-closed: 224px;
+--navsidebar-width-open: 224px;
+```
+
+That was correct when it was written: the menu had no icons, so a 48px rail
+would have shown nothing but the first two letters of each caption. Icons were
+added later (finding 81), which made the workaround unnecessary — and worse than
+unnecessary, because Atlas hangs behaviour off that token:
+
+```scss
+& > a {
+    .glyphicon, .mx-icon-lined, .mx-icon-filled {
+        flex-basis: var(--closed-sidebar-width);
+    }
+}
+```
+
+With the closed width at 224px, every glyph claimed the entire row while closed
+and pushed its caption out of a sidebar that clips its overflow. **The labels
+were never hidden; they were shoved sideways.** That is the whole of "collapsing
+hides the labels but the panel stays wide".
+
+Measured from the running app, before and after `--navsidebar-width-closed: 52px`:
+
+```
+before   sidebarW 224   iconW 224   (caption pushed past the clip)
+after    sidebarW  52   iconW  52   (caption clipped, icon on its slot)
+```
+
+**2. One menu item used an icon from a collection Atlas' navigation rules do not
+match.** `Transactions` carried `Atlas_Core.Atlas_Styling."aligncontent-horizontal-space-between"`.
+That collection is real and the icon renders, but it has a different CSS prefix:
+
+```
+| Icon Collection          | Prefix              | Icons |
+| Atlas_Core.Atlas_Styling | Atlas_Core_Controls |    38 |
+| Atlas_Core.Atlas_Filled  | mx-icon             |   366 |
+| Atlas_Core.Atlas         | mx-icon             |   366 |
+```
+
+Atlas' navigation styling matches `.glyphicon, .mx-icon-lined, .mx-icon-filled`,
+so an `Atlas_Core_Controls-*` glyph is skipped by every one of those rules —
+including the `flex-basis` rule above. That is why exactly one caption stayed
+visible while the other six were pushed away, and why the symptom read as "some
+labels" rather than "the labels". Re-pointed at `Atlas_Core.Atlas."cash-payment-bill"`.
+
+**The general rule: an icon collection's prefix is part of its contract.**
+`mxcli` validates that the icon *exists* — which it does — but nothing checks
+that the collection is the one the surrounding component styles for. Two
+collections named in the same completion list are not interchangeable.
+
+**3. The project's own sidebar CSS was written for 224px only.** With the rail
+working, the wordmark `::before` ('Ledger', 19px serif) and the kicker
+('Household finances', letter-spaced uppercase mono) were clipped mid-word, and
+20px of padding on the tree plus 20 on the anchor left 12px for a 52px icon slot,
+so the icons overflowed the rail instead of sitting in it. Atlas expresses the
+state on the scroll container rather than on the sidebar, so the collapsed rules
+hang off the selector Atlas uses itself:
+
+```scss
+.mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open) > .region-sidebar { … }
+```
+
+At 52px the wordmark becomes `L`, the kicker becomes the rule that was under it,
+and the paddings go to zero.
+
+One trap inside that: `justify-content: center` on the row seems obviously right
+and is wrong. The caption is still in the row — only ever clipped, never removed
+— so the row's content is ~130px wide inside a 52px box, and centring that
+overflow pushes the icon off the left edge and leaves the first few letters of
+the caption sitting where the icon should be. Left-aligned, the icon lands on
+its 52px and the caption falls off the right, where the sidebar clips it.
+
+One thing this did **not** fix: at 224px open, the longest caption still clips —
+'Categories & rules' reads as 'Categories &'. The row wants 205px of content in a
+160px box, and narrowing Atlas' 52px glyph slot to 30px leaves it 23px short, so
+that is a caption too long for the sidebar rather than a slot too wide. Both
+honest fixes (a shorter caption, a wider sidebar) change a decision the prototype
+made, so neither was taken unilaterally. The measurement is also from a container
+where IBM Plex cannot be fetched, so the real shortfall is smaller than 45px and
+may be zero.
+
+The lesson worth keeping is the first one. **A workaround should carry the
+condition that justifies it, not just the reasoning that motivated it** — the
+comment here explained itself perfectly and still went silently wrong, because
+the thing it was compensating for ("this app has no glyphs", stated in a second
+comment in a second file) stopped being true.
