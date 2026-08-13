@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 95 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 99 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -126,6 +126,29 @@ write to the same object the charts read, so applying a change is one microflow
 and one `change … refresh` rather than six datasources re-running independently
 — which also sidesteps the datasource-refresh problem in finding 68. Filtering
 to Groceries takes the scatter from 820 points to 211, matching SQL exactly.
+
+**The filter is applied by the database, not by the model.** Every retrieve on
+this page carries its constraint — the period as an XPath range over a
+`MonthKey` column the views compute, the category and account as
+`($Var = '' or Column = $Var)`, which lets one retrieve serve both the filtered
+and the unfiltered case without branching. The page used to pull every row of
+five views and discard most of them in a loop, once per chart.
+
+The year-over-year comparison is now a view rather than a microflow. It was the
+most expensive flow on the page and the only quadratic one — an outer pass per
+category, an inner pass over every row to total it, and a delimited string
+standing in for a set. Conditional aggregation does it in one grouped scan, and
+the month window it compares over derives from the data itself through nested
+scalar subqueries, so nothing has to pass it a boundary. It carries two
+aggregation grains in a `UNION ALL` — one row per category, or one per category
+per account — because an account filter changes what a row *is*, and a view
+takes no parameters; the caller constrains on the grain and the database prunes
+the branch it did not ask for before touching a table (finding 97).
+
+One builder kept its grouping, and the reason is the boundary of the technique:
+the standing-costs chart counts distinct months *within the selected period*, so
+its aggregate depends on a window chosen at runtime. A view can offer a menu of
+grains, not a function of one.
 
 The period rounds outward to whole months for the monthly charts and is exact
 for the day-level ones, because the aggregate views are grouped by month.
@@ -255,7 +278,7 @@ files apply in dependency order:
 | `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
 | `23` | Cashflow sparkline grid, through the project's own Vega widget |
-| `24`–`26` | Insights: aggregate views, payloads, six charts |
+| `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 
 A runtime monitoring pass — what the app actually does under load, and the four
@@ -360,7 +383,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              95 numbered findings — the main deliverable alongside the app
+FINDINGS.md              99 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

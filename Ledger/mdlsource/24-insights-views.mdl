@@ -33,27 +33,60 @@
  * GroupTypeName is 'Income' or 'Expense' via cast on the enum, the same way
  * VMatrixActual derives it. ColorHex rides along so the charts can use the
  * taxonomy's own palette rather than inventing one.
+ *
+ * MonthKey is year*100+month, and it exists so a *retrieve* can range-test a
+ * month-grained row against a day-grained period. XPath has no arithmetic, so
+ * the key has to be a column; with it, the period filter is an XPath constraint
+ * the database applies, instead of an `if` inside a loop over every row in the
+ * app. Note it must also appear in the GROUP BY — an expression in the SELECT
+ * that is not inside an aggregate has to be grouped, even when it is a function
+ * of two columns that are already grouped.
+ *
+ * Signed is the same total with an expense negated, which is a fact about the
+ * row rather than a rendering choice: money leaving is negative. It was a CASE
+ * on GroupTypeName in a microflow loop, and the obvious translation —
+ *
+ *   sum(case when cast(g.GroupType as string) = 'Income' then t.Amount
+ *            else 0 - t.Amount end)
+ *
+ * — does not compile:
+ *
+ *   [CE0174] Column 'g.GroupType' cannot both be aggregated and appear in the
+ *            GROUP BY clause
+ *
+ * which is finding 88 again, on an enum rather than a date: GroupTypeName is in
+ * the GROUP BY, so no expression over GroupType may appear inside an aggregate
+ * in the same query, even though the two are disjoint by construction. The way
+ * out is not to mention the column at all. Transaction.SignedAmount already
+ * carries the direction, and `sum(t.SignedAmount)` is the same number by a
+ * route the checker has no objection to — verified against the data first: all
+ * 840 expense rows are negative, all 60 income rows positive, and
+ * |SignedAmount| = Amount in every one of them.
  */
 create or modify view entity Ledger.VMonthCategory (
   Yr: integer,
   MonthIndex: integer,
+  MonthKey: integer,
   CategoryName: string(100),
   GroupName: string(50),
   GroupTypeName: string(200),
   ColorHex: string(10),
   AccountName: string(100),
   Total: decimal,
+  Signed: decimal,
   TxCount: integer
 ) as (
   select
     datepart(YEAR, t.TxDate) as Yr,
     datepart(MONTH, t.TxDate) as MonthIndex,
+    datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate) as MonthKey,
     c.Name as CategoryName,
     g.Name as GroupName,
     cast(g.GroupType as string) as GroupTypeName,
     g.ColorHex as ColorHex,
     a.Name as AccountName,
     sum(t.Amount) as Total,
+    sum(t.SignedAmount) as Signed,
     count(t.id) as TxCount
   from Ledger.Transaction as t
   inner join t/Ledger.Transaction_Category/Ledger.Category as c
@@ -61,6 +94,7 @@ create or modify view entity Ledger.VMonthCategory (
   inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false
   group by datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate),
+           datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate),
            c.Name, g.Name, cast(g.GroupType as string), g.ColorHex, a.Name
 );
 /
@@ -123,6 +157,7 @@ create or modify view entity Ledger.VMerchantMonth (
   GroupName: string(50),
   Yr: integer,
   MonthIndex: integer,
+  MonthKey: integer,
   AccountName: string(100),
   Total: decimal,
   TxCount: integer
@@ -133,6 +168,7 @@ create or modify view entity Ledger.VMerchantMonth (
     g.Name as GroupName,
     datepart(YEAR, t.TxDate) as Yr,
     datepart(MONTH, t.TxDate) as MonthIndex,
+    datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate) as MonthKey,
     a.Name as AccountName,
     sum(t.Amount) as Total,
     count(t.id) as TxCount
@@ -142,6 +178,118 @@ create or modify view entity Ledger.VMerchantMonth (
   inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
   group by t.Merchant, c.Name, g.Name,
-           datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate), a.Name
+           datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate),
+           datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate), a.Name
+);
+/
+
+/**
+ * Each category's total for the same months of this year and last, side by side.
+ *
+ * This replaces BUILD_YoYData, which was the most expensive microflow on the
+ * page and the only quadratic one: an outer pass per distinct category, an
+ * inner pass over every row to total it, and a delimited string standing in for
+ * the set of categories already seen. Conditional aggregation does the whole
+ * thing in one grouped scan — `sum(case when <year> then Amount else 0 end)`
+ * twice, once per year, which is the shape the comparison actually is.
+ *
+ * **The window derives from the data, not from a parameter.** The current year
+ * is the latest year with a transaction, and the boundary month is the latest
+ * month with a transaction in that year — both as scalar subqueries, nested two
+ * deep. That matters because the comparison is only honest month-for-month:
+ * eight months of 2026 against twelve of 2025 would report every category as
+ * collapsing. The microflow took `$Through` from CALC_ReportingThrough; the view
+ * needs no caller to tell it.
+ *
+ * **Two grains, discriminated by Grain, because an account filter changes what
+ * a row is.** Filtering rows by account and then grouping is not the same as
+ * grouping by account: this page's account filter is optional, and with no
+ * filter the chart wants one row per category across every account. A view
+ * cannot take that choice as a parameter, so it carries both aggregations and
+ * the caller constrains on Grain — 'all' when no account is selected,
+ * 'account' when one is.
+ *
+ * That costs nothing at runtime. The two branches are a UNION ALL inside one
+ * subquery, and a constraint on Grain reaches them: Postgres folds the losing
+ * branch to a One-Time Filter of false and never touches the table. Verified on
+ * the generated SQL, under both a custom and a forced generic plan — finding 96.
+ *
+ * Every string column is cast, and every column is declared string(200).
+ * A literal or derived column normalises to 200 regardless of source (finding
+ * 36), so a branch mixing a pass-through `c.Name` with a literal `''` cannot
+ * match one declaration until both are casted — the failure is CE6770 "View
+ * Entity is out of sync with the OQL Query", which names the entity and not the
+ * column.
+ */
+create or modify view entity Ledger.VYoY (
+  Grain: string(200),
+  CategoryName: string(200),
+  GroupName: string(200),
+  GroupTypeName: string(200),
+  AccountName: string(200),
+  CurTotal: decimal,
+  PriorTotal: decimal,
+  Delta: decimal
+) as (
+  select
+    cast('all' as string) as Grain,
+    cast(c.Name as string) as CategoryName,
+    cast(g.Name as string) as GroupName,
+    cast(g.GroupType as string) as GroupTypeName,
+    cast('' as string) as AccountName,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty)
+        then t.Amount else 0 end) as CurTotal,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+        then t.Amount else 0 end) as PriorTotal,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty)
+        then t.Amount else 0 end)
+      - sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+        then t.Amount else 0 end) as Delta
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  where t.IsMirror = false
+    and datepart(YEAR, t.TxDate) >=
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+    and datepart(MONTH, t.TxDate) <=
+        (select max(datepart(MONTH, tm.TxDate)) from Ledger.Transaction as tm
+         where datepart(YEAR, tm.TxDate) =
+               (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty))
+  group by c.Name, g.Name, cast(g.GroupType as string)
+  union all
+  select
+    cast('account' as string) as Grain,
+    cast(c.Name as string) as CategoryName,
+    cast(g.Name as string) as GroupName,
+    cast(g.GroupType as string) as GroupTypeName,
+    cast(a.Name as string) as AccountName,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty)
+        then t.Amount else 0 end) as CurTotal,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+        then t.Amount else 0 end) as PriorTotal,
+    sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty)
+        then t.Amount else 0 end)
+      - sum(case when datepart(YEAR, t.TxDate) =
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+        then t.Amount else 0 end) as Delta
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  where t.IsMirror = false
+    and datepart(YEAR, t.TxDate) >=
+        (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty) - 1
+    and datepart(MONTH, t.TxDate) <=
+        (select max(datepart(MONTH, tm.TxDate)) from Ledger.Transaction as tm
+         where datepart(YEAR, tm.TxDate) =
+               (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty))
+  group by c.Name, g.Name, cast(g.GroupType as string), a.Name
 );
 /

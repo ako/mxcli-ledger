@@ -82,34 +82,17 @@ create or modify association Ledger.InsightsContext_Account
  * @returns JSON array
  */
 create or modify microflow Ledger.BUILD_StreamData (
-  $Rows: list of Ledger.VMonthCategory,
-  $FromKey: integer,
-  $ToKey: integer,
-  $Category: string,
-  $Account: string
+  $Rows: list of Ledger.VMonthCategory
 )
 returns string as $Json
 folder 'Insights'
 begin
   declare $Json string = '';
   declare $Sep string = '';
-  declare $Signed decimal = 0;
   declare $Month string = '';
-  declare $Key integer = 0;
 
   loop $R in $Rows
   begin
-    @annotation 'Month-grained rows against a day-grained period: a month is in when its own year*100+month falls inside the range, so the period rounds outward to whole months here while the day-level charts honour the exact dates. Stated on the page rather than hidden.'
-    set $Key = $R/Yr * 100 + $R/MonthIndex;
-    if $Key >= $FromKey and $Key <= $ToKey
-      and ($Category = '' or $R/CategoryName = $Category)
-      and ($Account = '' or $R/AccountName = $Account) then
-    if $R/GroupTypeName = 'Income' then
-      set $Signed = $R/Total;
-    else
-      set $Signed = 0 - $R/Total;
-    end if;
-
     @annotation 'An ISO first-of-month so Vega-Lite reads the axis as time rather than as thirteen unrelated labels'
     if $R/MonthIndex < 10 then
       set $Month = toString($R/Yr) + '-0' + toString($R/MonthIndex) + '-01';
@@ -123,9 +106,8 @@ begin
       + ',"grp":"' + $R/GroupName + '"'
       + ',"kind":"' + $R/GroupTypeName + '"'
       + ',"color":"' + $R/ColorHex + '"'
-      + ',"v":' + formatDecimal($Signed, '0.00') + '}';
+      + ',"v":' + formatDecimal($R/Signed, '0.00') + '}';
     set $Sep = ',';
-    end if;
   end loop;
 
   return '[' + $Json + ']';
@@ -143,11 +125,7 @@ end;
  * @returns JSON array
  */
 create or modify microflow Ledger.BUILD_TxData (
-  $Rows: list of Ledger.VTransactionLine,
-  $FromDate: datetime,
-  $ToDate: datetime,
-  $Category: string,
-  $Account: string
+  $Rows: list of Ledger.VTransactionLine
 )
 returns string as $Json
 folder 'Insights'
@@ -157,18 +135,13 @@ begin
 
   loop $R in $Rows
   begin
-    if $R/GroupTypeName = 'Expense'
-      and $R/TxDate >= $FromDate and $R/TxDate <= $ToDate
-      and ($Category = '' or $R/CategoryName = $Category)
-      and ($Account = '' or $R/AccountName = $Account) then
-      set $Json = $Json + $Sep
-        + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
-        + ',"cat":"' + $R/CategoryName + '"'
-        + ',"grp":"' + $R/GroupName + '"'
-        + ',"m":"' + $R/Merchant + '"'
-        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
-      set $Sep = ',';
-    end if;
+    set $Json = $Json + $Sep
+      + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+      + ',"cat":"' + $R/CategoryName + '"'
+      + ',"grp":"' + $R/GroupName + '"'
+      + ',"m":"' + $R/Merchant + '"'
+      + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+    set $Sep = ',';
   end loop;
 
   return '[' + $Json + ']';
@@ -182,11 +155,7 @@ end;
  * @returns JSON array
  */
 create or modify microflow Ledger.BUILD_CalendarData (
-  $Rows: list of Ledger.VDaySpend,
-  $FromDate: datetime,
-  $ToDate: datetime,
-  $Category: string,
-  $Account: string
+  $Rows: list of Ledger.VDaySpend
 )
 returns string as $Json
 folder 'Insights'
@@ -196,17 +165,13 @@ begin
 
   loop $R in $Rows
   begin
-    if $R/TxDate >= $FromDate and $R/TxDate <= $ToDate
-      and ($Category = '' or $R/CategoryName = $Category)
-      and ($Account = '' or $R/AccountName = $Account) then
-      @annotation 'The date is carried twice on purpose. `d` is the temporal field the chart encodes, and Vega parses it to epoch milliseconds - a click handler reading it back gets 1735689600000, not a date. `day` is the same value as a plain string that no encoding parses, which is what the click contract is built on (FINDINGS 92).'
-      set $Json = $Json + $Sep
-        + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
-        + ',"day":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
-        + ',"v":' + formatDecimal($R/Total, '0.00')
-        + ',"n":' + toString($R/TxCount) + '}';
-      set $Sep = ',';
-    end if;
+    @annotation 'The date is carried twice on purpose. `d` is the temporal field the chart encodes, and Vega parses it to epoch milliseconds - a click handler reading it back gets 1735689600000, not a date. `day` is the same value as a plain string that no encoding parses, which is what the click contract is built on (FINDINGS 92).'
+    set $Json = $Json + $Sep
+      + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+      + ',"day":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
+      + ',"v":' + formatDecimal($R/Total, '0.00')
+      + ',"n":' + toString($R/TxCount) + '}';
+    set $Sep = ',';
   end loop;
 
   return '[' + $Json + ']';
@@ -230,17 +195,19 @@ end;
  * would be quadratic. The pass flushes when the key changes and once more at
  * the end, which is the part that is easy to get wrong.
  *
- * @param $Rows VMerchantMonth for one year, sorted by Merchant
- * @param $Year The year being summarised
+ * **This is the one builder that keeps its grouping**, and the reason is worth
+ * stating because it is the boundary of what a view entity can do. MonthsActive
+ * is a count of distinct months *within the selected period*, so the aggregate
+ * depends on a window the reader chooses at runtime — and a view entity takes
+ * no parameters. Precomputing it in OQL would silently pin the recurrence
+ * signal to the whole year and make the period control a lie. The rows arrive
+ * filtered by the database now, so what is left here is the grouping alone.
+ *
+ * @param $Rows VMerchantMonth, already constrained to the period, sorted by Merchant
  * @returns JSON array
  */
 create or modify microflow Ledger.BUILD_SavingsData (
-  $Rows: list of Ledger.VMerchantMonth,
-  $Year: integer,
-  $FromKey: integer,
-  $ToKey: integer,
-  $Category: string,
-  $Account: string
+  $Rows: list of Ledger.VMerchantMonth
 )
 returns string as $Json
 folder 'Insights'
@@ -254,45 +221,37 @@ begin
   declare $CurTx integer = 0;
   declare $CurLastMonth integer = 0;
   declare $Projected decimal = 0;
-  declare $Key integer = 0;
 
   loop $R in $Rows
   begin
-    @annotation 'Money moved to your own savings account is booked as an expense everywhere else in this app, and correctly so - it leaves the current account, and the matrix and the sankey both need it to balance. It is wrong *here*: this chart ranks costs by what cancelling them would save, and cancelling a savings transfer saves nothing. It was the second-largest row before this line, at a projected EUR 8,087.'
-    set $Key = $R/Yr * 100 + $R/MonthIndex;
-    if $R/Yr = $Year and $R/CategoryName != 'Savings transfer'
-      and $Key >= $FromKey and $Key <= $ToKey
-      and ($Category = '' or $R/CategoryName = $Category)
-      and ($Account = '' or $R/AccountName = $Account) then
-      @annotation 'Key change: flush the merchant just finished before starting the next'
-      if $R/Merchant != $CurMerchant then
-        if $CurMonths >= 4 then
-          set $Projected = round(($CurTotal div $CurMonths) * 12, 2);
-          set $Json = $Json + $Sep
-            + '{"m":"' + $CurMerchant + '"'
-            + ',"cat":"' + $CurCategory + '"'
-            + ',"months":' + toString($CurMonths)
-            + ',"tx":' + toString($CurTx)
-            + ',"spent":' + formatDecimal($CurTotal, '0.00')
-            + ',"year":' + formatDecimal($Projected, '0.00') + '}';
-          set $Sep = ',';
-        end if;
-        set $CurMerchant = $R/Merchant;
-        set $CurCategory = $R/CategoryName;
-        set $CurTotal = 0;
-        set $CurMonths = 0;
-        set $CurTx = 0;
-        set $CurLastMonth = 0;
+    @annotation 'Key change: flush the merchant just finished before starting the next. Every row reaching here is already in the period, in the year, on the selected account and category, and not a savings transfer - the retrieve constrained all of that. The savings-transfer exclusion matters: money moved to your own savings account is booked as an expense everywhere else in this app, correctly, and is wrong here because this chart ranks costs by what cancelling them would save. It was the second-largest row before that exclusion, at a projected EUR 8,087.'
+    if $R/Merchant != $CurMerchant then
+      if $CurMonths >= 4 then
+        set $Projected = round(($CurTotal div $CurMonths) * 12, 2);
+        set $Json = $Json + $Sep
+          + '{"m":"' + $CurMerchant + '"'
+          + ',"cat":"' + $CurCategory + '"'
+          + ',"months":' + toString($CurMonths)
+          + ',"tx":' + toString($CurTx)
+          + ',"spent":' + formatDecimal($CurTotal, '0.00')
+          + ',"year":' + formatDecimal($Projected, '0.00') + '}';
+        set $Sep = ',';
       end if;
+      set $CurMerchant = $R/Merchant;
+      set $CurCategory = $R/CategoryName;
+      set $CurTotal = 0;
+      set $CurMonths = 0;
+      set $CurTx = 0;
+      set $CurLastMonth = 0;
+    end if;
 
-      set $CurTotal = $CurTotal + $R/Total;
-      set $CurTx = $CurTx + $R/TxCount;
+    set $CurTotal = $CurTotal + $R/Total;
+    set $CurTx = $CurTx + $R/TxCount;
 
-      @annotation 'Distinct months, not rows. The view now carries an account, so one merchant billing two cards in March is two rows and one month — counting rows would inflate the recurrence signal and, through it, the annual projection.'
-      if $R/MonthIndex != $CurLastMonth then
-        set $CurMonths = $CurMonths + 1;
-        set $CurLastMonth = $R/MonthIndex;
-      end if;
+    @annotation 'Distinct months, not rows. The view now carries an account, so one merchant billing two cards in March is two rows and one month — counting rows would inflate the recurrence signal and, through it, the annual projection.'
+    if $R/MonthIndex != $CurLastMonth then
+      set $CurMonths = $CurMonths + 1;
+      set $CurLastMonth = $R/MonthIndex;
     end if;
   end loop;
 
@@ -313,76 +272,40 @@ end;
 /
 
 /**
- * Each category's total for the same month window in both years.
+ * Each category against the same months of last year.
  *
- * The window matters more than anything else here. The current year is partial,
- * so comparing it against a complete prior year would report every category as
- * collapsing — the comparison has to be Jan-to-August against Jan-to-August,
- * not Jan-to-August against Jan-to-December. $Through is that boundary and
- * comes from the same reporting window the Cashflow matrix uses.
+ * This used to be the most expensive microflow on the page: an outer pass per
+ * distinct category, an inner pass over every row to total it, and a delimited
+ * string standing in for the set of categories already seen — quadratic, and
+ * knowingly so. It is now a Vega-style emitter over Ledger.VYoY, which does the
+ * comparison in one grouped scan with conditional aggregation and derives its
+ * own month window from the data.
  *
- * @param $Rows VMonthCategory, both years
- * @param $Through Last month to include, on both years
- * @param $CurrentYear The year being compared back from
+ * The rows arrive filtered and at the right grain: the caller constrains on
+ * Grain, which is 'all' when no account is selected and 'account' when one is.
+ *
+ * @param $Rows VYoY, already constrained to one grain
  * @returns JSON array
  */
 create or modify microflow Ledger.BUILD_YoYData (
-  $Rows: list of Ledger.VMonthCategory,
-  $Through: integer,
-  $CurrentYear: integer,
-  $Category: string,
-  $Account: string
+  $Rows: list of Ledger.VYoY
 )
 returns string as $Json
 folder 'Insights'
 begin
   declare $Json string = '';
   declare $Sep string = '';
-  declare $Cat string = '';
-  declare $Kind string = '';
-  declare $Grp string = '';
-  declare $Prior decimal = 0;
-  declare $Current decimal = 0;
-  declare $Seen string = ',';
 
-  @annotation 'One outer pass per distinct category, tracked in a delimited string because MDL has no set. Thirteen categories over roughly three hundred rows, so the quadratic shape is affordable here and would not be at transaction scale.'
   loop $R in $Rows
   begin
-    set $Cat = $R/CategoryName;
-    @annotation 'The period filter deliberately does not apply here: this chart compares the same months of two years, and narrowing it to an arbitrary range would break the like-for-like window that is the whole point. Category and account do apply.'
-    if contains($Seen, ',' + $Cat + ',') = false
-      and ($Category = '' or $Cat = $Category) then
-      set $Seen = $Seen + $Cat + ',';
-      set $Kind = $R/GroupTypeName;
-      set $Grp = $R/GroupName;
-      set $Prior = 0;
-      set $Current = 0;
-
-      loop $S in $Rows
-      begin
-        if $S/CategoryName = $Cat and $S/MonthIndex <= $Through
-          and ($Account = '' or $S/AccountName = $Account) then
-          if $S/Yr = $CurrentYear then
-            set $Current = $Current + $S/Total;
-          else
-            if $S/Yr = $CurrentYear - 1 then
-              set $Prior = $Prior + $S/Total;
-            end if;
-          end if;
-        end if;
-      end loop;
-
-      if $Prior > 0 or $Current > 0 then
-        set $Json = $Json + $Sep
-          + '{"cat":"' + $Cat + '"'
-          + ',"grp":"' + $Grp + '"'
-          + ',"kind":"' + $Kind + '"'
-          + ',"prior":' + formatDecimal($Prior, '0.00')
-          + ',"current":' + formatDecimal($Current, '0.00')
-          + ',"delta":' + formatDecimal($Current - $Prior, '0.00') + '}';
-        set $Sep = ',';
-      end if;
-    end if;
+    set $Json = $Json + $Sep
+      + '{"cat":"' + $R/CategoryName + '"'
+      + ',"grp":"' + $R/GroupName + '"'
+      + ',"kind":"' + $R/GroupTypeName + '"'
+      + ',"prior":' + formatDecimal($R/PriorTotal, '0.00')
+      + ',"current":' + formatDecimal($R/CurTotal, '0.00')
+      + ',"delta":' + formatDecimal($R/Delta, '0.00') + '}';
+    set $Sep = ',';
   end loop;
 
   return '[' + $Json + ']';
@@ -414,45 +337,71 @@ begin
   declare $AccName string = '';
   declare $FromKey integer = 0;
   declare $ToKey integer = 0;
+  declare $Grain string = 'all';
   declare $Scope string = '';
 
-  retrieve $Months from Ledger.VMonthCategory sort by CategoryName asc, Yr asc, MonthIndex asc;
-  retrieve $Lines from Ledger.VTransactionLine sort by TxDate asc;
-  retrieve $Days from Ledger.VDaySpend sort by TxDate asc;
-  retrieve $Merchants from Ledger.VMerchantMonth sort by Merchant asc, Yr asc, MonthIndex asc;
-  retrieve $Matrix from Ledger.VMatrixActual sort by SortKey asc;
-
-  @annotation 'Empty association means no filter. Read once here rather than in each builder, which would each need the association traversal.'
+  @annotation 'Empty association means no filter. Read before the retrieves now, because the retrieves are what apply it.'
   if $Context/Ledger.InsightsContext_Category != empty then
     set $CatName = $Context/Ledger.InsightsContext_Category/Ledger.Category/Name;
   end if;
   if $Context/Ledger.InsightsContext_Account != empty then
     set $AccName = $Context/Ledger.InsightsContext_Account/Ledger.Account/Name;
+    set $Grain = 'account';
   end if;
 
-  @annotation 'A month key, year*100+month, so a month-grained row can be range-tested against a day-grained period without date arithmetic in every builder'
+  @annotation 'A month key, year*100+month, so a month-grained row can be range-tested against a day-grained period. The views carry the same key as a column, which is what lets this be an XPath constraint rather than an `if` inside a loop - XPath has no arithmetic, so the key has to exist in the database.'
   set $FromKey = parseInteger(formatDateTime($Context/FromDate, 'yyyy')) * 100
     + parseInteger(formatDateTime($Context/FromDate, 'MM'));
   set $ToKey = parseInteger(formatDateTime($Context/ToDate, 'yyyy')) * 100
     + parseInteger(formatDateTime($Context/ToDate, 'MM'));
 
+  @annotation 'Every filter is in the retrieve. This is the change: the page used to pull every row of five views and discard most of them in MDL, once per chart. An empty filter variable is compared against the empty string in the constraint itself, so one retrieve serves both the filtered and unfiltered case without branching.'
+  retrieve $Months from Ledger.VMonthCategory
+    where [MonthKey >= $FromKey and MonthKey <= $ToKey
+      and ($CatName = '' or CategoryName = $CatName)
+      and ($AccName = '' or AccountName = $AccName)]
+    sort by CategoryName asc, Yr asc, MonthIndex asc;
+
+  @annotation 'Income is excluded here rather than in the builder: a salary is an order of magnitude above every expense and would flatten the scatter into a band at the bottom.'
+  retrieve $Lines from Ledger.VTransactionLine
+    where [GroupTypeName = 'Expense'
+      and TxDate >= $Context/FromDate and TxDate <= $Context/ToDate
+      and ($CatName = '' or CategoryName = $CatName)
+      and ($AccName = '' or AccountName = $AccName)]
+    sort by TxDate asc;
+
+  retrieve $Days from Ledger.VDaySpend
+    where [TxDate >= $Context/FromDate and TxDate <= $Context/ToDate
+      and ($CatName = '' or CategoryName = $CatName)
+      and ($AccName = '' or AccountName = $AccName)]
+    sort by TxDate asc;
+
+  @annotation 'Savings transfers are excluded in the constraint. Cancelling one saves nothing, so it does not belong in a chart that ranks costs by what cancelling them would save.'
+  retrieve $Merchants from Ledger.VMerchantMonth
+    where [Yr = $Year and MonthKey >= $FromKey and MonthKey <= $ToKey
+      and not(CategoryName = 'Savings transfer')
+      and ($CatName = '' or CategoryName = $CatName)
+      and ($AccName = '' or AccountName = $AccName)]
+    sort by Merchant asc, Yr asc, MonthIndex asc;
+
+  @annotation 'Grain picks which aggregation of VYoY to read: one row per category across all accounts, or one per category per account. Both are in the view as a UNION ALL, and the constraint prunes the branch that is not wanted before it touches a table.'
+  retrieve $YoYRows from Ledger.VYoY
+    where [Grain = $Grain
+      and ($CatName = '' or CategoryName = $CatName)
+      and ($AccName = '' or AccountName = $AccName)]
+    sort by CategoryName asc;
+
+  @annotation 'The only unconstrained retrieve left, and the only one that is not a chart payload: the reporting window is a property of the whole dataset, not of the filter.'
+  retrieve $Matrix from Ledger.VMatrixActual sort by SortKey asc;
+
   $ThroughCalc = call microflow Ledger.CALC_ReportingThrough (Rows = $Matrix);
   set $Through = $ThroughCalc;
 
-  $Stream = call microflow Ledger.BUILD_StreamData (
-    Rows = $Months, FromKey = $FromKey, ToKey = $ToKey, Category = $CatName, Account = $AccName);
-  $Tx = call microflow Ledger.BUILD_TxData (
-    Rows = $Lines, FromDate = $Context/FromDate, ToDate = $Context/ToDate,
-    Category = $CatName, Account = $AccName);
-  $Cal = call microflow Ledger.BUILD_CalendarData (
-    Rows = $Days, FromDate = $Context/FromDate, ToDate = $Context/ToDate,
-    Category = $CatName, Account = $AccName);
-  $Sav = call microflow Ledger.BUILD_SavingsData (
-    Rows = $Merchants, Year = $Year, FromKey = $FromKey, ToKey = $ToKey,
-    Category = $CatName, Account = $AccName);
-  $YoY = call microflow Ledger.BUILD_YoYData (
-    Rows = $Months, Through = $Through, CurrentYear = $Year,
-    Category = $CatName, Account = $AccName);
+  $Stream = call microflow Ledger.BUILD_StreamData (Rows = $Months);
+  $Tx = call microflow Ledger.BUILD_TxData (Rows = $Lines);
+  $Cal = call microflow Ledger.BUILD_CalendarData (Rows = $Days);
+  $Sav = call microflow Ledger.BUILD_SavingsData (Rows = $Merchants);
+  $YoY = call microflow Ledger.BUILD_YoYData (Rows = $YoYRows);
 
   $MonthName = call microflow Ledger.FMT_MonthName (MonthIndex = $Through);
 
