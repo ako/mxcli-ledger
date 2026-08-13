@@ -67,7 +67,15 @@ create or replace page Ledger.Dashboard
                     minHeightUnit: none,
                     maxHeightUnit: none,
                     showPlaygroundSlot: false,
-                    configurationOptions: '{"displayModeBar":false,"responsive":true}'
+                    -- responsive:false. With it on, Plotly re-measures its container
+                    -- and redraws on every resize — including the resize its own
+                    -- redraw causes when the page's vertical scrollbar appears or
+                    -- disappears, which is a loop that widens the chart a little each
+                    -- pass. Reported from a real browser; not reproducible headless,
+                    -- where scrollbars are overlaid and take no layout width. The
+                    -- cost is that the chart no longer follows a window resize until
+                    -- the page is reloaded.
+                    configurationOptions: '{"displayModeBar":false,"responsive":false}'
                   )
                 }
               }
@@ -152,7 +160,15 @@ create or replace page Ledger.Dashboard
                       minHeightUnit: none,
                       maxHeightUnit: none,
                       showPlaygroundSlot: false,
-                      configurationOptions: '{"displayModeBar":false,"responsive":true}'
+                      -- responsive:false. With it on, Plotly re-measures its container
+                    -- and redraws on every resize — including the resize its own
+                    -- redraw causes when the page's vertical scrollbar appears or
+                    -- disappears, which is a loop that widens the chart a little each
+                    -- pass. Reported from a real browser; not reproducible headless,
+                    -- where scrollbars are overlaid and take no layout width. The
+                    -- cost is that the chart no longer follows a window resize until
+                    -- the page is reloaded.
+                    configurationOptions: '{"displayModeBar":false,"responsive":false}'
                     )
                   }
                 }
