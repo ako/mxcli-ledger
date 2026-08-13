@@ -13,6 +13,12 @@
 -- Insights page is the one place that wants both years, so its views carry Yr
 -- as a column and let the caller decide.
 --
+-- Every view carries AccountName and groups by it, which is what makes an
+-- account filter possible at all. It also makes each view finer-grained than
+-- the chart that reads it — a month/category now spans one row per account —
+-- so the specs aggregate with `"aggregate": "sum"` rather than the model
+-- re-grouping. Summing in the spec is free; summing in MDL would need a map.
+--
 -- Mirrors are excluded throughout: an internal transfer books on both accounts
 -- and would double every savings figure.
 -- ============================================================================
@@ -35,6 +41,7 @@ create or modify view entity Ledger.VMonthCategory (
   GroupName: string(50),
   GroupTypeName: string(200),
   ColorHex: string(10),
+  AccountName: string(100),
   Total: decimal,
   TxCount: integer
 ) as (
@@ -45,14 +52,16 @@ create or modify view entity Ledger.VMonthCategory (
     g.Name as GroupName,
     cast(g.GroupType as string) as GroupTypeName,
     g.ColorHex as ColorHex,
+    a.Name as AccountName,
     sum(t.Amount) as Total,
     count(t.id) as TxCount
   from Ledger.Transaction as t
   inner join t/Ledger.Transaction_Category/Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false
   group by datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate),
-           c.Name, g.Name, cast(g.GroupType as string), g.ColorHex
+           c.Name, g.Name, cast(g.GroupType as string), g.ColorHex, a.Name
 );
 /
 
@@ -67,19 +76,24 @@ create or modify view entity Ledger.VMonthCategory (
 create or modify view entity Ledger.VDaySpend (
   TxDate: datetime,
   Yr: integer,
+  CategoryName: string(100),
+  AccountName: string(100),
   Total: decimal,
   TxCount: integer
 ) as (
   select
     t.TxDate as TxDate,
     datepart(YEAR, t.TxDate) as Yr,
+    c.Name as CategoryName,
+    a.Name as AccountName,
     sum(t.Amount) as Total,
     count(t.id) as TxCount
   from Ledger.Transaction as t
   inner join t/Ledger.Transaction_Category/Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
-  group by t.TxDate, datepart(YEAR, t.TxDate)
+  group by t.TxDate, datepart(YEAR, t.TxDate), c.Name, a.Name
 );
 /
 
@@ -109,6 +123,7 @@ create or modify view entity Ledger.VMerchantMonth (
   GroupName: string(50),
   Yr: integer,
   MonthIndex: integer,
+  AccountName: string(100),
   Total: decimal,
   TxCount: integer
 ) as (
@@ -118,13 +133,15 @@ create or modify view entity Ledger.VMerchantMonth (
     g.Name as GroupName,
     datepart(YEAR, t.TxDate) as Yr,
     datepart(MONTH, t.TxDate) as MonthIndex,
+    a.Name as AccountName,
     sum(t.Amount) as Total,
     count(t.id) as TxCount
   from Ledger.Transaction as t
   inner join t/Ledger.Transaction_Category/Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
   group by t.Merchant, c.Name, g.Name,
-           datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate)
+           datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate), a.Name
 );
 /

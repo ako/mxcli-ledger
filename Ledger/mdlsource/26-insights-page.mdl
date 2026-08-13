@@ -24,6 +24,58 @@ create or replace page Ledger.Insights (
           dynamictext txtInsWindow (attribute: WindowText, rendermode: paragraph, class: 'text-muted')
 
           -- ------------------------------------------------------------------
+          -- Filter. One control set for all six charts, written to the same
+          -- object the charts read, so a change is one microflow and one
+          -- refresh rather than six datasources re-running independently.
+          -- ------------------------------------------------------------------
+          container ctnFilter (class: 'card ledger-card ledger-filter') {
+            layoutgrid lgFilter {
+              row rowFilter {
+                column colFrom (desktopwidth: 3) {
+                  datepicker dpFrom (label: 'From', attribute: FromDate)
+                }
+                column colTo (desktopwidth: 3) {
+                  datepicker dpTo (label: 'To', attribute: ToDate)
+                }
+                column colCat (desktopwidth: 3) {
+                  combobox cbCategory (
+                    label: 'Category',
+                    attribute: Ledger.InsightsContext_Category,
+                    datasource: database Ledger.Category,
+                    -- Neither emptyOptionCaption nor placeholder is exposed by
+                    -- MDL's combobox (MDL-WIDGET01 rejects both), so there is no
+                    -- way to write "All categories" into the blank option. The
+                    -- state line under the buttons says what is selected
+                    -- instead, which a caption on one control could not do for
+                    -- all four anyway.
+                    CaptionAttribute: Name)
+                }
+                column colAcc (desktopwidth: 3) {
+                  combobox cbAccount (
+                    label: 'Account',
+                    attribute: Ledger.InsightsContext_Account,
+                    datasource: database Ledger.Account,
+                    CaptionAttribute: Name)
+                }
+              }
+              row rowFilterActions {
+                column colFilterActions (desktopwidth: 12) {
+                  container ctnFilterButtons (class: 'ledger-modes') {
+                    actionbutton btnApply (
+                      caption: 'Apply',
+                      buttonstyle: Primary,
+                      action: microflow Ledger.ACT_ApplyInsightsFilter(Context: $currentObject))
+                    actionbutton btnReset (
+                      caption: 'Reset',
+                      action: microflow Ledger.ACT_ResetInsightsFilter(Context: $currentObject))
+                  }
+                  dynamictext txtFilterState (attribute: FilterText, rendermode: paragraph, class: 'text-muted')
+                }
+              }
+            }
+          }
+
+          -- ------------------------------------------------------------------
           -- 1. Where the money goes, month by month
           -- ------------------------------------------------------------------
           container ctnStream (class: 'card ledger-card') {
@@ -54,7 +106,8 @@ create or replace page Ledger.Insights (
       "description": "Stacked bands. Detail by category keeps each one its own band while the colour stays at group level - thirteen hues would be a colour puzzle, five is a legend you can hold in your head.",
       "mark": {"type": "area", "interpolate": "monotone", "opacity": 0.85},
       "encoding": {
-        "y": {"field": "v", "type": "quantitative", "stack": "zero",
+        "y": {"field": "v", "type": "quantitative", "aggregate": "sum", "stack": "zero",
+              "description": "Summed: the view groups by account too, so a month/category is one row per account. Aggregating here costs a keyword; aggregating in MDL would need a map it does not have.",
               "axis": {"title": null, "format": ",.0f", "grid": true}},
         "color": {
           "field": "grp", "type": "nominal", "title": "Group",
@@ -171,12 +224,12 @@ create or replace page Ledger.Insights (
       "x": {"field": "d", "timeUnit": "week", "type": "ordinal", "title": null, "axis": {"labelExpr": "\'\'"}},
       "y": {"field": "d", "timeUnit": "day", "type": "ordinal", "title": null,
             "axis": {"labelExpr": "datum.label[0]"}},
-      "color": {"field": "v", "type": "quantitative", "title": "EUR",
+      "color": {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "EUR",
                 "scale": {"scheme": "oranges", "type": "sqrt"}},
       "tooltip": [
         {"field": "d", "type": "temporal", "title": "Day", "format": "%a %e %b %Y"},
-        {"field": "v", "type": "quantitative", "title": "Spent", "format": ",.2f"},
-        {"field": "n", "type": "quantitative", "title": "Transactions"}
+        {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "Spent", "format": ",.2f"},
+        {"field": "n", "type": "quantitative", "aggregate": "sum", "title": "Transactions"}
       ]
     }
   }

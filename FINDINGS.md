@@ -3204,3 +3204,51 @@ whole-object replacement statements: **if a statement replaces an object that
 spans the whole app, exactly one file may issue it, and it must be the last one
 that needs to.** The same reasoning applies to `ALTER SETTINGS` and to project
 security.
+
+### 91. Adding a column to a view's GROUP BY silently changed what a row count meant downstream
+
+Making the Insights charts filterable by account meant carrying `AccountName`
+into the three aggregate views and grouping by it. That is a one-line change per
+view, and it looked free.
+
+It was not, because one downstream microflow was counting *rows* as a proxy for
+something else. `BUILD_SavingsData` decides which merchants are recurring:
+
+```
+set $CurMonths = $CurMonths + 1;      -- one row per month, before
+```
+
+VMerchantMonth had been grouped by merchant, category and month, so a row *was*
+a month and counting rows counted months. After the change it is grouped by
+account too, so a merchant billing two cards in March is two rows and one month.
+The count inflates, and it does not merely inflate a label — it is the divisor
+in the annual projection (`total / months * 12`), so every multi-account
+merchant's ranking silently shifts.
+
+The fix is to count the key rather than the rows:
+
+```
+if $R/MonthIndex != $CurLastMonth then
+  set $CurMonths = $CurMonths + 1;
+  set $CurLastMonth = $R/MonthIndex;
+end if;
+```
+
+**Nothing would have caught this.** `mx check` passes either way — the types are
+identical and the query is valid. The chart still renders, still ranks, still
+looks entirely reasonable; only the numbers are wrong, and only for merchants
+that use more than one account. It was found by reasoning about the change, not
+by running it.
+
+The general shape is worth naming, because a grouped view invites it: **a row
+count is only a count of the thing you mean while the grain stays the same, and
+the grain is set somewhere else.** Any microflow that counts rows from a view is
+coupled to that view's GROUP BY, invisibly and without a reference the tooling
+can follow. `SHOW REFERENCES OF` finds the entity, not the assumption.
+
+The charts had the opposite problem and it cost nothing: they also became
+finer-grained than the buckets they draw, and a spec absorbs that with one
+keyword — `"aggregate": "sum"` on the encoding. Summing in the spec is free.
+Summing in MDL would need a map it does not have. The same change was a bug on
+one side of the split and a no-op on the other, which is a fair summary of why
+the split is there.

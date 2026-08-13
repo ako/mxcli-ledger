@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 90 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 91 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -93,6 +93,17 @@ axis was visible immediately.
 
 Six charts over one datasource, all Vega-Lite through the project's own widget.
 The page reads two years: 2025 in full and 2026 to date.
+
+![Insights filter](docs/screenshots/insights-filter.png)
+
+One filter drives all six: a period, a category and an account. The controls
+write to the same object the charts read, so applying a change is one microflow
+and one `change … refresh` rather than six datasources re-running independently
+— which also sidesteps the datasource-refresh problem in finding 68. Filtering
+to Groceries takes the scatter from 820 points to 211, matching SQL exactly.
+
+The period rounds outward to whole months for the monthly charts and is exact
+for the day-level ones, because the aggregate views are grouped by month.
 
 **Income against spend.** Income stacks above the axis, spend below, and the
 dark line is the net — where it sits above zero, the month paid for itself.
@@ -277,7 +288,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              90 numbered findings — the main deliverable alongside the app
+FINDINGS.md              91 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
