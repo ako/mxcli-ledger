@@ -159,6 +159,12 @@ container cannot reach GitHub's OAuth device-flow endpoints, so
 
 ## Ground rules for authoring
 
+- **Never run `mxcli test --local` while `mxcli run` is live.** The test runner
+  rebuilds `deployment/` and its build has no web client, so it deletes the
+  running app's `dist/` and the browser goes white — HTTP 200, clean `mx check`,
+  silent log. Restart to rebuild. Same shape as the `mx check` / `--watch` rule
+  below. See finding 93.
+
 These apply to every later phase:
 
 - mxcli's default engine is `modelsdk`. **Do not** pass `--engine legacy`.

@@ -3317,3 +3317,55 @@ referenced by the spec so it survives aggregation. Relying on a field the chart
 happens to encode couples the click handler to the visual design — change the
 encoding and the click breaks, silently, with `mx check` clean and the chart
 still rendering perfectly.
+
+### 93. `mxcli test --local` rebuilds the deployment folder underneath a running app, leaving a white screen
+
+Symptom: the app serves HTTP 200, `mx check` is clean, the runtime log is quiet,
+and the browser shows nothing at all. No error, no partial render — a blank
+page.
+
+The one useful signal is in the network panel:
+
+```
+dist/index.js?639222440940684304 :: net::ERR_ABORTED   (404)
+```
+
+`index.html` is served, the client bundle is not. And the reason is that
+`deployment/web/dist/` no longer exists:
+
+```
+$ ls Ledger/deployment/web/dist/
+ls: cannot access 'Ledger/deployment/web/dist/': No such file or directory
+```
+
+**What removed it was the test runner.** The app had been started at 18:49 and
+had bundled its web client successfully (`Web client bundled in 1m1.026s`).
+`mxcli test --local` was then run against the same project, and it rebuilds the
+deployment directory for its own purposes:
+
+```
+$ ls -la --time-style=+%H:%M:%S Ledger/deployment/
+drwxr-xr-x 13 root root 4096 18:55:02 .
+$ ls -la --time-style=+%H:%M:%S Ledger/.mxcli/
+-rw-r--r--  1 root root 98015 18:55:21 test-runtime.log
+```
+
+A test run has no use for a web client, so its build does not produce one — and
+because it writes into the *same* `deployment/` the running app is serving from,
+the live bundle is deleted rather than duplicated. The running runtime keeps
+serving `index.html` from the same directory, so nothing appears to be wrong
+from the server's side. The failure is entirely in the browser and entirely
+silent.
+
+**The fix is a restart**, which rebuilds the client. Nothing is lost and the
+model is untouched — this is not corruption, only a missing artefact.
+
+**The rule is: do not run `mxcli test --local` while `mxcli run` is live.** That
+is the same shape as the rule this project already had about `mx check` during a
+`--watch` loop, and for the same underlying reason — two tools sharing one
+build directory, one of them assuming it owns it. Worth mxcli either using a
+scratch deployment directory for test runs, or refusing to start when it can see
+a runtime already serving from that folder.
+
+This had been hit once before and written off as "a running app process had lost
+its deployment"; the mechanism is above, and the trigger was the tests.
