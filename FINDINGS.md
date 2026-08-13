@@ -2622,7 +2622,14 @@ The app had been authored entirely through mxcli up to this point. Commit
 Marketplace versions, and icons added to the six navigation menu items. Both
 halves broke on the way back.
 
-### 81. Navigation menu-item icons are invisible to MDL, and the documented round-trip deletes them
+### 81. Navigation menu-item icons are invisible to MDL, and the documented round-trip deletes them *(FIXED for collection icons, verified)*
+
+> **Fixed upstream, 2026-08-13.** mxcli gained `MENU ITEM … PAGE … ICON
+> Module.Collection.Name`, and `DESCRIBE NAVIGATION` now emits it. The fix and
+> its remaining edge are recorded at the end of this entry; the original
+> diagnosis is left intact because the mechanism it identified has *not*
+> changed — items are still deleted and recreated, and the grammar's coverage
+> is still what decides what survives.
 
 Six menu items carried icons, deliberately spanning all three kinds Mendix
 supports:
@@ -2729,6 +2736,41 @@ replacing it: match incoming items to existing ones, mutate those in place, and
 create or delete only the difference. Then menu items inherit the same guarantee
 the profile already has, and the grammar's coverage stops being the thing that
 decides what survives.
+
+**How it was fixed (2026-08-13).** The grammar route, as expected — and the
+part worth praising is what it does with the cases it *cannot* carry.
+`DESCRIBE NAVIGATION` now emits:
+
+```
+    menu item 'Dashboard' page Ledger.Dashboard icon Atlas_Core.Atlas."align-center";
+    …
+    menu item 'Accounts' page Ledger.Account_Overview;
+    -- icon a numeric glyph code (Forms$GlyphIcon) is not reproducible by CREATE NAVIGATION; set it in Studio Pro
+    menu item 'Categories & rules' page Ledger.Category_Overview;
+    -- icon System.Images.Close (Forms$ImageIcon) is not reproducible by CREATE NAVIGATION; set it in Studio Pro
+```
+
+`ICON` covers `Forms$IconCollectionIcon` only, so two of this app's six — a
+glyph icon and an image icon — still cannot be authored. But the loss is no
+longer silent, which was the actual defect: the round-trip now states what it
+is about to drop, in the output you are about to re-apply, at the exact line
+where the information used to disappear. **A tool that cannot represent
+something and says so is in a completely different class from one that
+represents it as nothing.** More surfaces should do this.
+
+Verified by applying the emitted MDL to a copy and reading the icons back:
+the four collection icons round-trip exactly; the glyph and image icons come
+back absent, as advertised. Menu item ids still change on every write, so the
+delete-and-recreate mechanism above is unchanged — the grammar now simply
+covers the common case.
+
+The app authors all six as collection icons (`22-dashboard-page.mdl`). The two
+that could not round-trip were placeholders — glyph code 9999 and a generic
+close cross — so they became `credit-card` and `tag-group`, which both mean
+something and keep the file set reproducible. That trade is only free because
+they were placeholders; an app whose glyph icons were deliberate would have to
+choose between reproducibility and its icons, and should know that before it
+re-applies.
 
 **Consequence for this project.** `mdlsource/22-dashboard-page.mdl` owns the
 navigation block, and this app's stated method is to re-apply all 24 files from
@@ -2993,3 +3035,62 @@ and the obvious readings — package missing, types missing, wrong version — a
 all wrong. The base config also sets `jsx: "react-jsx"`, so the
 `import { createElement }` that Mendix widget examples still open with is now an
 unused import and `noUnusedLocals` fails the build on it.
+
+### 87. The widget definition cache is gitignored and does not refresh when a package changes
+
+Found while verifying that finding 81's fix had made the source set re-appliable
+again. It had — but the re-apply exposed something else.
+
+Applying all 25 `mdlsource/` files to a copy of the working project produced a
+model that failed `mx check`, where the project itself was clean:
+
+```
+The app contains: 6 errors.
+      1 at Data grid 2 'dgBudgets'
+      1 at Data grid 2 'dgCategories'
+      1 at Data grid 2 'dgMatrix'
+      1 at Data grid 2 'dgNeedsReview'
+      1 at Data grid 2 'dgRules'
+      1 at Data grid 2 'dgTransactions'
+```
+
+Every MDL-authored Data Grid 2, and only those — CE0463 again, from the other
+direction this time. Finding 82 was stale *packages* against a current model.
+This is a current package against a stale *schema*: mxcli writes a widget
+instance from `.mxcli/widgets/<name>.def.json`, extracted from whichever `.mpk`
+was installed when it was first written. Data Grid 2 had since moved 3.4.0 →
+3.11.3, so every grid mxcli wrote described a widget that no longer exists.
+
+Nothing warns. The authoring pass succeeds, `mxcli check` passes, and the model
+is broken in a way only `mx check` reports — which is the same shape as several
+earlier findings and the reason this project treats `mx check` as the authority.
+
+`mxcli widget init` is the refresh, and it detects the drift on its own once
+asked:
+
+```
+$ mxcli widget init -p Ledger.mpr
+  ~ pluggable    DATAGRID             com.mendix.widget.web.datagrid.Datagrid
+Extracted: 0 new, 3 refreshed, 31 up to date, 9 skipped (built-in or unparseable)
+```
+
+Re-applying the four page files afterwards took it back to 0 errors.
+
+**The cache is gitignored** — `Ledger/.gitignore:31` is `.mxcli/` — which is the
+right call, since it is derived from the packages. But that makes it a build
+input that no clone starts with and nothing regenerates automatically, so the
+documented build recipe was incomplete. Verified against a true fresh-clone
+simulation — copy the project, delete `.mxcli/`, then:
+
+```
+$ mxcli widget init -p Ledger.mpr
+$ for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
+all 25 files applied cleanly
+$ mx check Ledger.mpr
+The app contains: 0 errors.
+```
+
+`widget init` now leads the recipe in the README. The general rule is worth
+stating plainly: **after any widget package changes, refresh the definitions
+before authoring anything that uses them.** Upgrading a package silently
+invalidates every stored instance mxcli would write next.

@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 86 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 87 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -149,19 +149,26 @@ the build order and every file is idempotent (`create or modify` throughout).
 
 ```bash
 cd Ledger
+mxcli widget init -p Ledger.mpr                          # required first — see below
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
 ~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
 mxcli test tests/*.test.mdl -p Ledger.mpr --local        # microflow tests
 mxcli run --local --ensure-db                            # run it
 ```
 
-Two rules learned the hard way and worth stating up front:
+Three rules learned the hard way and worth stating up front:
 
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
   couple pass both and only show up at runtime.
 - **`DESCRIBE` is how you find out what was actually serialized.** More than one
   finding came from comparing authored MDL against what came back.
+- **`mxcli widget init` is a build step, not a setup step.** mxcli writes a
+  widget instance from a definition cached under `Ledger/.mxcli/`, which is
+  gitignored and does not refresh when a `.mpk` changes. Skip it after a package
+  upgrade and every Data Grid 2 the set authors describes a widget that no
+  longer exists — six CE0463 errors, with nothing before `mx check` to say so.
+  See finding 87.
 
 ### Toolchain
 
@@ -190,12 +197,13 @@ up.
 
 Stated rather than hidden:
 
-- **The navigation menu icons cannot survive a full re-apply.** They were added
-  in Studio Pro — the one exception to "authored entirely through mxcli" — and
-  MDL can neither read nor write them, so `create or replace navigation` in
-  file 22 deletes all six and reports success. File 22 carries a warning
-  comment. Finding 81 has the diagnosis; newer mxcli has since gained
-  `MENU ITEM … ICON`, which should close it.
+- **Two of the six menu icons are not the ones Studio Pro had.** MDL's `ICON`
+  reaches icon-collection icons only; the Accounts item carried a glyph icon
+  and Categories & rules an image icon, neither of which is authorable. Both
+  were placeholders, so file 22 authors collection icons in their place and the
+  whole set is reproducible again. `DESCRIBE` now names what it cannot carry
+  instead of dropping it silently — see finding 81, which is how the icons came
+  to be understood at all.
 - **The chart itself is not clickable.** Three independent blockers, all recorded
   in `FINDINGS.md` 67–69: MDL silently drops an `action`-typed property on a
   pluggable widget; writing a widget attribute does not re-run a datasource over
@@ -214,7 +222,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              86 numbered findings — the main deliverable alongside the app
+FINDINGS.md              87 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

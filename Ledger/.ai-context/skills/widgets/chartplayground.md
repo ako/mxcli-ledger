@@ -2,7 +2,7 @@
 
 - **Widget ID:** `com.mendix.widget.web.chartplayground.ChartPlayground`
 - **Type:** PLUGGABLEWIDGET
-- **Version:** 6.2.1
+- **Version:** 6.3.2
 
 ## MDL Example
 
