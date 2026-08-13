@@ -1,10 +1,28 @@
 # Restoring the widget packages
 
-**Status: open. The app does not build from `main` as it stands.**
+**Status: done (2026-08-13). `mx check` reports 0 errors and `Ledger/widgets/`
+is committed.** Kept as the record of what was run and what bit along the way —
+findings 81–86 in [`FINDINGS.md`](../FINDINGS.md) carry the diagnosis.
 
-This is a work order for a session that starts cold. Everything needed to
-execute it is below; the background is findings 81–82 in
-[`FINDINGS.md`](../FINDINGS.md).
+What actually happened, against the plan below:
+
+- The eight pinned widgets went in with `mxcli marketplace install <id>
+  --version <v>`, which is type-aware and copies a widget straight into
+  `widgets/`. Data Grid 2, Gallery and the grid filters came out of the Data
+  Widgets 3.11.3 module package (`unzip -j … 'widgets/*.mpk'`), leaving the
+  model alone since `themesource/` was already current. That took 116 errors
+  to 2.
+- The last two were Atlas_Core native phone layouts on Feedback 3.4.0.
+  Extracting *all* of Atlas Core 4.3.8's bundled widgets to fix them went to
+  **78 errors**: the module ships Image 1.5.0 and Combo box 2.6.1, older than
+  the standalone packages the model wants. Taking only Feedback and re-pinning
+  those two settled it at 0. See finding 85.
+- `*.mpk` is out of `.gitignore` and `Ledger/widgets/` is committed (12 MB).
+  That is the part that actually fixes finding 82 — and it became
+  non-negotiable once the project gained a widget of its own, which no one can
+  fetch from the Marketplace.
+- **The icon trap below is still live.** Nothing here re-applied file 22, and
+  the six icons were verified intact afterwards.
 
 ---
 

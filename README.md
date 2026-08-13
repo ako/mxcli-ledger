@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 82 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 86 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -58,9 +58,30 @@ unfavourable direction:
 
 ![Cashflow in variance mode](docs/screenshots/cashflow-variance.png)
 
-Months that have not happened yet are blank rather than zero. A zero actual
-against a full budget would read as maximally under budget and paint the second
-half of the year green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md).
+Months with no data are blank rather than zero. A zero actual against a full
+budget would read as maximally under budget and paint the rest of the year
+green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md). "No data" is not
+the same as "in the future": bank data arrives in arrears, so the window is the
+earlier of months elapsed and months with any activity (finding 83).
+
+Below the matrix, the same thirteen categories as a small-multiple grid — a
+twelve-month line over its budget envelope, with over-budget months marked:
+
+![Cashflow sparklines](docs/screenshots/cashflow-sparklines.png)
+
+This one is not Plotly. It is Vega-Lite through
+[`widgets-src/vegachart`](./widgets-src/vegachart), a pluggable widget built for
+this project, and it is here because `facet` is an operator: the grid falls out
+of the data instead of being thirteen hand-placed subplots. The widget takes the
+**spec and the data separately** — the spec is a static property, committed and
+diffable, and the microflow emits only a table of rows. Nothing assembles a
+chart payload at runtime, which is the opposite of how the sunburst and sankey
+are built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
+reachable through the same widget for what Vega-Lite cannot express.
+
+Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
+a narrow column had been skimmed past for weeks; thirteen lines diving to the
+axis was visible immediately.
 
 ### Budgets
 
@@ -111,6 +132,7 @@ files apply in dependency order:
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
 | `20`–`22` | Dashboard sunburst and income-to-spend sankey |
+| `23` | Cashflow sparkline grid, through the project's own Vega widget |
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
@@ -168,13 +190,12 @@ up.
 
 Stated rather than hidden:
 
-- **The app does not currently build from a clone.** Widgets were updated in
-  Studio Pro, but `.gitignore` carries `*.mpk`, so the packages never travelled
-  with the commit and `mx check` reports 116 CE0463 errors against the stale
-  ones. [`docs/widget-recovery.md`](./docs/widget-recovery.md) is the work order;
-  findings 81–82 are the diagnosis. That commit is also the one exception to
-  "authored entirely through mxcli" — it added the navigation menu icons, which
-  MDL can neither read nor write.
+- **The navigation menu icons cannot survive a full re-apply.** They were added
+  in Studio Pro — the one exception to "authored entirely through mxcli" — and
+  MDL can neither read nor write them, so `create or replace navigation` in
+  file 22 deletes all six and reports success. File 22 carries a warning
+  comment. Finding 81 has the diagnosis; newer mxcli has since gained
+  `MENU ITEM … ICON`, which should close it.
 - **The chart itself is not clickable.** Three independent blockers, all recorded
   in `FINDINGS.md` 67–69: MDL silently drops an `action`-typed property on a
   pluggable widget; writing a widget attribute does not re-run a datasource over
@@ -193,13 +214,14 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              82 numbered findings — the main deliverable alongside the app
+FINDINGS.md              86 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
 docs/widget-recovery.md  open work order — restoring the widget packages
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
+widgets-src/vegachart/   the project's own pluggable widget (Vega-Lite / Vega)
 Ledger/tests/            microflow tests (mxcli test --local)
 Ledger/theme/            Atlas token overrides
 Ledger/themesource/      component styling

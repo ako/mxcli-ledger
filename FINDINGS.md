@@ -2832,3 +2832,164 @@ and the outbound proxy both work.
 Packages are as much a part of a Mendix app's source as the `.mpr`; leaving them
 out produces a repository that only builds on the machine that authored it, and
 nothing warns you until a widget version moves.
+
+---
+
+## Phase 11 — custom charting (2026-08-13)
+
+A custom pluggable widget rendering Vega-Lite, and the first chart through it:
+the cashflow matrix as a small-multiple sparkline grid. Three of these four are
+about getting a widget of one's own into an MDL-authored project; the first is
+about what happened when the same numbers were drawn more densely.
+
+### 83. Elapsed is not the same as reported — the matrix was printing € 0 for a month it had no data for
+
+Not an mxcli finding. An app defect, recorded because of *how* it was found:
+it had been shipping in plain sight and the denser rendering made it obvious in
+one glance.
+
+`CALC_ElapsedThrough` answers a calendar question — which months have happened —
+and the matrix used it to decide which cells to fill. But a month can be elapsed
+and hold nothing: bank data arrives in arrears, and this app's seed stops at the
+previous month end. The current month therefore had a full budget, a zero
+actual, and was rendered as a real figure:
+
+```
+CATEGORY   JAN      …   JUL      AUG    SEP  OCT
+Salary     € 5,309  …   € 5,541  € 0
+Rent       € 1,557  …   € 1,680  € 0
+```
+
+Every row read `€ 0` for August, heat-shaded as wildly under budget, while
+September and October were correctly blank. This is exactly the misreading that
+blanking future months exists to prevent (PROTOTYPE-ANALYSIS §5.3) — the app
+had the principle written down and the boundary in the wrong place.
+
+It also cost the over-budget KPI. The income test is
+`budget - actual > budget * 0.02`, so a zero actual is always a miss: both
+income categories contributed a phantom over-budget cell (`5200 > 104`,
+`900 > 18`). The expense test, `actual - budget > budget * 0.02`, is false at
+zero — so the count was inflated by exactly two. It reads 40 now.
+
+**A table hid it; a chart could not.** `€ 0` in a narrow column is easy to skim
+past, and this one had been skimmed past for weeks. The same value as a line is
+a plunge to the axis in all thirteen panels at once, and it was the first thing
+visible on the first render. Denser encoding is not only prettier — it has less
+room to hide a wrong number in.
+
+The fix is a second window, `CALC_ReportingThrough`: the earlier of months
+elapsed and months with any activity. Only the trailing edge moves, so a
+category that genuinely booked nothing in March still shows its zero, because
+some other category has a March transaction. It takes the already-retrieved
+`VMatrixActual` list as a parameter rather than retrieving again — MDL list
+parameters (`$Rows: list of Ledger.VMatrixActual`) work fine and are the right
+tool on a datasource path.
+
+The totals never moved: € 45,118 income before and after, because adding a zero
+month changes a sum but not by anything.
+
+### 84. `ALTER PAGE … INSERT` has no idempotent form, which a re-appliable source set needs
+
+Every other statement this project writes is `create or modify` or
+`create or replace`, which is what makes `mdlsource/` re-appliable — the stated
+method is to rebuild from scratch rather than patch. `ALTER PAGE` breaks that
+pattern:
+
+```
+$ mxcli exec mdlsource/23-cashflow-sparklines.mdl -p Ledger.mpr
+Replaced microflow: Ledger.DS_SparklineData
+Error: failed to insert: duplicate widget name 'lgSparkRow': a widget with this name already exists on the page
+```
+
+There is no `INSERT … IF NOT EXISTS`, and no `DROP WIDGET … IF EXISTS` to pair
+with it, so the file cannot make itself safe to re-run. Note also that the
+statements before the failure had already been applied — the script is not
+atomic, so a re-run leaves the model half-updated.
+
+In the canonical flow it is survivable: file 11 recreates the page from scratch
+before file 23 inserts into it, so applying the whole set in order works. But
+iterating on one file — the normal way anyone develops — does not, and the
+workaround is a manual `DROP WIDGET` between runs. Either guard would fix it,
+and `DROP WIDGET … IF EXISTS` is the smaller change.
+
+### 85. A module package is not authoritative for the widgets it bundles
+
+Worth knowing before running `marketplace install` on a module.
+
+Restoring the widget packages (finding 82) went 116 errors → 2, both remaining
+ones on Atlas_Core's native phone layouts, using Feedback 3.4.0 where Atlas Core
+4.3.8 ships 3.6.1. Taking the widgets out of the Atlas Core package looked like
+the obvious fix and made things much worse:
+
+```
+$ unzip -o -j AtlasCore-4.3.8.mpk 'widgets/*.mpk' -d widgets/
+$ mx check Ledger.mpr
+The app contains: 78 errors.
+```
+
+Atlas Core bundles its own copies of Image and Combo box — at **1.5.0** and
+**2.6.1**, against the **1.6.0** and **2.9.0** the model was authored against
+and that `widgets-appstore-metadata.json` pins. A module ships whatever versions
+it was built against, which for a widely-depended-on module like Atlas Core is
+often behind the standalone package.
+
+So a module package is a source of *a* version, not *the* version. Take only
+the widgets that are actually missing:
+
+```
+$ unzip -o -j AtlasCore-4.3.8.mpk 'widgets/com.mendix.widget.native.Feedback.mpk' -d widgets/
+$ mxcli marketplace install 118579 --version 1.6.0 -p Ledger.mpr   # Image
+$ mxcli marketplace install 219304 --version 2.9.0 -p Ledger.mpr   # Combo box
+$ mx check Ledger.mpr
+The app contains: 0 errors.
+```
+
+`mxcli marketplace install` is type-aware and got this right on its own for the
+eight standalone widgets — it copies a widget into `widgets/` and, for a module
+already present, refuses and reports rather than overwriting. The trap is only
+in reaching into a module package by hand, which is still necessary for Data
+Grid 2 and Gallery because they have no standalone listing.
+
+### 86. Authoring a pluggable widget for an MDL-driven project works, with two snags
+
+The path is short and none of it needs Studio Pro. A hand-written widget project
+(`package.json`, `src/package.xml`, `src/VegaChart.xml`, one `.tsx`),
+`pluggable-widgets-tools build:web`, and the `.mpk` lands in the project's
+`widgets/` folder by way of `config.projectPath`. Then:
+
+```
+$ mxcli widget extract --mpk widgets/ledger.widget.web.VegaChart.mpk
+  Widget ID:  ledger.widget.web.vegachart.VegaChart
+  MDL name:   VEGACHART
+  Properties: 6
+  Output:     .mxcli/widgets/vegachart.def.json
+```
+
+and the widget is placeable from MDL like any built-in, with every property
+carried through — including a multi-line string property holding a 60-line JSON
+spec, which is what makes a spec-as-data widget authorable this way at all.
+`mx check` is clean and the widget renders.
+
+Two things cost time:
+
+**`mxcli widget extract` needs `--mpk`, and its error does not say so.** Passing
+the file positionally — which is what the command's own shape suggests — prints
+a full usage dump ending in `required flag(s) "mpk" not set`, with the
+positional argument silently ignored.
+
+**Mendix's base tsconfig cannot resolve modern package types.**
+`@mendix/pluggable-widgets-tools` 11.12.1 sets `moduleResolution: "node"`,
+which predates the `exports` field. vega-embed 7 publishes its types only
+through `exports`, so the build fails with `TS2307: Cannot find module
+'vega-embed'` even though Rollup resolves and bundles the package correctly.
+One override in the project's own tsconfig fixes it:
+
+```json
+{ "compilerOptions": { "moduleResolution": "bundler" } }
+```
+
+Worth flagging because the failure names the module, not the resolution mode,
+and the obvious readings — package missing, types missing, wrong version — are
+all wrong. The base config also sets `jsx: "react-jsx"`, so the
+`import { createElement }` that Mendix widget examples still open with is now an
+unused import and `noUnusedLocals` fails the build on it.

@@ -21,10 +21,15 @@
 -- the point of the prototype; the chart is the demonstration of it.
 --
 -- The x scale runs the full year while the actual line stops at the last
--- elapsed month. A zero actual for a month that has not happened would read as
--- maximally under budget — the same trap the matrix avoids by leaving future
--- months blank (README, and PROTOTYPE-ANALYSIS §5.3). Emitting null rather
--- than 0 makes Vega-Lite break the line instead of drawing it to the floor.
+-- reported month. A zero actual for a month with no data would read as
+-- maximally under budget — the trap PROTOTYPE-ANALYSIS §5.3 describes.
+-- Emitting null rather than 0 makes Vega-Lite break the line instead of
+-- drawing it to the floor.
+--
+-- That window is CALC_ReportingThrough, and this chart is why it exists: the
+-- matrix had the same defect and had been shipping it, printing € 0 across
+-- every row for the current month. A table cell reading € 0 is easy to skim
+-- past; thirteen lines diving to the floor is not.
 -- ============================================================================
 
 /** What the sparkline grid binds to. */
@@ -67,34 +72,12 @@ begin
   declare $BudgetVal decimal = 0;
   declare $ActualVal decimal = 0;
   declare $Cell string = '';
-  declare $LastWithData integer = 0;
-  declare $Probe integer = 1;
-
-  $ThroughCalc = call microflow Ledger.CALC_ElapsedThrough ();
-  set $Through = $ThroughCalc;
-
   retrieve $Matrix from Ledger.VMatrixActual sort by SortKey asc;
   retrieve $Budgets from Ledger.VCategoryBudget sort by SortKey asc;
 
-  @annotation 'Elapsed on the calendar is not the same as having data. CALC_ElapsedThrough answers "which months have happened", which is the right question for the KPIs but not for where a line should stop: the demo data ends at the previous month end, so the current month is elapsed and empty. Drawing it would put every line on the floor and read as spending nothing, which is the same misreading blank future months exist to avoid. The window is therefore the earlier of the two - months elapsed, and months with any activity at all. Only the trailing edge is trimmed, so a category that genuinely booked nothing in March still shows its zero.'
-  loop $R0 in $Matrix
-  begin
-    if $R0/RowKind = 'Category' then
-      set $Probe = 1;
-      while $Probe <= 12
-      begin
-        $Pv = call microflow Ledger.GET_ViewActual (V = $R0, MonthIndex = $Probe);
-        if $Pv != 0 and $Probe > $LastWithData then
-          set $LastWithData = $Probe;
-        end if;
-        set $Probe = $Probe + 1;
-      end while;
-    end if;
-  end loop;
-
-  if $LastWithData < $Through then
-    set $Through = $LastWithData;
-  end if;
+  @annotation 'The same window the matrix and the KPIs use, so the sparkline cannot disagree with the row above it about which months exist.'
+  $ThroughCalc = call microflow Ledger.CALC_ReportingThrough (Rows = $Matrix);
+  set $Through = $ThroughCalc;
 
   @annotation 'Category rows only: the group subtotals and the net line are roll-ups of these, and a facet per roll-up would double-count the ink without adding a fact.'
   loop $R in $Matrix
