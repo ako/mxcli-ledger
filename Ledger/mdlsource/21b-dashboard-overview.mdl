@@ -45,6 +45,17 @@ create or modify non-persistent entity Ledger.OverviewContext (
   TableData: string,
   /** e.g. '20 months · 13 categories · 12 need review' */
   SubText: string(200),
+  /**
+   * How many months the table covers, and how many categories it has.
+   *
+   * They exist so the caption above the chart can be written from the data
+   * rather than from what the data happened to be the day it was written. It
+   * used to read 'Twenty months, thirteen categories' as a literal, which
+   * survived a fourteenth and a fifteenth category being added and sat one line
+   * above a subheading that correctly said '15 categories'.
+   */
+  MonthSpan: integer default 0,
+  CategoryCount: integer default 0,
   /** The clicked row's datum, as JSON */
   SelectedPoint: string,
   /** Transactions behind the clicked category */
@@ -242,6 +253,9 @@ begin
   declare $Year integer = 2026;
   declare $CatCount integer = 0;
   declare $UncatCount integer = 0;
+  declare $FirstMonth integer = 0;
+  declare $LastMonthSeen integer = 0;
+  declare $MonthOrdinal integer = 0;
   declare $UncatTotal decimal = 0;
   declare $Kind string = '';
   declare $Grp string = '';
@@ -265,6 +279,15 @@ begin
       set $Month = toString($R/Yr) + '-0' + toString($R/MonthIndex) + '-01';
     else
       set $Month = toString($R/Yr) + '-' + toString($R/MonthIndex) + '-01';
+    end if;
+
+    @annotation 'The span the caption quotes. Counted as first to last rather than as distinct months: the strip draws a continuous axis, so a month with no transactions in it is still a month the chart shows.'
+    set $MonthOrdinal = $R/Yr * 12 + $R/MonthIndex;
+    if $FirstMonth = 0 or $MonthOrdinal < $FirstMonth then
+      set $FirstMonth = $MonthOrdinal;
+    end if;
+    if $MonthOrdinal > $LastMonthSeen then
+      set $LastMonthSeen = $MonthOrdinal;
     end if;
 
     $Ord = call microflow Ledger.GET_DelimitedValue (List = $OrderList, Key = $R/CategoryName);
@@ -360,6 +383,12 @@ begin
     TableData = '[' + $Json + ']',
     SubText = toString($CatCount) + ' categories · ' + toString($UncatCount)
       + ' transactions need review (' + $UncatText + ')',
+    -- Written as + 1 - first, not - first + 1. A minus followed by a plus in
+    -- one expression is silently re-emitted with the two swapped, so the span
+    -- was stored as last + first - 1 and the caption read 48620 months
+    -- (FINDINGS 105).
+    MonthSpan = $LastMonthSeen + 1 - $FirstMonth,
+    CategoryCount = $CatCount,
     SelectedPoint = '',
     DetailData = '[]',
     DetailTitle = '',

@@ -41,7 +41,7 @@
         <propertyGroup caption="Appearance">
             <property key="chartHeight" type="integer" required="true" defaultValue="360">
                 <caption>Height (px)</caption>
-                <description>Height of the chart container.</description>
+                <description>Height of the chart container. Zero lets the container take the height the chart renders at, which is what a chart sized by its data needs — a facet row per category or a legend entry per series has no height the page can know in advance.</description>
             </property>
             <property key="renderer" type="enumeration" required="true" defaultValue="svg">
                 <caption>Renderer</caption>

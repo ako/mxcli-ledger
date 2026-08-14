@@ -69,15 +69,25 @@ create or replace page Ledger.Dashboard
               -- "which ones?".
               column colDashChart (desktopwidth: 9) {
           container ctnOverviewCard (class: 'card ledger-card') {
+            -- Counted, not written down. This read 'Twenty months, thirteen
+            -- categories' as a literal until a fourteenth and a fifteenth were
+            -- added, at which point it sat one line under a subheading that
+            -- correctly said '15 categories' and contradicted it.
             dynamictext lblOverview (
-              content: 'Twenty months, thirteen categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.',
+              content: '{1} months, {2} categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.',
+              contentparams: [{1} = MonthSpan, {2} = CategoryCount],
               rendermode: paragraph,
               class: 'text-muted')
 
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOverview (
               chartData: TableData,
               datasetName: 'table',
-              chartHeight: 620,
+              -- Zero: the container takes whatever the chart renders at. The
+              -- table is a facet row per category, so its height is a fact
+              -- about the data, and 620 was a measurement of one particular
+              -- day's data. Fifteen rows filled it exactly and sixteen drew
+              -- 29px past it, into the card's padding.
+              chartHeight: 0,
               renderer: 'svg',
               showActions: false,
               selection: SelectedPoint,

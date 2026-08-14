@@ -155,5 +155,9 @@ export function VegaChart(props: VegaChartContainerProps): ReactElement {
         );
     }
 
-    return <div className="vega-chart" ref={hostRef} style={{ height: chartHeight }} />;
+    // Zero means "as tall as it comes out". A chart whose height is decided by
+    // its data — a facet row per category, a legend entry per series — has no
+    // number the page can be told in advance, and a fixed container silently
+    // stops matching the moment the data grows.
+    return <div className="vega-chart" ref={hostRef} style={{ height: chartHeight > 0 ? chartHeight : undefined }} />;
 }

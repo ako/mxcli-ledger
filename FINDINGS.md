@@ -4106,3 +4106,79 @@ widget cannot be modified that way: the description will not re-parse, and if
 the quoting were fixed without also emitting the booleans, it would re-parse and
 silently drop a property instead. A widget was never hand-authorable in Studio
 Pro terms, so this is the only route it has.
+
+### 105. A minus followed by a plus in one expression is silently swapped, and the runtime computes the swapped version
+
+A caption meant to read "20 months, 13 categories" rendered as:
+
+```
+48620 months, 13 categories.
+```
+
+The microflow was written as:
+
+```sql
+MonthSpan = $LastMonthSeen - $FirstMonth + 1,
+```
+
+and the model came back holding:
+
+```sql
+MonthSpan = $LastMonthSeen + $FirstMonth - 1
+```
+
+24320 + 24301 − 1 = 48620. Not a rendering artifact like finding 104 — the
+running app computed it, so the corruption is in the model.
+
+Minimal repro, eleven assignments in one microflow, written against what
+`DESCRIBE MICROFLOW` gives back:
+
+```
+set $R = $A - $B;                ==  set $R = $A - $B;
+set $R = $A + $B;                ==  set $R = $A + $B;
+set $R = $A - $B + 1;            !=  set $R = $A + $B - 1;
+set $R = $A - $B - 1;            ==  set $R = $A - $B - 1;
+set $R = $A + $B - 1;            ==  set $R = $A + $B - 1;
+set $R = $A + $B + 1;            ==  set $R = $A + $B + 1;
+set $R = $A - $B + $C;           !=  set $R = $A + $B - $C;
+set $R = $A - ($B - 1);          ==  set $R = $A - ($B - 1);
+set $R = $A - $B * 2;            ==  set $R = $A - $B * 2;
+set $R = $A - $B + $C - 2;       !=  set $R = $A + $B - $C - 2;
+set $R = 1 - $A + $B;            !=  set $R = 1 + $A - $B;
+```
+
+**Every failure has the same shape: a `-` followed by a `+` at the same
+precedence level.** All-plus chains survive, all-minus chains survive, a
+parenthesised subtraction survives, and `-` against `*` survives — multiplication
+binds tighter, so it never joins the additive chain. `$A - $B + $C - 2` becomes
+`$A + $B - $C - 2`: the first `- +` pair swaps and the trailing `- 2` is left
+alone. `1 - $A + $B` shows it is not about variables.
+
+The additive chain is being rebuilt with its operators reassigned to the wrong
+operands — the plus lands where the minus was written. `set` and an attribute
+inside `create` are affected identically, so it is the expression handling, not
+the statement.
+
+**What makes it dangerous is that every layer downstream is happy.** The script
+passes `mxcli check`. `mx check` reports 0 errors. The microflow runs. The only
+thing wrong is the number, and a number is exactly the thing a reader assumes is
+right. This one was caught because 48620 months is absurd; had the span been out
+by two it would have shipped.
+
+Scanned the rest of the project for the shape — strip comments and string
+literals, split into statements, look for a `-` operator preceding a `+` at paren
+depth 0 — and this was the only expression in 27 files that had it. The five
+other matches were the scanner spanning a condition and its body (`if $B - $A >
+… then set $Over = $Over + 1`), which are two expressions, not one, and both
+round-trip intact.
+
+The workaround is to write the same arithmetic in a form the tool preserves:
+
+```sql
+MonthSpan = $LastMonthSeen + 1 - $FirstMonth,
+```
+
+Plus before minus, identical value, and it round-trips. Parenthesising the
+subtraction works too. Neither is something an author should have to know, so
+the comment in `21b-dashboard-overview.mdl` says why the line is written
+backwards.
