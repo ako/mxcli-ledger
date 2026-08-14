@@ -14,6 +14,14 @@
 -- value can sit inside a clickable container. The band stays on the column's
 -- DynamicCellClass — the tint belongs to the whole cell, not to the container
 -- inside it — and the container only carries the click and the cursor.
+--
+-- The sparklines are a column of this grid, and they are declared here rather
+-- than added by a later file. They used to be a separate card below the matrix,
+-- inserted by 23-cashflow-sparklines.mdl with ALTER PAGE ... INSERT, and this
+-- file is CREATE OR REPLACE PAGE — so the next edit to the matrix silently
+-- deleted them, which is exactly how they went missing. It is the same trap
+-- navigation fell into twice: page-spanning state needs one owner. The page has
+-- one now, and it is this file.
 -- ============================================================================
 
 /**
@@ -99,6 +107,91 @@ create or replace page Ledger.Cashflow_Overview
               Sortable: false, Draggable: false,
               ColumnWidth: manual, Size: 190,
               DynamicCellClass: 'if $currentObject/RowKind = Ledger.RowKind.Group then ''cf-group'' else if $currentObject/RowKind = Ledger.RowKind.Net then ''cf-net'' else ''cf-cat''')
+            -- The trend column: one sparkline per row, rendered by the Vega
+            -- widget from the row's own SparkData.
+            --
+            -- It sits second, not last, because the matrix scrolls sideways —
+            -- a trend column past December would be off-screen exactly when the
+            -- shape is most useful. Next to the label it is the first thing read
+            -- after the category name.
+            --
+            -- Fourteen widget instances share one spec string, which is the same
+            -- split the standalone chart used: the microflow emits a table of
+            -- rows and the model never generates layout. What changed is the
+            -- grain. A facet grid needed one payload carrying every category and
+            -- a `facet` operator to cut it back up; a column already has one
+            -- chart per row, so each row carries only its own twelve months and
+            -- the spec has no facet at all.
+            --
+            -- Group and net rows get one too. Their figures are roll-ups of the
+            -- categories below them, so the line is a real quantity — and it is
+            -- the roll-up rows whose shape is hardest to read off twelve cells.
+            column colSpark (
+              caption: 'Trend',
+              Sortable: false, Draggable: false,
+              ColumnWidth: manual, Size: 150,
+              -- Not the label column's row-kind classes. Those are typographic
+              -- (mono, uppercase, and a 24px indent for categories) and a chart
+              -- has no type to set — the indent would only cost it width.
+              DynamicCellClass: '''cf-spark'''
+            ) {
+              pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartSpark (
+                chartData: SparkData,
+                datasetName: 'table',
+                chartHeight: 30,
+                renderer: 'svg',
+                showActions: false,
+                spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "background": null,
+  "width": 126,
+  "height": 26,
+  "padding": 2,
+  "autosize": {"type": "fit", "contains": "padding"},
+  "config": {"view": {"stroke": null}},
+  "transform": [
+    {"calculate": "[''Jan'',''Feb'',''Mar'',''Apr'',''May'',''Jun'',''Jul'',''Aug'',''Sep'',''Oct'',''Nov'',''Dec''][datum.m - 1]", "as": "mon"}
+  ],
+  "layer": [
+    {
+      "description": "The miss, as the area between actual and budget. It is the quantity the row is actually about, and shading it means the eye reads how far off rather than only which side. Filtered to elapsed months rather than left to break on the null: an area whose y is null still closes one step past the last point, which drew a small block into September that looked like data.",
+      "transform": [{"filter": "isValid(datum.a)"}],
+      "mark": {"type": "area", "color": "#1B4D4B", "opacity": 0.08},
+      "encoding": {"y": {"field": "a", "type": "quantitative"}, "y2": {"field": "b"}}
+    },
+    {
+      "description": "Budget, as a step reference line. It was an area from zero at first, which forced the y scale to include zero and flattened every line into the top of a 26px cell — a category that varies between 544 and 698 has no visible shape once the axis starts at 0.",
+      "mark": {"type": "line", "color": "#B9B1A1", "strokeWidth": 1, "interpolate": "step-after"},
+      "encoding": {"y": {"field": "b", "type": "quantitative"}}
+    },
+    {
+      "description": "Actual. Nulls after the last elapsed month break the line rather than drawing it to zero.",
+      "mark": {"type": "line", "color": "#1B4D4B", "strokeWidth": 1.2},
+      "encoding": {"y": {"field": "a", "type": "quantitative"}}
+    },
+    {
+      "description": "Unfavourable months. The only place a row spends a strong colour, and it marks the months worth clicking. The flag is computed in the builder against the same rule that tints the cell — the spec cannot know that above budget is good news on a salary row.",
+      "transform": [{"filter": "isValid(datum.a) && datum.u === 1"}],
+      "mark": {"type": "point", "color": "#A8321E", "size": 12, "filled": true},
+      "encoding": {"y": {"field": "a", "type": "quantitative"}}
+    }
+  ],
+  "encoding": {
+    "x": {
+      "field": "m", "type": "quantitative",
+      "scale": {"domain": [1, 12], "nice": false},
+      "axis": null
+    },
+    "y": {"axis": null, "scale": {"zero": false, "nice": false}},
+    "tooltip": [
+      {"field": "mon", "type": "nominal", "title": "Month"},
+      {"field": "a", "type": "quantitative", "title": "Actual", "format": ",.2f"},
+      {"field": "b", "type": "quantitative", "title": "Budget", "format": ",.2f"}
+    ]
+  }
+}')
+            }
             column colM01 (
               caption: 'Jan', Alignment: right,
               Sortable: false, ColumnWidth: manual, Size: 132,

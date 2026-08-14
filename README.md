@@ -125,20 +125,36 @@ green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md). "No data" is not
 the same as "in the future": bank data arrives in arrears, so the window is the
 earlier of months elapsed and months with any activity (finding 83).
 
-Below the matrix, the same thirteen categories as a small-multiple grid — a
-twelve-month line over its budget envelope, with over-budget months marked:
+The second column is the row's own year: a twelve-month line against a budget
+step, the gap between them shaded, and a dot on every month that went the wrong
+way. It sits beside the label rather than past December because the matrix
+scrolls sideways.
 
 ![Cashflow sparklines](docs/screenshots/cashflow-sparklines.png)
 
 This one is not Plotly. It is Vega-Lite through
 [`widgets-src/vegachart`](./widgets-src/vegachart), a pluggable widget built for
-this project, and it is here because `facet` is an operator: the grid falls out
-of the data instead of being thirteen hand-placed subplots. The widget takes the
-**spec and the data separately** — the spec is a static property, committed and
-diffable, and the microflow emits only a table of rows. Nothing assembles a
-chart payload at runtime, which is the opposite of how the Plotly charts it
-replaced were built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
-reachable through the same widget for what Vega-Lite cannot express.
+this project. The widget takes the **spec and the data separately** — the spec
+is a static property, committed and diffable, and the microflow emits only a
+table of rows. Nothing assembles a chart payload at runtime, which is the
+opposite of how the Plotly charts it replaced were built. `vega-embed`
+dispatches on the spec's own `$schema`, so full Vega is reachable through the
+same widget for what Vega-Lite cannot express.
+
+The budget is a step, not a curve, so a one-month override reads as what it is:
+the raised plateau on Freelance and Groceries is July's override, and the shaded
+block under it is the month spent against it.
+
+The rows cost nothing to produce: the builder already has each month's actual
+and budget in hand to write the cell beside it, so the sparkline's payload is a
+concatenation over figures that were computed anyway. The dot is computed there
+too rather than in the spec, because above budget is good news on a salary row
+and the spec has no way to know that. That makes the column checkable against
+the one next to it — per row, the dots and the red cells agree, 67 and 67.
+
+It began as a separate card below the matrix and vanished for a commit and a
+half, because that card was inserted by a later file into a page an earlier file
+recreates (finding 103).
 
 Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
 a narrow column had been skimmed past for weeks; thirteen lines diving to the
@@ -302,12 +318,11 @@ files apply in dependency order:
 |---|---|
 | `01`–`04` | Domain model, enumerations, demo data |
 | `05` | Transactions, Accounts, Categories screens |
-| `06`–`11` | Cashflow matrix, shared views, inspector, transaction popup |
+| `06`–`11` | Cashflow matrix, shared views, sparkline column, inspector, transaction popup |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
 | `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
-| `23` | Cashflow sparkline grid, through the project's own Vega widget |
 | `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 

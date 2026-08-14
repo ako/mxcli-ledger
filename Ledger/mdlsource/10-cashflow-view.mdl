@@ -451,6 +451,11 @@ end;
  * Group and net budgets are rolled up here rather than in SQL, because summing
  * a baseline across a group would fan out against the override join.
  *
+ * Each row also carries its twelve months as JSON for the sparkline in the
+ * Trend column. It costs nothing extra: the loop below already has the actual
+ * and the budget in hand for every cell, so the payload is a string
+ * concatenation over figures that were computed anyway.
+ *
  * Category rows are matched back to their Category on the same SortKey the view
  * computes, so a cell can drill into its transactions. A view entity cannot
  * carry an association (CE6771, FINDINGS 41), so the join happens here over one
@@ -474,6 +479,11 @@ begin
   declare $Include boolean = false;
   declare $Sign integer = 1;
   declare $TotalText string = '';
+  declare $Spark string = '';
+  declare $SparkSep string = '';
+  declare $SparkActual string = '';
+  declare $SparkOver string = '0';
+  declare $Unfavourable decimal = 0;
 
   $Rows = create list of Ledger.CashflowRow;
   set $Through = $Context/ElapsedThrough;
@@ -507,6 +517,8 @@ begin
     end if;
 
     set $RowTotal = 0;
+    set $Spark = '';
+    set $SparkSep = '';
     set $M = 1;
     while $M <= 12
     begin
@@ -560,6 +572,30 @@ begin
       $Set = call microflow Ledger.SET_RowMonth (
         Row = $Row, MonthIndex = $M, Text = $Text, Band = $Band);
 
+      @annotation 'The sparkline payload, built from the same two figures the cell was built from. A month that has not elapsed emits null rather than 0: zero against a full budget would draw the line to the floor and read as maximally under budget. Mode-independent on purpose — the mode changes what the cells say, not what happened.'
+      if $Elapsed then
+        set $SparkActual = formatDecimal($Actual, '0.00');
+      else
+        set $SparkActual = 'null';
+      end if;
+
+      @annotation 'The dot marks an unfavourable month, on the same rule CALC_Band tints a cell with: direction by row type — on income, short of budget is the bad side — and the same 2% dead band. Computing a > b in the spec instead put a red dot on every good month a salary row had, and disagreed with the tint beside it.'
+      set $SparkOver = '0';
+      if $Elapsed and $Budget != 0 then
+        set $Unfavourable = if $IsIncome then $Budget - $Actual else $Actual - $Budget;
+        if $Unfavourable > 0 and (abs($Unfavourable) div $Budget) >= 0.02 then
+          set $SparkOver = '1';
+        end if;
+      end if;
+
+      set $Spark = $Spark + $SparkSep
+        + '{"m":' + toString($M)
+        + ',"a":' + $SparkActual
+        + ',"b":' + formatDecimal($Budget, '0.00')
+        + ',"u":' + $SparkOver
+        + '}';
+      set $SparkSep = ',';
+
       if $Context/Mode = Ledger.ReportMode.Budget then
         set $RowTotal = $RowTotal + $Budget;
       else
@@ -581,7 +617,7 @@ begin
       $TotalE = call microflow Ledger.FMT_Euro (Amount = $RowTotal);
       set $TotalText = $TotalE;
     end if;
-    change $Row (TotalText = $TotalText);
+    change $Row (TotalText = $TotalText, SparkData = '[' + $Spark + ']');
     add $Row to $Rows;
   end loop;
 

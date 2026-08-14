@@ -3990,3 +3990,119 @@ zero gaps — and the tooltip reports −697.70.
 aggregate — including the ones that only exist to be read by a human.** A
 tooltip looks like annotation and behaves like a dimension. The tell is a
 tooltip whose number is smaller than the mark it is attached to.
+
+---
+
+## Phase 13 — the sparkline moves into the table (2026-08-14)
+
+The small-multiple grid below the cashflow matrix became a column of the matrix
+itself: one sparkline per row, beside the twelve figures it summarises. Getting
+there turned up how a page loses a widget nobody deleted, and how little of a
+pluggable widget survives a `DESCRIBE`.
+
+### 103. An `ALTER PAGE ... INSERT` is erased by the next run of the file that owns the page, and nothing reports it
+
+The sparklines disappeared from the cashflow page. No commit removed them, no
+error mentioned them, and `mx check` reported 0 errors both before and after.
+
+The two files:
+
+```
+11-cashflow-page.mdl    create or replace page Ledger.Cashflow_Overview { ... }
+23-cashflow-sparklines  alter page Ledger.Cashflow_Overview {
+                          insert after lgMatrixRow { ... the chart ... } }
+```
+
+Editing the matrix — making the inspector's rows clickable — meant re-running
+file 11. `CREATE OR REPLACE PAGE` rebuilt the page from its own source, and file
+23's insert was simply not in that source. The chart was gone from that moment,
+in a commit whose diff mentions only an `onclick`.
+
+Nothing catches this. A page missing a widget is a perfectly valid page, so the
+validator has nothing to say; the runtime renders what it is given; and the two
+files never appear in the same diff. It surfaces when someone looks at the
+screen.
+
+File 23 had even documented its own fragility, and documented the wrong half:
+
+```
+-- Idempotency, and the one place this file is not. [...] re-running *this file
+-- alone* against a page that already carries the chart fails with "duplicate
+-- widget name 'lgSparkRow'". In the canonical flow it is fine: file 11
+-- recreates the page from scratch before this one inserts into it.
+```
+
+The hazard identified was applying file 23 twice. The hazard that fired was
+applying file 11 once. "File 11 recreates the page from scratch before this one
+inserts into it" is true only while the files are applied as a set, and the
+whole point of `create or modify` everywhere else in this project is that a
+single file can be re-applied on its own.
+
+**This is the navigation trap again** (finding 81, and the four-file menu before
+it): state that spans files needs one owner. For a page, the owner is whichever
+file holds its `CREATE OR REPLACE PAGE`. The sparkline column now lives there,
+and file 23 is gone.
+
+What would make `ALTER PAGE` safe to depend on is idempotency —
+`INSERT ... IF NOT EXISTS` paired with `DROP WIDGET ... IF EXISTS` — because
+then "apply every file in order" repairs the page instead of racing it, and an
+alter file re-applied on its own is a no-op rather than a duplicate-name error.
+Neither form exists today:
+
+```
+$ mxcli check drop-if-exists.mdl
+  - line 1:18 extraneous input 'exists' expecting the start of a statement
+```
+
+### 104. `DESCRIBE PAGE` does not round-trip a pluggable widget: strings lose their quotes and booleans vanish
+
+A probe page with two Vega widgets, one spec on a single line and one across
+several:
+
+```sql
+pluggablewidget 'ledger.widget.web.vegachart.VegaChart' pw1 (
+  datasetName: 'table', chartHeight: 30, renderer: 'svg', showActions: true,
+  spec: '{"a": 1}')
+```
+
+comes back from `DESCRIBE PAGE` as:
+
+```
+pluggablewidget 'ledger.widget.web.vegachart.VegaChart' pw1 (
+  spec: {"a": 1},
+  datasetName: table,
+  chartHeight: 30,
+  renderer: svg
+)
+```
+
+Every string property has lost its quotes — `spec`, `datasetName` — and
+`showActions` is not in the output at all. Feeding the description of the real
+cashflow page back through the checker fails from the first widget onward:
+
+```
+$ mxcli -c "DESCRIBE PAGE Ledger.Cashflow_Overview" | sed -n '/^create or modify page/,$p' > rt.mdl
+$ mxcli check rt.mdl
+  - line 380:75 extraneous input ':' expecting the start of a statement
+  - line 380:83 extraneous input ',' expecting the start of a statement
+  - line 384:50 extraneous input '(' expecting the start of a statement
+```
+
+The model is fine — this is an output defect, not a storage one. The property is
+in the `.mxunit`:
+
+```
+$ grep -ac showActions mprcontents/e4/5b/e45bbab7-....mxunit
+2
+```
+
+Two widgets, two occurrences, exactly as written. It is `DESCRIBE` that drops
+it.
+
+That matters more than a cosmetic complaint because DESCRIBE-edit-CREATE OR
+REPLACE is the documented way to modify an element you did not author — it is
+how `mxcli` itself tells you to change navigation. Any page carrying a pluggable
+widget cannot be modified that way: the description will not re-parse, and if
+the quoting were fixed without also emitting the booleans, it would re-parse and
+silently drop a property instead. A widget was never hand-authorable in Studio
+Pro terms, so this is the only route it has.

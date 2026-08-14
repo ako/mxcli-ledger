@@ -299,6 +299,24 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
     padding-left: 24px;
 }
 
+// The trend column. The chart is a fixed 126x26 SVG, so the cell only has to
+// stop fighting it: no cell padding to shrink the drawing area, and the SVG
+// pinned to the row's baseline grid rather than floating on a text line.
+.cf-spark {
+    padding: 0 8px;
+
+    .vega-chart {
+        display: flex;
+        align-items: center;
+    }
+
+    // A sparkline is scanned across rows, so its ink is quieter than the
+    // figures beside it — the shape carries the reading, not the contrast.
+    svg {
+        display: block;
+    }
+}
+
 .cf-net {
     font-family: var(--ledger-mono);
     font-weight: 500;

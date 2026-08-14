@@ -1,6 +1,8 @@
 // Pull a Vega-Lite spec back out of an MDL page file so it can be compiled and
 // measured locally. The spec lives inside a single-quoted MDL string, so the
-// only unescaping needed is \' back to '.
+// unescaping is \' and '' back to ' — MDL takes the doubled form, and a Vega
+// expression that quotes a string literal (a month-name lookup, say) is written
+// that way in the source.
 import fs from 'fs';
 
 const [, , file, out] = process.argv;
@@ -12,7 +14,7 @@ for (; i < src.length; i++) {
   if (src[i] === '{') depth++;
   else if (src[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
 }
-const spec = src.slice(start + "spec: '".length, end).replace(/\\'/g, "'");
+const spec = src.slice(start + "spec: '".length, end).replace(/\\'/g, "'").replace(/''/g, "'");
 JSON.parse(spec);
 fs.writeFileSync(out, spec);
 console.log('extracted', spec.length, 'chars ->', out);
