@@ -339,6 +339,8 @@ begin
   declare $ToKey integer = 0;
   declare $Grain string = 'all';
   declare $Scope string = '';
+  declare $PriorSum decimal = 0;
+  declare $WindowText string = '';
 
   @annotation 'Empty association means no filter. Read before the retrieves now, because the retrieves are what apply it.'
   if $Context/Ledger.InsightsContext_Category != empty then
@@ -405,6 +407,20 @@ begin
 
   $MonthName = call microflow Ledger.FMT_MonthName (MonthIndex = $Through);
 
+  @annotation 'Does a prior year exist at all? The comparison is drawn as a dumbbell - hollow dot last year, filled dot this year - and on a database that only holds the current year every hollow dot lands on zero and every rule stretches from the axis. That is arithmetically right and reads as a bug, so the window text says which it is rather than leaving the reader to guess.'
+  loop $R in $YoYRows
+  begin
+    set $PriorSum = $PriorSum + $R/PriorTotal;
+  end loop;
+
+  if $PriorSum = 0 then
+    set $WindowText = 'January to ' + $MonthName + ' ' + toString($Year)
+      + ' · nothing recorded in ' + toString($Year - 1) + ', so there is no prior year to compare against';
+  else
+    set $WindowText = 'January to ' + $MonthName + ' ' + toString($Year)
+      + ' against the same months of ' + toString($Year - 1);
+  end if;
+
   set $Scope = 'All categories';
   if $CatName != '' then
     set $Scope = $CatName;
@@ -421,8 +437,7 @@ begin
     CalendarData = $Cal,
     SavingsData = $Sav,
     YoYData = $YoY,
-    WindowText = 'January to ' + $MonthName + ' ' + toString($Year)
-      + ' against the same months of ' + toString($Year - 1),
+    WindowText = $WindowText,
     FilterText = formatDateTime($Context/FromDate, 'd MMM yyyy') + ' to '
       + formatDateTime($Context/ToDate, 'd MMM yyyy') + ' · ' + $Scope
   ) refresh;

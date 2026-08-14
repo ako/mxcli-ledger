@@ -3914,3 +3914,79 @@ The general lesson is the same one as finding 94's "do not measure a
 screenshot": **the browser is an instrument, and an instrument that has silently
 changed scale reports confident nonsense.** Check the instrument before
 believing the measurement.
+
+### 102. A field named in a tooltip without an aggregate silently becomes part of the group-by, and un-aggregates the chart
+
+Reported as "the income against spend chart looks a bit weird for the Daily
+living category" — thin white slivers cutting through the stacked bands.
+
+**The first hypothesis was wrong and worth recording as such.** Stacked areas
+with `interpolate: "monotone"` are a known source of exactly this look: each
+band's top and bottom are smoothed independently, so two curves fitted to the
+same numbers diverge between data points and the background shows through.
+Switching to `linear` is correct on its own merits and changed nothing here.
+
+Measuring the geometry settled it. Reading each band's top and bottom edge at
+x=0 out of the SVG:
+
+```
+top 175.13  bottom 171.49
+top 175.76  bottom 175.13     <- 0.63px tall
+top 179.57  bottom 175.76     <- GAP of 3.81px
+top 180.48  bottom 179.57
+```
+
+Four gaps, totalling 19.7px. The bands either side were contiguous, so the stack
+had reserved the space and no mark had been drawn in it — and 0.63 + 3.81 is
+exactly Shopping's height for that month. One band, drawn as two pieces, with
+the stack's space for the missing middle showing through.
+
+**Four gaps, and exactly four categories are held on two accounts.** The view is
+grained by account, so a month/category is one row per account, and the chart
+aggregates that away:
+
+```json
+"y": {"field": "v", "aggregate": "sum", "stack": "zero"},
+"color": {"field": "grp"}, "detail": {"field": "cat"},
+"tooltip": [ …, {"field": "v", "title": "Amount"} ]
+```
+
+That last line is the bug. **Vega-Lite adds every field named in an encoding
+channel to the implicit GROUP BY unless it carries an aggregate, and `tooltip`
+is an encoding channel like any other.** The raw `v` in the tooltip put `v` back
+in the grouping, so the sum no longer collapsed accounts: two rows survived per
+(month, category), the area mark connected them as one path that jumped between
+two stacked positions, and the jump is the sliver.
+
+The tooltip had been reporting it all along, which is the part worth
+remembering. From the original bug report's screenshot:
+
+```
+Category Groceries   Month Jun 2026   Amount −517.47
+```
+
+and from the database:
+
+```
+ING Betaalrekening   -517.47
+Revolut              -180.23
+TOTAL                -697.70
+```
+
+The number on screen was one account's share, not the month. The chart was
+telling the truth about its own broken grouping and it read as a rendering
+artifact.
+
+The fix is one keyword:
+
+```json
+{"field": "v", "aggregate": "sum", "title": "Amount", "format": ",.2f"}
+```
+
+Every band edge then meets the next exactly — thirteen bands, twelve boundaries,
+zero gaps — and the tooltip reports −697.70.
+
+**The rule: in a chart that aggregates, every field in every channel needs an
+aggregate — including the ones that only exist to be read by a human.** A
+tooltip looks like annotation and behaves like a dimension. The tell is a
+tooltip whose number is smaller than the mark it is attached to.
