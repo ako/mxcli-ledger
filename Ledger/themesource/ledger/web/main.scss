@@ -639,6 +639,29 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
 // A row that opens something has to say so before it is clicked. The cursor is
 // the only affordance a list row gets - there is no border, no chevron and no
 // button - so the hover tint carries the rest of the message.
+// A grid whose rows open something. The cursor is the only affordance a Data
+// Grid 2 row has — there is no chevron, no link text — so without it the row
+// looks like a read-only report line, which is exactly what the transactions
+// list looked like before it could be opened.
+.ledger-grid-clickable {
+    [role='row'] {
+        cursor: pointer;
+    }
+
+    // The header is a row too, and it opens nothing.
+    [role='row']:has([role='columnheader']) {
+        cursor: default;
+    }
+
+    [role='gridcell'] {
+        transition: background-color 120ms ease;
+    }
+
+    [role='row']:hover [role='gridcell'] {
+        background-color: var(--ledger-hover, rgba(0, 0, 0, 0.03));
+    }
+}
+
 .ledger-line-clickable {
     cursor: pointer;
     transition: background-color 120ms ease;

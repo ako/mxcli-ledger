@@ -155,7 +155,11 @@ create or replace page Ledger.Insights (
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartScatter (
               chartData: TxData,
               datasetName: 'table',
-              chartHeight: 520,
+              -- Zero: sized by what it renders at. The plot has a fixed height
+              -- but the legend under it takes an entry per category, so the
+              -- whole grows when a category is added — at fifteen it was
+              -- already 9px past a container fixed at 520.
+              chartHeight: 0,
               -- SVG rather than canvas. 820 points is well inside what SVG handles here
               -- (the outlier chart draws the same number), and keeping the marks in
               -- the DOM means the brush can be checked by measuring rather than by
@@ -414,7 +418,8 @@ create or replace page Ledger.Insights (
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartYoY (
               chartData: YoYData,
               datasetName: 'table',
-              chartHeight: 420,
+              -- Zero: a bar per category, so the height is the row count.
+              chartHeight: 0,
               renderer: 'svg',
               showActions: false,
               spec: '{

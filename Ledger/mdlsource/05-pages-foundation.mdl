@@ -118,11 +118,166 @@ create or replace page Ledger.Category_Overview
 /
 
 /**
+ * Keeps SignedAmount consistent with the category the transaction is in.
+ *
+ * Amount is always positive and SignedAmount carries the direction, so the
+ * direction is a function of the category's group type — and it therefore has
+ * to be recomputed whenever the category changes. An uncategorised row is
+ * seeded negative (it is nearly always spend), and assigning it to Salary
+ * without this would leave a negative income in every figure derived from
+ * SignedAmount.
+ *
+ * @param $Tx The transaction to fix up
+ * @returns true
+ */
+create or modify microflow Ledger.SET_TransactionSign ($Tx: Ledger.Transaction)
+returns boolean as $Ok
+folder 'Ledger'
+begin
+  declare $Ok boolean = true;
+  declare $IsIncome boolean = false;
+
+  if $Tx/Ledger.Transaction_Category != empty then
+    @annotation 'Two hops in memory, not two queries: the category is already on the object being saved, and its group is already on the category.'
+    retrieve $Cat from $Tx/Ledger.Transaction_Category;
+    retrieve $Grp from $Cat/Ledger.Category_CategoryGroup;
+    if $Grp != empty then
+      set $IsIncome = $Grp/GroupType = Ledger.GroupType.Income;
+    end if;
+  end if;
+
+  change $Tx (SignedAmount = if $IsIncome then $Tx/Amount else -$Tx/Amount);
+  return $Ok;
+end;
+/
+
+grant execute on microflow Ledger.SET_TransactionSign to Ledger.User;
+/
+
+/**
+ * Saves an edited transaction.
+ *
+ * A microflow rather than the built-in Save, because the sign has to be
+ * recomputed before the commit — see SET_TransactionSign.
+ *
+ * @param $Tx The edited transaction
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_SaveTransaction ($Tx: Ledger.Transaction)
+returns boolean as $Ok
+folder 'Ledger'
+begin
+  declare $Ok boolean = true;
+  $Signed = call microflow Ledger.SET_TransactionSign (Tx = $Tx);
+  @annotation 'Refresh in client, not a plain commit. Without it the row stays in the needs-review grid after being categorised — the database is right and the screen is not, which reads as the save having failed.'
+  commit $Tx refresh;
+  close page;
+  return $Ok;
+end;
+/
+
+grant execute on microflow Ledger.ACT_SaveTransaction to Ledger.User;
+/
+
+/**
+ * Edit one transaction.
+ *
+ * Reached by clicking a row in either grid on Transaction_Overview. The amount
+ * is shown but not editable: it is what the bank said, and the one field here
+ * that is genuinely a fact rather than a judgement. Everything a person decides
+ * — which category, which account, how the merchant should read — is editable.
+ *
+ * @param $Tx The clicked transaction
+ */
+create or replace page Ledger.Transaction_Edit
+(
+  params: {
+    $Tx: Ledger.Transaction
+  },
+  title: 'Transaction',
+  layout: Atlas_Core.PopupLayout,
+  folder: 'Ledger'
+)
+{
+  -- The layout grid is where the popup's margins come from; Atlas' popup layout
+  -- gives its content region no gutters of its own (see 06b).
+  layoutgrid lgEdit {
+    row rowEdit {
+      column colEdit (desktopwidth: 12) {
+        dataview dvEdit (datasource: $Tx) {
+          container ctnEditAmount (class: 'ledger-tx-head') {
+            dynamictext txtEditAmount (
+              content: '€ {1}',
+              contentparams: [{1} = Amount format (decimalPrecision: 2, groupDigits: true)],
+              rendermode: H3)
+            dynamictext txtEditHint (
+              content: 'The amount is what the bank reported and is not edited here. Its sign follows the category.',
+              rendermode: paragraph,
+              class: 'text-muted')
+          }
+
+          datepicker dpEditDate (label: 'Date', attribute: TxDate)
+          textbox tbEditMerchant (label: 'Merchant', attribute: Merchant)
+          textbox tbEditDesc (label: 'Description', attribute: Description)
+          combobox cbEditAccount (
+            label: 'Account',
+            attribute: Transaction_Account,
+            datasource: database Ledger.Account,
+            CaptionAttribute: Name)
+          combobox cbEditCategory (
+            label: 'Category',
+            attribute: Transaction_Category,
+            datasource: database Ledger.Category,
+            CaptionAttribute: Name)
+
+          footer ftEdit {
+            actionbutton btnEditSave (
+              caption: 'Save',
+              action: microflow Ledger.ACT_SaveTransaction(Tx: $currentObject),
+              buttonstyle: primary)
+            actionbutton btnEditCancel (caption: 'Cancel', action: cancel_changes)
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+grant view on page Ledger.Transaction_Edit to Ledger.User;
+/
+
+/**
  * Transaction list.
  *
  * Uncategorised rows are the point of this screen — they stay out of the
  * cashflow report until a category is assigned, so they are surfaced in their
  * own grid above the full list rather than being buried in it.
+ *
+ * Both grids are searchable, sortable and paged, and both open a row for
+ * editing on click. They did none of those things at first, which made the
+ * screen a wall of 932 rows with no way to act on the twelve that needed
+ * attention.
+ *
+ * Two things are worth knowing about a Data Grid 2 column:
+ *
+ *   * A column that shows dynamic text can still be sorted and filtered, as
+ *     long as it also names the attribute it is built from. Without the
+ *     attribute the column is display-only — which is how the date and amount
+ *     columns here started out, formatted but dead.
+ *   * `attribute: Assoc/Attr` reads over an association, so category and
+ *     account are ordinary sortable columns rather than nested data views.
+ *   * `Size` is a ratio and only means anything alongside `ColumnWidth:
+ *     manual` — on its own it builds an invalid column (CE0463, FINDINGS 107).
+ *     Every column here carries both. Sizes are also given as a set rather than
+ *     sprinkled on the two columns that seemed to need one: setting date and
+ *     amount to 130 and leaving the rest at the default 1 asks for
+ *     130:1:1:1:130, which drew the middle three at nothing — blank headers,
+ *     blank cells, and a screen that looked like the data had gone missing.
+ *   * A filter widget belongs to a column, in a `filter { }` block inside it. A
+ *     `filter { }` at grid level parses and applies and is then silently
+ *     dropped — it never reaches the model, so the grid renders with no filters
+ *     and nothing says why.
  */
 create or replace page Ledger.Transaction_Overview
 (
@@ -137,48 +292,93 @@ create or replace page Ledger.Transaction_Overview
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Transactions', rendermode: H2)
         dynamictext txtSub (
-          content: 'Transactions with no category stay out of the cashflow report until assigned.',
+          content: 'Transactions with no category stay out of the cashflow report until assigned. Click any row to edit it.',
           class: 'text-muted')
 
-        -- Date and amount render through dynamic-text columns rather than plain
-        -- attribute columns: an attribute column has no formatting options, so a
-        -- Decimal reads '-21.4' and a DateTime in the browser's locale. The
-        -- per-parameter format block is what the Data Grid 2 reference points at
-        -- (FINDINGS 75-77); it needs mxcli >= fa5705e3.
         dynamictext txtNeedsReview (content: 'Needs review', rendermode: H4)
         datagrid dgNeedsReview (
           datasource: database from Ledger.Transaction
             where [not(Ledger.Transaction_Category/Ledger.Category)]
-            sort by TxDate desc
+            sort by TxDate desc,
+          PageSize: 10,
+          onclick: show_page Ledger.Transaction_Edit(Tx: $currentObject),
+          class: 'ledger-grid-clickable'
         ) {
           column colNrDate (
-            ShowContentAs: dynamicText, caption: 'Date',
+            attribute: TxDate, caption: 'Date', ColumnWidth: manual, Size: 2,
+            ShowContentAs: dynamicText,
             Content: '{1}',
-            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')])
-          column colNrMerchant (attribute: Merchant, caption: 'Merchant')
-          column colNrDesc (attribute: Description, caption: 'Description')
+            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')]
+          ) {
+            filter fltNrDate { datefilter ftNrDate (attribute: TxDate) }
+          }
+          column colNrMerchant (
+            attribute: Merchant, caption: 'Merchant', ColumnWidth: manual, Size: 3
+          ) {
+            filter fltNrMerchant { textfilter ftNrMerchant (attribute: Merchant) }
+          }
+          column colNrDesc (
+            attribute: Description, caption: 'Description', ColumnWidth: manual, Size: 4
+          ) {
+            filter fltNrDesc { textfilter ftNrDesc (attribute: Description) }
+          }
+          column colNrAccount (
+            attribute: Transaction_Account/Name, caption: 'Account',
+            ColumnWidth: manual, Size: 2)
           column colNrAmount (
-            ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+            attribute: SignedAmount, caption: 'Amount', Alignment: right,
+            ColumnWidth: manual, Size: 2,
+            ShowContentAs: dynamicText,
             Content: '{1}',
-            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)]
+          ) {
+            filter fltNrAmount { numberfilter ftNrAmount (attribute: SignedAmount) }
+          }
         }
 
         dynamictext txtAll (content: 'All transactions', rendermode: H4)
         datagrid dgTransactions (
           datasource: database from Ledger.Transaction
             where [IsMirror = false]
-            sort by TxDate desc
+            sort by TxDate desc,
+          PageSize: 25,
+          PagingPosition: both,
+          onclick: show_page Ledger.Transaction_Edit(Tx: $currentObject),
+          class: 'ledger-grid-clickable'
         ) {
           column colDate (
-            ShowContentAs: dynamicText, caption: 'Date',
+            attribute: TxDate, caption: 'Date', ColumnWidth: manual, Size: 2,
+            ShowContentAs: dynamicText,
             Content: '{1}',
-            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')])
-          column colMerchant (attribute: Merchant, caption: 'Merchant')
-          column colDesc (attribute: Description, caption: 'Description')
+            ContentParams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy')]
+          ) {
+            filter fltDate { datefilter ftDate (attribute: TxDate) }
+          }
+          column colMerchant (
+            attribute: Merchant, caption: 'Merchant', ColumnWidth: manual, Size: 3
+          ) {
+            filter fltMerchant { textfilter ftMerchant (attribute: Merchant) }
+          }
+          column colDesc (
+            attribute: Description, caption: 'Description', ColumnWidth: manual, Size: 4
+          ) {
+            filter fltDesc { textfilter ftDesc (attribute: Description) }
+          }
+          column colAccount (
+            attribute: Transaction_Account/Name, caption: 'Account',
+            ColumnWidth: manual, Size: 2)
+          column colCategory (
+            attribute: Transaction_Category/Name, caption: 'Category',
+            ColumnWidth: manual, Size: 2)
           column colAmount (
-            ShowContentAs: dynamicText, caption: 'Amount', Alignment: right,
+            attribute: SignedAmount, caption: 'Amount', Alignment: right,
+            ColumnWidth: manual, Size: 2,
+            ShowContentAs: dynamicText,
             Content: '{1}',
-            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)])
+            ContentParams: [{1} = SignedAmount format (decimalPrecision: 2, groupDigits: true)]
+          ) {
+            filter fltAmount { numberfilter ftAmount (attribute: SignedAmount) }
+          }
         }
       }
     }
@@ -186,21 +386,15 @@ create or replace page Ledger.Transaction_Overview
 }
 /
 
-/**
- * Fill in the navigation now that every target page exists.
- *
- * The navigation profile is the app's only menu. An earlier version also put a
- * snippet of buttons on every page, because the Atlas sidebar collapses to a
- * 48px strip of clipped labels by default; pinning it open in the theme made
- * that redundant and gave the twelve-month matrix back a quarter of the page.
- *
- * The sidebar renders the profile's menu items, not a `navigationlist` widget:
- * mxcli drops the item names when it writes one, and the caption Text it
- * generates inside each item has no name at all, which fails CE7247 / CE0495.
- * See ../../FINDINGS.md.
- */
-
--- Navigation is not written here. It used to be written by four files, each
--- carrying the menu as it stood at that point, so running any one of them on
--- its own silently reverted the menu to an older shape — a trap this project
--- fell into twice. It now has a single owner: 27-navigation.mdl.
+-- Navigation is not written here, and the doc comment that used to introduce it
+-- is gone with it. It was left behind as a `/** … */` block documenting a
+-- statement that no longer existed, which is not a comment the parser will
+-- accept: a doc comment has to attach to something. This whole file failed to
+-- parse from that moment on — `mxcli check` and `mxcli exec` both refused it,
+-- so file 05 could not be re-applied and a cold rebuild from mdlsource would
+-- have stopped here. See FINDINGS 106.
+--
+-- The menu itself moved because it is page-spanning state: four files each
+-- carried the version of it that was true when they were written, so running
+-- any one of them reverted the menu to an older shape. It has a single owner
+-- now, 27-navigation.mdl, which runs after every page it names exists.

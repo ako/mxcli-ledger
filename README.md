@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 102 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 108 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -307,11 +307,30 @@ incremented, so it cannot drift.
 
 ![Transactions](docs/screenshots/transactions.png)
 
+The list you work in: search per column, sortable headers, paging, and a row
+that opens for editing. It had none of that at first — 932 rows with no way to
+act on the twelve the dashboard said needed review.
+
 Dates and amounts render through **dynamic-text columns** — `ShowContentAs:
 dynamicText` with a per-parameter `format (…)` block — rather than plain
 attribute columns, which have no formatting options and would show `-21.4` and
-the browser's locale date. This is the one screen that does not preformat in a
-microflow; the capability came from mxcli PR #88, prompted by findings 75–78.
+the browser's locale date. A column can do both: naming the attribute as well
+keeps it sortable and filterable while the display stays formatted. This is the
+one screen that does not preformat in a microflow; the capability came from
+mxcli PR #88, prompted by findings 75–78.
+
+Saving goes through a microflow rather than the built-in Save, because the
+direction of an amount follows its category: `Amount` is always positive and
+`SignedAmount` carries the sign, so filing an uncategorised row — seeded
+negative, since nearly all of them are spend — under Salary has to flip it. The
+same microflow now runs when the rules engine assigns a category, which had the
+same gap.
+
+Getting the columns to render at all took three findings' worth of silence:
+`Size` is a ratio that only applies alongside `ColumnWidth: manual` and builds
+an invalid column without it (107), a `filter` block at grid level is accepted
+and then discarded (108), and the file that owns this page had been unparseable
+for weeks behind a doc comment left without a statement (106).
 
 ---
 
