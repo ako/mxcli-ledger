@@ -36,6 +36,14 @@ create or replace page Ledger.Transaction_Detail
 )
 {
   dataview dvLine (datasource: $Line) {
+    -- A layout grid, not a bare container. Atlas' popup layout gives its content
+    -- region no gutters of its own, so widgets dropped straight into a dataview
+    -- sit flush against the dialog's edges — the heading touching the left rule,
+    -- the amount touching the right. The grid is where the margins come from,
+    -- and it is one row because the popup is one column of fields.
+    layoutgrid lgTx {
+      row rowTx {
+        column colTx (desktopwidth: 12) {
     container ctnTxHead (class: 'ledger-tx-head') {
       dynamictext txtTxMerchant (attribute: Merchant, rendermode: H3)
       dynamictext txtTxAmount (
@@ -68,6 +76,9 @@ create or replace page Ledger.Transaction_Detail
       container ctnTxRowDesc (class: 'ledger-tx-row') {
         dynamictext lblTxDesc (content: 'Reference', class: 'ledger-tx-label')
         dynamictext valTxDesc (attribute: Description, class: 'ledger-tx-value')
+      }
+    }
+        }
       }
     }
 

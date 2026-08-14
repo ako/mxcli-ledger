@@ -368,6 +368,56 @@ create or replace page Ledger.Dashboard
   "resolve": {"scale": {"x": "independent", "y": "independent", "color": "independent"}}
 }')
           }
+
+                -- ------------------------------------------------------------
+                -- The shape of the selection.
+                -- ------------------------------------------------------------
+                -- Under the table rather than under the whole page. It used to
+                -- span all twelve columns, which left the inspector beside a
+                -- short chart column and a screen of empty space below it — so
+                -- the list of transactions the card is about was the one thing
+                -- with nowhere to grow. Inside the chart column the two cards
+                -- stack, the inspector runs the height of both, and the chart
+                -- is the same width as the table above it.
+          container ctnDashDetail (class: 'card ledger-card') {
+            container ctnDashDetailHead (class: 'ledger-chart-head') {
+              dynamictext txtDashDetailTitle (attribute: DetailTitle, rendermode: H6)
+              dynamictext txtDashDetailMeta (attribute: DetailMeta, rendermode: paragraph, class: 'text-muted')
+            }
+            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartDashDetail (
+              chartData: DetailData,
+              datasetName: 'table',
+              chartHeight: 340,
+              renderer: 'svg',
+              showActions: false,
+              spec: '{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": {"name": "table"},
+  "widthNote": "Matched to the table above it, and measured rather than computed. Arithmetic off the panel widths said 816; the two views then rendered 920 and 877 CSS pixels wide, because each spends a different amount on padding and axis furniture. 859 is 816 plus that 43px difference, and puts both SVGs at 920. They are two cards in one column now, and a column of cards whose contents end at different x reads as a mistake.",
+  "width": 859,
+  "height": 290,
+  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
+  "background": null,
+  "config": {
+    "view": {"stroke": null},
+    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
+             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
+  },
+  "mark": {"type": "circle", "size": 42, "opacity": 0.7, "color": "#1B4D4B"},
+  "encoding": {
+    "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
+    "y": {"field": "v", "type": "quantitative",
+          "scale": {"zero": false},
+          "axis": {"title": "EUR", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
+    "tooltip": [
+      {"field": "m", "type": "nominal", "title": "Merchant"},
+      {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+      {"field": "acc", "type": "nominal", "title": "Account"},
+      {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+    ]
+  }
+}')
+          }
               }
 
               -- ----------------------------------------------------------------
@@ -395,7 +445,7 @@ create or replace page Ledger.Dashboard
                     datasource: database from Ledger.VTransactionLine
                       where [CategoryName = $currentObject/DetailTitle]
                       sort by TxDate desc,
-                    class: 'ledger-inspector-list'
+                    class: 'ledger-inspector-list ledger-inspector-list-tall'
                   ) {
                     template tplDashLine {
                       container ctnDashLine (
@@ -421,47 +471,6 @@ create or replace page Ledger.Dashboard
             }
           }
 
-          -- ------------------------------------------------------------------
-          -- The shape of the selection, under both.
-          -- ------------------------------------------------------------------
-          container ctnDashDetail (class: 'card ledger-card') {
-            container ctnDashDetailHead (class: 'ledger-chart-head') {
-              dynamictext txtDashDetailTitle (attribute: DetailTitle, rendermode: H6)
-              dynamictext txtDashDetailMeta (attribute: DetailMeta, rendermode: paragraph, class: 'text-muted')
-            }
-            pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartDashDetail (
-              chartData: DetailData,
-              datasetName: 'table',
-              chartHeight: 340,
-              renderer: 'svg',
-              showActions: false,
-              spec: '{
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "table"},
-  "width": 820,
-  "height": 290,
-  "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
-  "background": null,
-  "config": {
-    "view": {"stroke": null},
-    "axis": {"labelFont": "IBM Plex Mono", "labelFontSize": 9, "labelColor": "#8A8378",
-             "domainColor": "#D9D2C6", "tickColor": "#D9D2C6", "gridColor": "#EFEAE0"}
-  },
-  "mark": {"type": "circle", "size": 42, "opacity": 0.7, "color": "#1B4D4B"},
-  "encoding": {
-    "x": {"field": "d", "type": "temporal", "axis": {"title": null, "format": "%b %y", "grid": false}},
-    "y": {"field": "v", "type": "quantitative",
-          "scale": {"zero": false},
-          "axis": {"title": "EUR", "titleFontSize": 9, "titleColor": "#8A8378", "format": ",.0f", "grid": true}},
-    "tooltip": [
-      {"field": "m", "type": "nominal", "title": "Merchant"},
-      {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
-      {"field": "acc", "type": "nominal", "title": "Account"},
-      {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
-    ]
-  }
-}')
-          }
         }
       }
     }

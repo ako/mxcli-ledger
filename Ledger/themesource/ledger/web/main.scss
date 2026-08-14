@@ -574,6 +574,15 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
     overflow-y: auto;
 }
 
+// The dashboard's inspector runs beside two stacked cards rather than one, so
+// it has roughly twice the height to fill. Same list, same rows; only the point
+// at which it starts scrolling differs, and it is a separate class because the
+// Cashflow inspector sits beside a shorter column and would just stretch the
+// page.
+.ledger-inspector-list-tall {
+    max-height: 940px;
+}
+
 .ledger-line {
     display: flex;
     justify-content: space-between;

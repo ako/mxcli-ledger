@@ -48,7 +48,9 @@ else, and a row cannot be dismissed the way a number off to one side can. Today
 that row reads € 764 across twelve transactions, all in one month — which is
 why it renders as a point rather than a line.
 
-Clicking a row lists what is behind it, beside the chart:
+Clicking a row lists what is behind it, beside the chart — the inspector runs
+the height of the whole column, so the list has room rather than five rows and a
+pager:
 
 ![Dashboard inspector](docs/screenshots/dashboard-inspector.png)
 
