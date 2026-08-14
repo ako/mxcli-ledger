@@ -110,6 +110,14 @@ create or replace page Ledger.Cashflow_Overview
             -- The trend column: one sparkline per row, rendered by the Vega
             -- widget from the row's own SparkData.
             --
+            -- The spec is written once and says nothing about actuals, budgets
+            -- or variances: `a` is the series the cells are showing and `b` is
+            -- what it is read against, both decided by the builder from the
+            -- mode. In variance mode `b` is zero and in budget mode it is null,
+            -- which is how the reference line and the shaded gap disappear
+            -- without a second spec. `t` is the cell's own text, so the tooltip
+            -- cannot disagree with the figure it is drawn from.
+            --
             -- It sits second, not last, because the matrix scrolls sideways —
             -- a trend column past December would be off-screen exactly when the
             -- shape is most useful. Next to the label it is the first thing read
@@ -171,6 +179,11 @@ create or replace page Ledger.Cashflow_Overview
       "encoding": {"y": {"field": "a", "type": "quantitative"}}
     },
     {
+      "description": "The same line for a series that is a level rather than a trajectory — budget mode, where `a` is null and `s` carries the plan. Drawn linearly, a one-month override looked like a ramp up through the month before and back down the month after, which is not what an override is.",
+      "mark": {"type": "line", "color": "#1B4D4B", "strokeWidth": 1.2, "interpolate": "step-after"},
+      "encoding": {"y": {"field": "s", "type": "quantitative"}}
+    },
+    {
       "description": "Unfavourable months. The only place a row spends a strong colour, and it marks the months worth clicking. The flag is computed in the builder against the same rule that tints the cell — the spec cannot know that above budget is good news on a salary row.",
       "transform": [{"filter": "isValid(datum.a) && datum.u === 1"}],
       "mark": {"type": "point", "color": "#A8321E", "size": 12, "filled": true},
@@ -186,8 +199,7 @@ create or replace page Ledger.Cashflow_Overview
     "y": {"axis": null, "scale": {"zero": false, "nice": false}},
     "tooltip": [
       {"field": "mon", "type": "nominal", "title": "Month"},
-      {"field": "a", "type": "quantitative", "title": "Actual", "format": ",.2f"},
-      {"field": "b", "type": "quantitative", "title": "Budget", "format": ",.2f"}
+      {"field": "t", "type": "nominal", "title": "Cell"}
     ]
   }
 }')

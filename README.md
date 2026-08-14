@@ -145,6 +145,12 @@ The budget is a step, not a curve, so a one-month override reads as what it is:
 the raised plateau on Freelance and Groceries is July's override, and the shaded
 block under it is the month spent against it.
 
+It follows the mode buttons, because a column of a table is not a chart that
+happens to sit beside one. In variance mode the line is the variance itself
+against a zero rule; in budget mode it is the plan, stepped, across all twelve
+months. Plotting actuals while the cells showed variances drew a line that
+contradicted every number on its row.
+
 The rows cost nothing to produce: the builder already has each month's actual
 and budget in hand to write the cell beside it, so the sparkline's payload is a
 concatenation over figures that were computed anyway. The dot is computed there
