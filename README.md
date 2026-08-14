@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 95 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 102 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -48,9 +48,35 @@ else, and a row cannot be dismissed the way a number off to one side can. Today
 that row reads € 764 across twelve transactions, all in one month — which is
 why it renders as a point rather than a line.
 
-Clicking a row opens what is behind it — every transaction in that category,
-against a scale that starts where the data does rather than at zero, because
-zero is not a value any grocery shop ever charged:
+Clicking a row lists what is behind it, beside the chart — the inspector runs
+the height of the whole column, so the list has room rather than five rows and a
+pager:
+
+![Dashboard inspector](docs/screenshots/dashboard-inspector.png)
+
+**The review row is the one that had to work.** The dashboard could count twelve
+transactions needing review and had no way to show them: every consumer of the
+shared transaction view reached rows through an inner join on Category, so a
+transaction without one was invisible everywhere except the count complaining
+about it. The view now carries them as a second `UNION ALL` branch under the
+name 'Needs review', which is the same argument the table already makes for
+giving them a row rather than a badge — and it means the list, the click-through
+and the detail chart all work on them with no special case. The twelve read back
+€ 764.40 against SQL, in the same order.
+
+Any row in either inspector — here or on Cashflow — opens the transaction:
+
+![Transaction detail](docs/screenshots/transaction-popup.png)
+
+The popup takes the *view row*, not the transaction object, because there is no
+route back to the object: a view entity cannot carry an association (CE6771) and
+`[id = $Text]` is not a constraint Mendix XPath supports (MDL048). What the view
+carries is more than the object has anyway — the category, group and account are
+already resolved.
+
+Below both, the same selection as a scatter, against a scale that starts where
+the data does rather than at zero, because zero is not a value any grocery shop
+ever charged:
 
 ![Dashboard detail](docs/screenshots/dashboard-detail.png)
 
@@ -66,10 +92,14 @@ and both were shape-first: you read the picture, then went hunting for the
 figure. Neither showed a trend, an outlier, or anything you could act on.
 
 The replacement is Vega-Lite through the project's own widget, and the whole
-table is one spec: an `hconcat` of four faceted panels sharing a row order,
-because Vega-Lite cannot put a concatenation *inside* a facet. Panels that must
-align is the fragile part of that arrangement, and two ways of breaking it are
-in finding 94 — facet rows default to sizing themselves to their content, and a
+table is one spec: an `hconcat` of five faceted panels sharing a row order,
+because Vega-Lite cannot put a concatenation *inside* a facet. Even the category
+names are a panel — drawn as a text column rather than as facet headers, because
+`bounds: "flush"` keeps the row pitch identical across panels and stops the
+layout aligning header groups in the same breath, so the labels came out ragged
+while every one of them reported `text-anchor="end"` (finding 100). Panels that
+must align is the fragile part of the arrangement, and two ways of breaking it
+are in finding 94 — facet rows default to sizing themselves to their content, and a
 transform that aggregates away the sort field drops one panel back to
 alphabetical order while the others hold. Both were found by rendering the spec
 headless in node and reading the row geometry off the scenegraph, which turns a
@@ -95,20 +125,42 @@ green — see [§5.3 of the analysis](./PROTOTYPE-ANALYSIS.md). "No data" is not
 the same as "in the future": bank data arrives in arrears, so the window is the
 earlier of months elapsed and months with any activity (finding 83).
 
-Below the matrix, the same thirteen categories as a small-multiple grid — a
-twelve-month line over its budget envelope, with over-budget months marked:
+The second column is the row's own year: a twelve-month line against a budget
+step, the gap between them shaded, and a dot on every month that went the wrong
+way. It sits beside the label rather than past December because the matrix
+scrolls sideways.
 
 ![Cashflow sparklines](docs/screenshots/cashflow-sparklines.png)
 
 This one is not Plotly. It is Vega-Lite through
 [`widgets-src/vegachart`](./widgets-src/vegachart), a pluggable widget built for
-this project, and it is here because `facet` is an operator: the grid falls out
-of the data instead of being thirteen hand-placed subplots. The widget takes the
-**spec and the data separately** — the spec is a static property, committed and
-diffable, and the microflow emits only a table of rows. Nothing assembles a
-chart payload at runtime, which is the opposite of how the Plotly charts it
-replaced were built. `vega-embed` dispatches on the spec's own `$schema`, so full Vega is
-reachable through the same widget for what Vega-Lite cannot express.
+this project. The widget takes the **spec and the data separately** — the spec
+is a static property, committed and diffable, and the microflow emits only a
+table of rows. Nothing assembles a chart payload at runtime, which is the
+opposite of how the Plotly charts it replaced were built. `vega-embed`
+dispatches on the spec's own `$schema`, so full Vega is reachable through the
+same widget for what Vega-Lite cannot express.
+
+The budget is a step, not a curve, so a one-month override reads as what it is:
+the raised plateau on Freelance and Groceries is July's override, and the shaded
+block under it is the month spent against it.
+
+It follows the mode buttons, because a column of a table is not a chart that
+happens to sit beside one. In variance mode the line is the variance itself
+against a zero rule; in budget mode it is the plan, stepped, across all twelve
+months. Plotting actuals while the cells showed variances drew a line that
+contradicted every number on its row.
+
+The rows cost nothing to produce: the builder already has each month's actual
+and budget in hand to write the cell beside it, so the sparkline's payload is a
+concatenation over figures that were computed anyway. The dot is computed there
+too rather than in the spec, because above budget is good news on a salary row
+and the spec has no way to know that. That makes the column checkable against
+the one next to it — per row, the dots and the red cells agree, 67 and 67.
+
+It began as a separate card below the matrix and vanished for a commit and a
+half, because that card was inserted by a later file into a page an earlier file
+recreates (finding 103).
 
 Drawing the same numbers more densely is also what exposed finding 83: `€ 0` in
 a narrow column had been skimmed past for weeks; thirteen lines diving to the
@@ -126,6 +178,29 @@ write to the same object the charts read, so applying a change is one microflow
 and one `change … refresh` rather than six datasources re-running independently
 — which also sidesteps the datasource-refresh problem in finding 68. Filtering
 to Groceries takes the scatter from 820 points to 211, matching SQL exactly.
+
+**The filter is applied by the database, not by the model.** Every retrieve on
+this page carries its constraint — the period as an XPath range over a
+`MonthKey` column the views compute, the category and account as
+`($Var = '' or Column = $Var)`, which lets one retrieve serve both the filtered
+and the unfiltered case without branching. The page used to pull every row of
+five views and discard most of them in a loop, once per chart.
+
+The year-over-year comparison is now a view rather than a microflow. It was the
+most expensive flow on the page and the only quadratic one — an outer pass per
+category, an inner pass over every row to total it, and a delimited string
+standing in for a set. Conditional aggregation does it in one grouped scan, and
+the month window it compares over derives from the data itself through nested
+scalar subqueries, so nothing has to pass it a boundary. It carries two
+aggregation grains in a `UNION ALL` — one row per category, or one per category
+per account — because an account filter changes what a row *is*, and a view
+takes no parameters; the caller constrains on the grain and the database prunes
+the branch it did not ask for before touching a table (finding 97).
+
+One builder kept its grouping, and the reason is the boundary of the technique:
+the standing-costs chart counts distinct months *within the selected period*, so
+its aggregate depends on a window chosen at runtime. A view can offer a menu of
+grains, not a function of one.
 
 The period rounds outward to whole months for the monthly charts and is exact
 for the day-level ones, because the aggregate views are grouped by month.
@@ -249,13 +324,12 @@ files apply in dependency order:
 |---|---|
 | `01`–`04` | Domain model, enumerations, demo data |
 | `05` | Transactions, Accounts, Categories screens |
-| `06`–`11` | Cashflow matrix, shared views, inspector |
+| `06`–`11` | Cashflow matrix, shared views, sparkline column, inspector, transaction popup |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
 | `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
-| `23` | Cashflow sparkline grid, through the project's own Vega widget |
-| `24`–`26` | Insights: aggregate views, payloads, six charts |
+| `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 
 A runtime monitoring pass — what the app actually does under load, and the four
@@ -360,7 +434,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              95 numbered findings — the main deliverable alongside the app
+FINDINGS.md              102 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

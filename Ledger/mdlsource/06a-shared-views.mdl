@@ -49,18 +49,45 @@
  * VMatrixActual derives it. It lets a caller separate the two without matching
  * on a group's display name, which is only correct until someone renames one.
  *
- * Pass-through string columns must declare their source's exact length:
- * CategoryGroup.Name is string(50), Category.Name and Account.Name are
- * string(100), Transaction.Merchant is string(200).
+ * **Uncategorised transactions are in here too, as a second UNION ALL branch
+ * carrying CategoryName 'Needs review'.** The dashboard counts twelve of them
+ * and had no way to list them: every consumer of this view reached transactions
+ * through an inner join on Category, so a transaction without one was invisible
+ * everywhere except the count that complained about it. Putting them in the
+ * view rather than in a second entity means the dashboard's inspector, its
+ * click-through and its detail chart all work on them with no special case —
+ * which is the same argument the dashboard already makes for giving them a row
+ * in the table rather than a badge in a corner.
+ *
+ * They carry GroupTypeName 'Review' rather than 'Expense', deliberately: every
+ * existing consumer either constrains on CategoryId (the cashflow inspector and
+ * its drill) or filters on GroupTypeName = 'Expense' (the Insights scatter, the
+ * day-click list), so none of them sees a new row. That was checked against
+ * each caller before the branch was added, not after.
+ *
+ * A left join with `where c.Name = null` is how OQL asks for "no category" —
+ * verified to return exactly the twelve.
+ *
+ * Every string column is cast and declared string(200), because a literal or
+ * derived column normalises to 200 regardless of source (finding 36) and the
+ * two branches must agree. Before the branch existed these were pass-throughs
+ * declaring their source's exact length — CategoryGroup.Name string(50),
+ * Category.Name and Account.Name string(100) — and mixing those with a literal
+ * is CE6770 "View Entity is out of sync with the OQL Query", which names the
+ * entity and not the column (finding 97).
+ *
+ * Description rides along for the transaction popup. It is the one field a
+ * detail view has that a list row does not.
  */
 create or modify view entity Ledger.VTransactionLine (
   GroupId: string(200),
-  GroupName: string(50),
+  GroupName: string(200),
   GroupTypeName: string(200),
   CategoryId: string(200),
-  CategoryName: string(100),
+  CategoryName: string(200),
   Merchant: string(200),
-  AccountName: string(100),
+  AccountName: string(200),
+  Description: string(500),
   TxDate: datetime,
   Yr: integer,
   MonthIndex: integer,
@@ -71,12 +98,13 @@ create or modify view entity Ledger.VTransactionLine (
 ) as (
   select
     cast(g.id as string) as GroupId,
-    g.Name as GroupName,
+    cast(g.Name as string) as GroupName,
     cast(g.GroupType as string) as GroupTypeName,
     cast(c.id as string) as CategoryId,
-    c.Name as CategoryName,
-    t.Merchant as Merchant,
-    a.Name as AccountName,
+    cast(c.Name as string) as CategoryName,
+    cast(t.Merchant as string) as Merchant,
+    cast(a.Name as string) as AccountName,
+    t.Description as Description,
     t.TxDate as TxDate,
     datepart(YEAR, t.TxDate) as Yr,
     datepart(MONTH, t.TxDate) as MonthIndex,
@@ -89,5 +117,26 @@ create or modify view entity Ledger.VTransactionLine (
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
   inner join t/Ledger.Transaction_Account/Ledger.Account as a
   where t.IsMirror = false
+  union all
+  select
+    cast('' as string) as GroupId,
+    cast('Review' as string) as GroupName,
+    cast('Review' as string) as GroupTypeName,
+    cast('' as string) as CategoryId,
+    cast('Needs review' as string) as CategoryName,
+    cast(t.Merchant as string) as Merchant,
+    cast(a.Name as string) as AccountName,
+    t.Description as Description,
+    t.TxDate as TxDate,
+    datepart(YEAR, t.TxDate) as Yr,
+    datepart(MONTH, t.TxDate) as MonthIndex,
+    t.Amount as Amount,
+    t.SignedAmount as SignedAmount,
+    (case when t.SignedAmount < 0 then '-' else '' end) as Sign,
+    (case when t.SignedAmount < 0 then 0 - t.SignedAmount else t.SignedAmount end) as AbsAmount
+  from Ledger.Transaction as t
+  inner join t/Ledger.Transaction_Account/Ledger.Account as a
+  left join t/Ledger.Transaction_Category/Ledger.Category as c
+  where t.IsMirror = false and c.Name = null
 );
 /

@@ -60,6 +60,14 @@ create or replace page Ledger.Dashboard
           dynamictext txtDashHeading (content: 'Dashboard', rendermode: H2)
           dynamictext txtDashSub (attribute: SubText, rendermode: paragraph, class: 'text-muted')
 
+          layoutgrid lgDashSplit {
+            row rowDashSplit {
+              -- The chart, and beside it the transactions behind whatever row is
+              -- selected. Same arrangement as the Cashflow screen, for the same
+              -- reason: the figure and the rows that make it up belong on one
+              -- screen, and a click that only redraws a chart leaves you asking
+              -- "which ones?".
+              column colDashChart (desktopwidth: 9) {
           container ctnOverviewCard (class: 'card ledger-card') {
             dynamictext lblOverview (
               content: 'Twenty months, thirteen categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.',
@@ -99,8 +107,8 @@ create or replace page Ledger.Dashboard
       "title": "Income above, spend below, net through the middle",
       "description": "The macro reading. Derived from the same monthly rows the table below uses - income and spend are the two signs of one aggregate, so no second dataset exists for this.",
       "transform": [{"filter": "datum.k === \'m\'"}],
-      "widthNote": "Matched to the table below it, not to the card. The strip is pushed right by the header column the table needs, so a width chosen against the card overhangs the view on the right and loses its last months.",
-      "width": 690,
+      "widthNote": "Matched to the table below it, not to the card - a width chosen against the card overhangs the view on the right and loses its last months. The table is now five columns wide (118 + 300 + 130 + 74 + 130 plus the gaps between them), and this is that, less the axis labels the strip needs and the table does not.",
+      "width": 700,
       "height": 110,
       "layer": [
         {
@@ -146,6 +154,27 @@ create or replace page Ledger.Dashboard
       "description": "The table. Four columns, each faceted by category on the same sort and the same row height, so the rows line up across panels without being one chart.",
       "hconcat": [
         {
+          "titleNote": "The category names are a column of the table, not a facet header, and that is a consequence of `bounds: flush`. Flush layout does not measure the row header, so every row\'s header group came to rest wherever its own text ended - each label right-anchored at its own x, ragged across sixty pixels, while the DOM insisted every one of them was text-anchor=end. Drawn as a text mark in a panel of its own, alignment is exact by construction, and the labels become what they always were: the first column.",
+          "transform": [{"filter": "datum.k === \'s\'"}],
+          "bounds": "flush",
+          "facet": {
+            "row": {
+              "field": "cat", "type": "nominal", "title": null,
+              "sort": {"op": "max", "field": "ord", "order": "descending"},
+              "header": {"labels": false}
+            }
+          },
+          "spec": {
+            "width": 118,
+            "height": 26,
+            "mark": {"type": "text", "align": "right", "font": "IBM Plex Sans", "fontSize": 10, "color": "#17181A"},
+            "encoding": {
+              "x": {"datum": 118, "axis": null, "scale": {"domain": [0, 118]}},
+              "text": {"field": "cat", "type": "nominal"}
+            }
+          }
+        },
+        {
           "title": "Twenty months, against the usual range",
           "transform": [{"filter": "datum.k === \'m\'"}],
           "bounds": "flush",
@@ -154,8 +183,7 @@ create or replace page Ledger.Dashboard
             "row": {
               "field": "cat", "type": "nominal", "title": null,
               "sort": {"op": "max", "field": "ord", "order": "descending"},
-              "headerNote": "labelAnchor middle, and it has to be said here because the project config sets start for axis and column headers. On a row header the anchors read backwards - start puts the label on the row\'s bottom edge, end on its top - so the inherited start had every label sitting a half-row below the numbers it names.",
-              "header": {"labelAngle": 0, "labelAnchor": "middle", "labelBaseline": "middle", "labelFontSize": 10, "labelLimit": 200, "labelPadding": 4}
+              "header": {"labels": false}
             }
           },
           "resolve": {
@@ -341,9 +369,16 @@ create or replace page Ledger.Dashboard
 }')
           }
 
-          -- ------------------------------------------------------------------
-          -- What is behind the clicked row.
-          -- ------------------------------------------------------------------
+                -- ------------------------------------------------------------
+                -- The shape of the selection.
+                -- ------------------------------------------------------------
+                -- Under the table rather than under the whole page. It used to
+                -- span all twelve columns, which left the inspector beside a
+                -- short chart column and a screen of empty space below it — so
+                -- the list of transactions the card is about was the one thing
+                -- with nowhere to grow. Inside the chart column the two cards
+                -- stack, the inspector runs the height of both, and the chart
+                -- is the same width as the table above it.
           container ctnDashDetail (class: 'card ledger-card') {
             container ctnDashDetailHead (class: 'ledger-chart-head') {
               dynamictext txtDashDetailTitle (attribute: DetailTitle, rendermode: H6)
@@ -358,7 +393,8 @@ create or replace page Ledger.Dashboard
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "table"},
-  "width": 820,
+  "widthNote": "Matched to the table above it, and measured rather than computed. Arithmetic off the panel widths said 816; the two views then rendered 920 and 877 CSS pixels wide, because each spends a different amount on padding and axis furniture. 859 is 816 plus that 43px difference, and puts both SVGs at 920. They are two cards in one column now, and a column of cards whose contents end at different x reads as a mistake.",
+  "width": 859,
   "height": 290,
   "padding": {"left": 18, "top": 6, "right": 10, "bottom": 6},
   "background": null,
@@ -382,6 +418,59 @@ create or replace page Ledger.Dashboard
   }
 }')
           }
+              }
+
+              -- ----------------------------------------------------------------
+              -- The transactions behind the selection.
+              -- ----------------------------------------------------------------
+              -- A database datasource constrained on the selected category's
+              -- name, which the click handler has already written to DetailTitle.
+              -- Nothing here takes the context as a datasource *parameter*, so a
+              -- click can move the selection without rebuilding the chart —
+              -- the same arrangement that keeps the Cashflow matrix from
+              -- re-rendering on every cell click.
+              --
+              -- Before the view carried uncategorised rows this list could not
+              -- exist for the one selection that most needed it: 'Needs review'
+              -- matched nothing, and the dashboard could count twelve
+              -- transactions it had no way to show.
+              column colDashInspector (desktopwidth: 3) {
+                container ctnDashInspector (class: 'card ledger-inspector') {
+                  container ctnDashInspectorHead (class: 'ledger-inspector-head') {
+                    dynamictext txtDashInsKicker (content: 'Selected', class: 'ledger-kicker')
+                    dynamictext txtDashInsTitle (attribute: DetailTitle, rendermode: H5)
+                    dynamictext txtDashInsMeta (attribute: DetailMeta, class: 'ledger-inspector-meta')
+                  }
+                  listview lvDashLines (
+                    datasource: database from Ledger.VTransactionLine
+                      where [CategoryName = $currentObject/DetailTitle]
+                      sort by TxDate desc,
+                    class: 'ledger-inspector-list ledger-inspector-list-tall'
+                  ) {
+                    template tplDashLine {
+                      container ctnDashLine (
+                        class: 'ledger-line ledger-line-clickable',
+                        onclick: microflow Ledger.ACT_ShowTransaction(Line: $currentObject)
+                      ) {
+                        container ctnDashLineText (class: 'ledger-line-text') {
+                          dynamictext txtDashLineMerchant (attribute: Merchant, class: 'ledger-line-merchant')
+                          dynamictext txtDashLineMeta (
+                            content: '{1} · {2}',
+                            contentparams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy'), {2} = AccountName],
+                            class: 'ledger-line-meta')
+                        }
+                        dynamictext txtDashLineAmount (
+                          content: '{1}€ {2}',
+                          contentparams: [{1} = Sign, {2} = AbsAmount format (decimalPrecision: 2, groupDigits: true)],
+                          class: 'ledger-line-amount')
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
         }
       }
     }

@@ -73,7 +73,20 @@ create or modify non-persistent entity Ledger.CashflowRow (
    */
   CategoryIdText: string(200),
   /** The row's category group name, shown as the inspector's kicker */
-  GroupNameText: string(50)
+  GroupNameText: string(50),
+
+  /**
+   * The row's twelve months as JSON, for the sparkline in the Trend column.
+   *
+   * `[{"m":1,"a":1480.00,"b":1500.00}, ...]` — month, actual, budget. Actual is
+   * `null` for a month that has not elapsed, which makes Vega-Lite break the
+   * line instead of drawing it to the floor.
+   *
+   * Unlimited length rather than a bounded one: twelve objects is around 400
+   * characters today, but a bound here would truncate silently into invalid
+   * JSON rather than fail loudly.
+   */
+  SparkData: string
 );
 /
 

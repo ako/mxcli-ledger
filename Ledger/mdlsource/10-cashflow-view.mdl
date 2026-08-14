@@ -451,6 +451,13 @@ end;
  * Group and net budgets are rolled up here rather than in SQL, because summing
  * a baseline across a group would fan out against the override join.
  *
+ * Each row also carries its twelve months as JSON for the sparkline in the
+ * Trend column. It costs nothing extra: the loop below already has the actual
+ * and the budget in hand for every cell, so the payload is a string
+ * concatenation over figures that were computed anyway. It follows the mode
+ * for the same reason the cells do — the sparkline is a column of the table,
+ * not a chart that happens to sit beside it.
+ *
  * Category rows are matched back to their Category on the same SortKey the view
  * computes, so a cell can drill into its transactions. A view entity cannot
  * carry an association (CE6771, FINDINGS 41), so the join happens here over one
@@ -474,6 +481,15 @@ begin
   declare $Include boolean = false;
   declare $Sign integer = 1;
   declare $TotalText string = '';
+  declare $Spark string = '';
+  declare $SparkSep string = '';
+  declare $SparkLine string = 'null';
+  declare $SparkStep string = 'null';
+  declare $SparkRef string = 'null';
+  declare $SparkTip string = '';
+  declare $SparkOver string = '0';
+  declare $Unfavourable decimal = 0;
+  declare $Favourable decimal = 0;
 
   $Rows = create list of Ledger.CashflowRow;
   set $Through = $Context/ElapsedThrough;
@@ -507,6 +523,8 @@ begin
     end if;
 
     set $RowTotal = 0;
+    set $Spark = '';
+    set $SparkSep = '';
     set $M = 1;
     while $M <= 12
     begin
@@ -560,6 +578,58 @@ begin
       $Set = call microflow Ledger.SET_RowMonth (
         Row = $Row, MonthIndex = $M, Text = $Text, Band = $Band);
 
+      @annotation 'The sparkline payload, built from the same figures the cell beside it was built from. It follows the mode, because the column is part of the table: plotting actual against budget while the cells showed variance drew a line that contradicted every number on its row. "a" is whatever the cells are showing, "b" is what it is being read against.'
+      set $SparkLine = 'null';
+      set $SparkStep = 'null';
+      set $SparkRef = 'null';
+      set $SparkOver = '0';
+      set $SparkTip = $Text;
+
+      if $Context/Mode = Ledger.ReportMode.Budget then
+        @annotation 'A budget has nothing to be read against, and no month is unelapsed for it — the plan exists for all twelve. No reference line, no dots, which is also what the cells do: Budget mode is never tinted. It goes into the stepped series rather than the plain one because a budget is a level held for a month, not a path between months.'
+        set $SparkStep = formatDecimal($Budget, '0.00');
+      else
+        if $Context/Mode = Ledger.ReportMode.Variance and $V/RowKind != 'Net' then
+          @annotation 'Variance is already a distance, so the reference is zero and the shaded gap is the miss itself'
+          set $SparkRef = '0';
+          if $Elapsed then
+            set $Favourable = if $IsIncome then $Actual - $Budget else $Budget - $Actual;
+            set $SparkLine = formatDecimal($Favourable, '0.00');
+          end if;
+        else
+          @annotation 'Actual mode, and the net line in variance mode — which shows a figure rather than a variance, so its sparkline shows one too'
+          set $SparkRef = formatDecimal($Budget, '0.00');
+          if $Elapsed then
+            set $SparkLine = formatDecimal($Actual, '0.00');
+            $BudgetTip = call microflow Ledger.FMT_Euro (Amount = $Budget);
+            set $SparkTip = $Text + ' of ' + $BudgetTip;
+          end if;
+        end if;
+
+        @annotation 'The dot marks an unfavourable month, on the same rule CALC_Band tints a cell with: direction by row type — on income, short of budget is the bad side — and the same 2% dead band. Computing a > b in the spec instead put a red dot on every good month a salary row had, and disagreed with the tint beside it.'
+        if $Elapsed and $Budget != 0 then
+          set $Unfavourable = if $IsIncome then $Budget - $Actual else $Actual - $Budget;
+          if $Unfavourable > 0 and (abs($Unfavourable) div $Budget) >= 0.02 then
+            set $SparkOver = '1';
+          end if;
+        end if;
+
+        @annotation 'The net line in variance mode is untinted — it shows a figure, not a variance, so there is no favourable side to mark. Its sparkline was still dotting five months the cells left plain, the only row of nineteen where the two disagreed.'
+        if $Context/Mode = Ledger.ReportMode.Variance and $V/RowKind = 'Net' then
+          set $SparkOver = '0';
+        end if;
+      end if;
+
+      set $Spark = $Spark + $SparkSep
+        + '{"m":' + toString($M)
+        + ',"a":' + $SparkLine
+        + ',"s":' + $SparkStep
+        + ',"b":' + $SparkRef
+        + ',"u":' + $SparkOver
+        + ',"t":"' + $SparkTip
+        + '"}';
+      set $SparkSep = ',';
+
       if $Context/Mode = Ledger.ReportMode.Budget then
         set $RowTotal = $RowTotal + $Budget;
       else
@@ -581,7 +651,7 @@ begin
       $TotalE = call microflow Ledger.FMT_Euro (Amount = $RowTotal);
       set $TotalText = $TotalE;
     end if;
-    change $Row (TotalText = $TotalText);
+    change $Row (TotalText = $TotalText, SparkData = '[' + $Spark + ']');
     add $Row to $Rows;
   end loop;
 

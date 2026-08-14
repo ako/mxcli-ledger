@@ -3597,3 +3597,512 @@ condition that justifies it, not just the reasoning that motivated it** — the
 comment here explained itself perfectly and still went silently wrong, because
 the thing it was compensating for ("this app has no glyphs", stated in a second
 comment in a second file) stopped being true.
+
+### 96. OQL divides with `:` — `/` is the association traversal operator
+
+Recorded because the wrong conclusion was reached first, published, and then
+corrected by the reader.
+
+`sum(a) / count(b)` is rejected, and mxcli's message is accurate about why:
+
+```
+Error: invalid OQL in view entity 'Ledger.VP11':
+  - '/' is the association traversal operator in OQL, not division. Found: '...) / c...'
+```
+
+The runtime's own parser agrees, and its error carries the answer:
+
+```
+Error on line 1 character 21: mismatched input '/'
+  expecting {'*', ')', '+', '-', ':', '%', '^', '&', '|', DOT, SLASH}
+```
+
+**`:` is in that list, and `:` is division.** Verified against the engine:
+
+```
+select sum(t.Amount) : count(t.id) as M, avg(t.Amount) as A from Ledger.Transaction as t
+| A                   | M                   |
+| 237.377950643776824 | 237.377950643776824 |
+```
+
+and it compiles to plain SQL division — from the generated statement:
+
+```sql
+(SUM("b"."MerchantTotal") / ( SELECT SUM("b2"."MerchantTotal") FROM ( … ) "b2" ))
+```
+
+So shares, ratios, per-month averages and variance percentages are all
+expressible in a view. There is no `div()` function (`Unknown function 'div'`),
+and `abs` and `substring` remain unknown while `round` and `avg` exist.
+
+**The methodological point is the one worth keeping.** The token list in that
+parser error is an enumeration of every operator the grammar accepts — it was
+printed, quoted in a written answer, and still read past, because the search was
+for a *function* named something like `div` and `:` does not look like an
+operator. When a parser tells you what it expected, that list is the language
+reference, and it is more current than any documentation.
+
+### 97. One view can carry several aggregation grains, and a constraint on the grain prunes the rest before it touches a table
+
+A view entity takes no parameters, so its aggregation grain is fixed when the
+model is written. That reads like a hard limit — "total per category for the
+period the reader picked" seems to require either a parameter or re-summing
+downstream. It does not. **Put every grain in one view as a `UNION ALL`, tag
+each branch with a constant, and constrain on the tag.**
+
+```sql
+select 'all' as Grain, … group by c.Name
+union all
+select 'account' as Grain, … group by c.Name, a.Name
+```
+
+The concern is obvious: does the reader pay for the grains it did not ask for?
+**No.** Mendix wraps the view in a subquery and applies the constraint outside
+it, passing every literal as a bind parameter:
+
+```sql
+SELECT "v"."CategoryName", "v"."Total"
+FROM ( (branch1) UNION ALL (branch2) UNION ALL (branch3) ) "v"
+WHERE "v"."Grain" = $12 AND "v"."Yr" = $13
+```
+```
+parameters: $1 = 'cat-month', $4 = 'cat-year', $8 = 'merchant-year',
+            $12 = 'cat-year', $13 = '2026'
+```
+
+Postgres flattens that into an append relation and pushes the qual into each
+branch, where it meets a constant and folds:
+
+```
+Append (actual rows=13)
+  ->  Subquery Scan "*SELECT* 1" (actual rows=0)
+        ->  HashAggregate (actual rows=0)
+              ->  Result (actual rows=0)   One-Time Filter: false
+  ->  Subquery Scan "*SELECT* 2" (actual rows=13)
+        ->  GroupAggregate (actual rows=13)
+              ->  Seq Scan on "ledger$transaction" t (actual rows=372)
+  ->  Subquery Scan "*SELECT* 3" (actual rows=0)
+```
+
+It survives the failure mode worth checking. Under `force_generic_plan`, where
+the tag is not a plan-time constant, the branch is skipped at execution instead:
+
+```
+->  Result (actual rows=0)   One-Time Filter: ($1 = $4)
+      ->  Seq Scan on "ledger$category" c (never executed)
+```
+
+Custom plan or generic plan, one branch runs. Note the second win in that plan:
+`Yr = 2026` was pushed into the surviving branch as well, cutting its scan from
+912 rows to 372 — the constraint reaches the aggregation, not just its output.
+
+Two costs, both real:
+
+- **Union compatibility.** Every branch emits every column, so grains that lack
+  one carry a sentinel `''` or `0`. The entity ends up with columns that are
+  meaningless for some of its rows, and nothing in the type system stops a
+  consumer from forgetting the grain filter and getting a mixed bag.
+- **CE6770 on the first attempt.** A literal or derived column normalises to
+  `string(200)` regardless of source (finding 36), so a branch mixing a
+  pass-through `c.Name` (100) with a literal `''` (200) matches no single
+  declaration. `cast(… as string)` on every string column in every branch, all
+  declared `string(200)`. The error names the entity, not the column.
+
+**Where it does not help:** the grain must still be enumerable at design time.
+`VYoY` uses it for the account dimension — 'all' versus 'account' — because that
+is a choice between two known aggregations. The savings chart cannot use it: its
+`MonthsActive` is a count of distinct months *within the selected period*, so
+the aggregate depends on a window chosen at runtime, and no finite set of
+branches covers that. That builder keeps its grouping, and the boundary is
+exactly there — **a view can offer a menu of grains, not a function of one.**
+
+Verified on Postgres 16 only.
+
+### 98. A view entity selecting from another is inlined, not materialised — which is why CTEs are a convenience here rather than a gap
+
+`with x as (…) select …` is rejected by both layers:
+
+```
+Parse error: line 4:2 mismatched input 'with' expecting {SELECT, FROM}      (mxcli)
+Error on line 1 character 0: mismatched input 'with'
+  expecting {'SELECT', 'FROM', 'DELETE', 'INSERT', 'UPDATE'}               (runtime)
+```
+
+That looks worse than it is. Inline views work (`from (select …) as x`), and so
+does a view entity selecting from another view entity — and the second is the
+better tool, because it names the derived table at *model* scope where several
+queries can share it, rather than at query scope.
+
+**And Mendix inlines it.** `VWTop` selecting from `VWBase` produces one
+statement with `VWBase` expanded in place — no round trip, no temp table:
+
+```sql
+SELECT "v"."CategoryName", "v"."Recurring", "v"."Share" FROM (
+  SELECT "b"."CategoryName", SUM("b"."MerchantTotal") AS "Recurring",
+    (SUM("b"."MerchantTotal") / ( SELECT SUM("b2"."MerchantTotal") FROM ( …VWBase… ) "b2" ))
+  FROM ( …VWBase… ) "b"
+  WHERE "b"."MonthsActive" >= $5 GROUP BY "b"."CategoryName" ) "v"
+```
+
+**What is actually lost without CTEs is single evaluation, not expressiveness.**
+`VWBase` appears twice above, and Postgres runs it twice:
+
+```
+GroupAggregate (actual rows=13)
+  InitPlan 1 (returns $0)
+    ->  Aggregate -> GroupAggregate (actual rows=35)
+         ->  Seq Scan on "ledger$transaction" t_1 (actual rows=372)   <- once
+  ->  Subquery Scan on b -> GroupAggregate (actual rows=32)
+         ->  Seq Scan on "ledger$transaction" t (actual rows=372)     <- twice
+```
+
+Identical subqueries, no sharing. `WITH b AS MATERIALIZED (…)` would compute it
+once. At 900 rows that is noise; the cost scales with how many times the derived
+table is referenced, so it bites exactly on the percent-of-total shape, where the
+denominator is the same aggregate as the numerator.
+
+The one thing neither inline views nor view-on-view can express is
+`WITH RECURSIVE`. Not needed for a two-level taxonomy; it is the real hole for a
+hierarchy of unknown depth.
+
+### 99. CE0174's column-not-expression rule applies to enums too, and the way out is to stop mentioning the column
+
+Finding 88 recorded this for dates: a `datepart` in the GROUP BY makes the whole
+column grouped, so no other `datepart` of it may be aggregated. The rule is not
+about dates. Adding a signed total to a view already grouped by group type:
+
+```sql
+sum(case when cast(g.GroupType as string) = 'Income' then t.Amount
+         else 0 - t.Amount end) as Signed
+…
+group by …, cast(g.GroupType as string), …
+```
+```
+[error] [CE0174] "Error(s) in OQL query: Column 'g.GroupType' cannot both be
+        aggregated and appear in the GROUP BY clause." at Entity 'Ledger.VMonthCategory'
+```
+
+The two expressions are the *same* expression here, which makes it clearer than
+the date case what the checker is doing: it resolves both to the underlying
+column and refuses, without asking whether the result would be ambiguous. It
+would not be — every row in a group has the same `GroupType` by construction, so
+the CASE is constant within the group.
+
+**The fix is not to rephrase the aggregate but to reach the same number without
+naming the column.** `Transaction.SignedAmount` already carries the direction,
+so `sum(t.SignedAmount)` is the signed total by a route the checker has no
+objection to. That is only correct if the sign always agrees with the group
+type, which is a data assumption, so it was checked rather than assumed:
+
+```
+Expense|-1|840|0
+Income |+1| 60|0
+```
+
+840 expense rows all negative, 60 income rows all positive, and
+`|SignedAmount| = Amount` in every one — the third column is a count of rows
+where they disagree.
+
+**The general shape: when CE0174 blocks an expression, look for a column that
+already carries the answer.** Rephrasing the aggregate will not help, because
+the checker is not reading the expression.
+
+### 100. `bounds: "flush"` also stops the layout aligning row-header labels, and the DOM says they are aligned
+
+Reported as "the category labels on the left are not aligned", which they were —
+by up to sixty pixels. What made it hard to see is that every one of them
+insisted otherwise:
+
+```
+Salary               anchor=end translate(0,3) L=244 R=276
+Rent                 anchor=end translate(0,3) L=259 R=282
+Savings transfer     anchor=end translate(0,3) L=155 R=237
+Restaurants & cafes  anchor=end translate(0,3) L=120 R=221
+```
+
+Identical `text-anchor="end"`, identical local transform, right edges 61px
+apart. Rendering the same spec headless gave `distinct x = 1` — right-aligned,
+as declared. The spec was not wrong and the browser was not wrong.
+
+**The alignment is not the label's, it is the group's.** Each facet row's header
+is its own group, and `bounds: "flush"` — needed so the four columns keep the
+same row pitch (finding 94) — stops the layout measuring those groups. Each one
+comes to rest at its own text width, and a label right-anchored at x=0 inside a
+group that starts wherever is ragged no matter what its anchor says. Node's
+render agreed because its font metrics are uniform, so every group landed in the
+same place.
+
+Chasing it through header properties is wasted effort: `labelAnchor` positions
+the label *along the row* (and on a row header the anchors read backwards —
+`start` puts it on the bottom edge, `end` on the top), `labelAlign` sets the text
+anchor, and neither of them moves the group.
+
+**The fix is to stop using the header.** The category names are a column of the
+table, so they are drawn as one — a fifth faceted panel with
+`header: {labels: false}` and a text mark right-aligned at a fixed x:
+
+```json
+"spec": {
+  "width": 118, "height": 26,
+  "mark": {"type": "text", "align": "right", "fontSize": 10},
+  "encoding": {
+    "x": {"datum": 118, "axis": null, "scale": {"domain": [0, 118]}},
+    "text": {"field": "cat", "type": "nominal"}
+  }
+}
+```
+
+Every label now ends at the same pixel:
+
+```
+Salary               R=289      Restaurants & cafes  R=289
+Rent                 R=289      Internet & phone     R=289
+Savings transfer     R=290      Needs review         R=289
+```
+
+(The 290 is one glyph's right side bearing, not a misalignment.)
+
+It is also the better structure. The panel count check in `o.mjs` was hard-coded
+to four and would have gone on reporting agreement across a table that now has
+five columns, so it was changed to iterate until the dataset runs out — a check
+that silently stops measuring is worse than no check.
+
+### 101. The viewport Playwright is asked for is not always the viewport it gets, and the failure looks like a broken feature
+
+Twice now. The first time it produced a whole false diagnosis of a chart
+"growing horizontally"; the second time it made half a chart look unclickable.
+
+Clicking the delta bars of a fourteen-row table, rows 0–11 selected their
+category and rows 12–13 did nothing:
+
+```
+bar 11 y=706 -> title="Internet & phone"
+bar 12 y=735 -> title="Internet & phone"    <- unchanged
+bar 13 y=764 -> title="Internet & phone"    <- unchanged
+```
+
+The marks were in the DOM with correct bounding boxes. What gave it away:
+
+```js
+document.elementFromPoint(697, 739)   // -> null
+```
+
+`null` from `elementFromPoint` at a coordinate that is inside the element's own
+bounding box means the point is outside the *viewport*. And it was:
+
+```
+requested: { width: 1600, height: 1400 }
+actual:    { w: 1280, h: 720 }
+```
+
+`browser.newPage({ viewportSize })` had been ignored. Everything below y=720 was
+off-screen, `page.mouse.click()` at those coordinates went nowhere, and the app
+looked broken for exactly the rows that mattered — including the one the whole
+change was about.
+
+**Three habits that make this class of bug cheap:**
+
+- `page.setViewportSize()` *after* creating the page applies reliably where the
+  constructor option did not.
+- Prefer `elementHandle.click()` over `page.mouse.click(x, y)`: it scrolls the
+  element into view first, so it is immune to this entirely.
+- Assert the viewport you got. One line —
+  `await p.evaluate(() => ({w: innerWidth, h: innerHeight}))` — printed at the
+  top of every run would have caught both incidents in seconds.
+
+The general lesson is the same one as finding 94's "do not measure a
+screenshot": **the browser is an instrument, and an instrument that has silently
+changed scale reports confident nonsense.** Check the instrument before
+believing the measurement.
+
+### 102. A field named in a tooltip without an aggregate silently becomes part of the group-by, and un-aggregates the chart
+
+Reported as "the income against spend chart looks a bit weird for the Daily
+living category" — thin white slivers cutting through the stacked bands.
+
+**The first hypothesis was wrong and worth recording as such.** Stacked areas
+with `interpolate: "monotone"` are a known source of exactly this look: each
+band's top and bottom are smoothed independently, so two curves fitted to the
+same numbers diverge between data points and the background shows through.
+Switching to `linear` is correct on its own merits and changed nothing here.
+
+Measuring the geometry settled it. Reading each band's top and bottom edge at
+x=0 out of the SVG:
+
+```
+top 175.13  bottom 171.49
+top 175.76  bottom 175.13     <- 0.63px tall
+top 179.57  bottom 175.76     <- GAP of 3.81px
+top 180.48  bottom 179.57
+```
+
+Four gaps, totalling 19.7px. The bands either side were contiguous, so the stack
+had reserved the space and no mark had been drawn in it — and 0.63 + 3.81 is
+exactly Shopping's height for that month. One band, drawn as two pieces, with
+the stack's space for the missing middle showing through.
+
+**Four gaps, and exactly four categories are held on two accounts.** The view is
+grained by account, so a month/category is one row per account, and the chart
+aggregates that away:
+
+```json
+"y": {"field": "v", "aggregate": "sum", "stack": "zero"},
+"color": {"field": "grp"}, "detail": {"field": "cat"},
+"tooltip": [ …, {"field": "v", "title": "Amount"} ]
+```
+
+That last line is the bug. **Vega-Lite adds every field named in an encoding
+channel to the implicit GROUP BY unless it carries an aggregate, and `tooltip`
+is an encoding channel like any other.** The raw `v` in the tooltip put `v` back
+in the grouping, so the sum no longer collapsed accounts: two rows survived per
+(month, category), the area mark connected them as one path that jumped between
+two stacked positions, and the jump is the sliver.
+
+The tooltip had been reporting it all along, which is the part worth
+remembering. From the original bug report's screenshot:
+
+```
+Category Groceries   Month Jun 2026   Amount −517.47
+```
+
+and from the database:
+
+```
+ING Betaalrekening   -517.47
+Revolut              -180.23
+TOTAL                -697.70
+```
+
+The number on screen was one account's share, not the month. The chart was
+telling the truth about its own broken grouping and it read as a rendering
+artifact.
+
+The fix is one keyword:
+
+```json
+{"field": "v", "aggregate": "sum", "title": "Amount", "format": ",.2f"}
+```
+
+Every band edge then meets the next exactly — thirteen bands, twelve boundaries,
+zero gaps — and the tooltip reports −697.70.
+
+**The rule: in a chart that aggregates, every field in every channel needs an
+aggregate — including the ones that only exist to be read by a human.** A
+tooltip looks like annotation and behaves like a dimension. The tell is a
+tooltip whose number is smaller than the mark it is attached to.
+
+---
+
+## Phase 13 — the sparkline moves into the table (2026-08-14)
+
+The small-multiple grid below the cashflow matrix became a column of the matrix
+itself: one sparkline per row, beside the twelve figures it summarises. Getting
+there turned up how a page loses a widget nobody deleted, and how little of a
+pluggable widget survives a `DESCRIBE`.
+
+### 103. An `ALTER PAGE ... INSERT` is erased by the next run of the file that owns the page, and nothing reports it
+
+The sparklines disappeared from the cashflow page. No commit removed them, no
+error mentioned them, and `mx check` reported 0 errors both before and after.
+
+The two files:
+
+```
+11-cashflow-page.mdl    create or replace page Ledger.Cashflow_Overview { ... }
+23-cashflow-sparklines  alter page Ledger.Cashflow_Overview {
+                          insert after lgMatrixRow { ... the chart ... } }
+```
+
+Editing the matrix — making the inspector's rows clickable — meant re-running
+file 11. `CREATE OR REPLACE PAGE` rebuilt the page from its own source, and file
+23's insert was simply not in that source. The chart was gone from that moment,
+in a commit whose diff mentions only an `onclick`.
+
+Nothing catches this. A page missing a widget is a perfectly valid page, so the
+validator has nothing to say; the runtime renders what it is given; and the two
+files never appear in the same diff. It surfaces when someone looks at the
+screen.
+
+File 23 had even documented its own fragility, and documented the wrong half:
+
+```
+-- Idempotency, and the one place this file is not. [...] re-running *this file
+-- alone* against a page that already carries the chart fails with "duplicate
+-- widget name 'lgSparkRow'". In the canonical flow it is fine: file 11
+-- recreates the page from scratch before this one inserts into it.
+```
+
+The hazard identified was applying file 23 twice. The hazard that fired was
+applying file 11 once. "File 11 recreates the page from scratch before this one
+inserts into it" is true only while the files are applied as a set, and the
+whole point of `create or modify` everywhere else in this project is that a
+single file can be re-applied on its own.
+
+**This is the navigation trap again** (finding 81, and the four-file menu before
+it): state that spans files needs one owner. For a page, the owner is whichever
+file holds its `CREATE OR REPLACE PAGE`. The sparkline column now lives there,
+and file 23 is gone.
+
+What would make `ALTER PAGE` safe to depend on is idempotency —
+`INSERT ... IF NOT EXISTS` paired with `DROP WIDGET ... IF EXISTS` — because
+then "apply every file in order" repairs the page instead of racing it, and an
+alter file re-applied on its own is a no-op rather than a duplicate-name error.
+Neither form exists today:
+
+```
+$ mxcli check drop-if-exists.mdl
+  - line 1:18 extraneous input 'exists' expecting the start of a statement
+```
+
+### 104. `DESCRIBE PAGE` does not round-trip a pluggable widget: strings lose their quotes and booleans vanish
+
+A probe page with two Vega widgets, one spec on a single line and one across
+several:
+
+```sql
+pluggablewidget 'ledger.widget.web.vegachart.VegaChart' pw1 (
+  datasetName: 'table', chartHeight: 30, renderer: 'svg', showActions: true,
+  spec: '{"a": 1}')
+```
+
+comes back from `DESCRIBE PAGE` as:
+
+```
+pluggablewidget 'ledger.widget.web.vegachart.VegaChart' pw1 (
+  spec: {"a": 1},
+  datasetName: table,
+  chartHeight: 30,
+  renderer: svg
+)
+```
+
+Every string property has lost its quotes — `spec`, `datasetName` — and
+`showActions` is not in the output at all. Feeding the description of the real
+cashflow page back through the checker fails from the first widget onward:
+
+```
+$ mxcli -c "DESCRIBE PAGE Ledger.Cashflow_Overview" | sed -n '/^create or modify page/,$p' > rt.mdl
+$ mxcli check rt.mdl
+  - line 380:75 extraneous input ':' expecting the start of a statement
+  - line 380:83 extraneous input ',' expecting the start of a statement
+  - line 384:50 extraneous input '(' expecting the start of a statement
+```
+
+The model is fine — this is an output defect, not a storage one. The property is
+in the `.mxunit`:
+
+```
+$ grep -ac showActions mprcontents/e4/5b/e45bbab7-....mxunit
+2
+```
+
+Two widgets, two occurrences, exactly as written. It is `DESCRIBE` that drops
+it.
+
+That matters more than a cosmetic complaint because DESCRIBE-edit-CREATE OR
+REPLACE is the documented way to modify an element you did not author — it is
+how `mxcli` itself tells you to change navigation. Any page carrying a pluggable
+widget cannot be modified that way: the description will not re-parse, and if
+the quoting were fixed without also emitting the booleans, it would re-parse and
+silently drop a property instead. A widget was never hand-authorable in Studio
+Pro terms, so this is the only route it has.

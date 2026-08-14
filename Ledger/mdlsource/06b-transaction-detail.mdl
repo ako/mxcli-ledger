@@ -1,0 +1,117 @@
+-- ============================================================================
+-- 06b - The transaction detail popup
+-- ============================================================================
+-- Every list of transactions in this app was a dead end: you could see that a
+-- category held forty lines and what each one cost, and there was nothing to
+-- click. This is the page a row opens.
+--
+-- It takes a VTransactionLine rather than a Transaction, and that is not a
+-- compromise — it is the only thing that works. A view entity cannot carry an
+-- association (CE6771, finding 41) and `retrieve … where [id = $Text]` is
+-- rejected (MDL048, finding 74), so there is no route from a view row back to
+-- the object it was built from. What the view carries *is* the detail: the
+-- transaction's own columns plus the category, group and account already
+-- resolved, which is more than the object has without three traversals.
+--
+-- Read-only, deliberately. Editing a transaction from here would need the
+-- object, which is the one thing this page cannot reach.
+--
+-- Must come after 06a, whose view it takes as a parameter, and before 11 and 22,
+-- whose lists open it.
+-- ============================================================================
+
+/**
+ * One transaction, in full.
+ *
+ * @param $Line The row that was clicked
+ */
+create or replace page Ledger.Transaction_Detail
+(
+  params: {
+    $Line: Ledger.VTransactionLine
+  },
+  title: 'Transaction',
+  layout: Atlas_Core.PopupLayout,
+  folder: 'Ledger'
+)
+{
+  dataview dvLine (datasource: $Line) {
+    -- A layout grid, not a bare container. Atlas' popup layout gives its content
+    -- region no gutters of its own, so widgets dropped straight into a dataview
+    -- sit flush against the dialog's edges — the heading touching the left rule,
+    -- the amount touching the right. The grid is where the margins come from,
+    -- and it is one row because the popup is one column of fields.
+    layoutgrid lgTx {
+      row rowTx {
+        column colTx (desktopwidth: 12) {
+    container ctnTxHead (class: 'ledger-tx-head') {
+      dynamictext txtTxMerchant (attribute: Merchant, rendermode: H3)
+      dynamictext txtTxAmount (
+        content: '{1}€ {2}',
+        contentparams: [{1} = Sign, {2} = AbsAmount format (decimalPrecision: 2, groupDigits: true)],
+        rendermode: H4,
+        class: 'ledger-tx-amount')
+    }
+
+    container ctnTxFields (class: 'ledger-tx-fields') {
+      container ctnTxRowDate (class: 'ledger-tx-row') {
+        dynamictext lblTxDate (content: 'Date', class: 'ledger-tx-label')
+        dynamictext valTxDate (
+          content: '{1}',
+          contentparams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'EEEE d MMMM yyyy')],
+          class: 'ledger-tx-value')
+      }
+      container ctnTxRowAccount (class: 'ledger-tx-row') {
+        dynamictext lblTxAccount (content: 'Account', class: 'ledger-tx-label')
+        dynamictext valTxAccount (attribute: AccountName, class: 'ledger-tx-value')
+      }
+      container ctnTxRowCategory (class: 'ledger-tx-row') {
+        dynamictext lblTxCategory (content: 'Category', class: 'ledger-tx-label')
+        dynamictext valTxCategory (attribute: CategoryName, class: 'ledger-tx-value')
+      }
+      container ctnTxRowGroup (class: 'ledger-tx-row') {
+        dynamictext lblTxGroup (content: 'Group', class: 'ledger-tx-label')
+        dynamictext valTxGroup (attribute: GroupName, class: 'ledger-tx-value')
+      }
+      container ctnTxRowDesc (class: 'ledger-tx-row') {
+        dynamictext lblTxDesc (content: 'Reference', class: 'ledger-tx-label')
+        dynamictext valTxDesc (attribute: Description, class: 'ledger-tx-value')
+      }
+    }
+        }
+      }
+    }
+
+    footer footTx {
+      actionbutton btnTxClose (caption: 'Close', action: close_page)
+    }
+  }
+}
+/
+
+/**
+ * Opens the detail popup for a clicked row.
+ *
+ * A one-activity microflow rather than a page-open action on the container,
+ * because a container's OnClick maps an object parameter and a page open needs
+ * that object as a *page* parameter — the microflow is the adapter.
+ *
+ * @param $Line The clicked row
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ShowTransaction (
+  $Line: Ledger.VTransactionLine
+)
+returns boolean as $Done
+folder 'Shared'
+begin
+  declare $Done boolean = true;
+  show page Ledger.Transaction_Detail ($Line = $Line);
+  return $Done;
+end;
+/
+
+grant view on page Ledger.Transaction_Detail to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ShowTransaction to Ledger.User;
+/

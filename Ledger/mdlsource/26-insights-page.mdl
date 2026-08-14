@@ -104,7 +104,8 @@ create or replace page Ledger.Insights (
   "layer": [
     {
       "description": "Stacked bands. Detail by category keeps each one its own band while the colour stays at group level - thirteen hues would be a colour puzzle, five is a legend you can hold in your head.",
-      "mark": {"type": "area", "interpolate": "monotone", "opacity": 0.85},
+      "markNote": "Linear, not monotone. Monotone smooths each band on its own, so the curve fitted to a band\'s top and the curve fitted to the next band\'s bottom - the same numbers - come out as two different curves between data points, and the background shows through the gap. With thirteen thin bands stacked inside Daily living it reads as white slivers cutting through the colour. A stacked area has to be interpolated identically on both edges, and linear is the only interpolation that guarantees it.",
+      "mark": {"type": "area", "interpolate": "linear", "opacity": 0.85},
       "encoding": {
         "y": {"field": "v", "type": "quantitative", "aggregate": "sum", "stack": "zero",
               "description": "Summed: the view groups by account too, so a month/category is one row per account. Aggregating here costs a keyword; aggregating in MDL would need a map it does not have.",
@@ -116,17 +117,18 @@ create or replace page Ledger.Insights (
                     "range": ["#4E9E74", "#1B4D4B", "#8A5A2B", "#6B4E8A", "#3A4A6B"]}
         },
         "detail": {"field": "cat", "type": "nominal"},
+        "tooltipNote": "The sum on this tooltip field is load-bearing, not cosmetic. Any field named in an encoding channel without an aggregate becomes part of the implicit GROUP BY, and a tooltip is an encoding channel like any other - so a raw `v` here quietly re-grained the whole chart back to one row per account. A category held on two accounts was then two stacked segments inside one band, drawn as a single path that jumped between them, and the background showed through the jump. That is what the white slivers through Daily living were: not a rendering artifact, a broken aggregation, and the four gaps were the four categories with two accounts.",
         "tooltip": [
           {"field": "cat", "type": "nominal", "title": "Category"},
           {"field": "t", "type": "temporal", "title": "Month", "format": "%b %Y"},
-          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"}
+          {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "Amount", "format": ",.2f"}
         ]
       }
     },
     {
       "description": "Net. Summed in the spec rather than in a second query, because the rows to add are already here.",
       "transform": [{"aggregate": [{"op": "sum", "field": "v", "as": "net"}], "groupby": ["t"]}],
-      "mark": {"type": "line", "color": "#17181A", "strokeWidth": 1.6, "interpolate": "monotone"},
+      "mark": {"type": "line", "color": "#17181A", "strokeWidth": 1.6, "interpolate": "linear"},
       "encoding": {
         "y": {"field": "net", "type": "quantitative"},
         "tooltip": [{"field": "net", "type": "quantitative", "title": "Net", "format": ",.2f"}]
@@ -524,8 +526,18 @@ create or replace page Ledger.Insights (
   },
   "layer": [
     {
-      "description": "The category as it normally behaves. Faint, because it is context rather than the finding.",
-      "mark": {"type": "circle", "size": 14, "opacity": 0.22, "color": "#6B6257"}
+      "description": "The category as it normally behaves. Faint, because it is context rather than the finding - but hoverable, because a chart of eight hundred anonymous dots is only useful if you can ask any one of them what it is. The tooltip carries the deviation too, so a dot just under the threshold is as readable as one just over it.",
+      "mark": {"type": "circle", "size": 14, "opacity": 0.22, "color": "#6B6257"},
+      "encoding": {
+        "tooltip": [
+          {"field": "m", "type": "nominal", "title": "Merchant"},
+          {"field": "cat", "type": "nominal", "title": "Filed under"},
+          {"field": "d", "type": "temporal", "title": "Date", "format": "%e %b %Y"},
+          {"field": "v", "type": "quantitative", "title": "Amount", "format": ",.2f"},
+          {"field": "catMean", "type": "quantitative", "title": "Category mean", "format": ",.2f"},
+          {"field": "z", "type": "quantitative", "title": "Deviations above", "format": ".1f"}
+        ]
+      }
     },
     {
       "transform": [{"filter": "datum.z > 2.5"}],
