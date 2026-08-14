@@ -37,10 +37,15 @@ create or replace page Ledger.Category_Overview
           class: 'text-muted')
 
         dynamictext txtCatsHeading (content: 'Categories', rendermode: H4)
+        -- Sortable and searchable. Thirteen rows do not need it today, but the
+        -- table has no ceiling — the count comes from the data, not from
+        -- anything written down (see the dashboard caption, FINDINGS 105).
         datagrid dgCategories (
-          datasource: database from Ledger.Category sort by SortOrder asc
+          datasource: database from Ledger.Category sort by SortOrder asc,
+          PageSize: 20
         ) {
           column colCatName (attribute: Name, caption: 'Category')
+          column colCatGroup (attribute: Category_CategoryGroup/Name, caption: 'Group')
           column colCatBudget (attribute: BaselineBudget, caption: 'Baseline budget / mo', Alignment: right)
           column colCatOrder (attribute: SortOrder, caption: 'Order', Alignment: right)
         }
@@ -69,10 +74,17 @@ create or replace page Ledger.Category_Overview
           }
         }
 
+        -- Searchable and paged, but deliberately NOT sortable. The order of
+        -- this grid is the order the rules run in, and first match wins — a
+        -- column header that reorders it would be showing a sequence that is
+        -- not the sequence. Filtering is safe: it hides rows without
+        -- reordering the ones that remain.
         datagrid dgRules (
           datasource: database from Ledger.CategoryRule sort by SortOrder asc,
+          PageSize: 20,
           class: 'ledger-rules-grid'
         ) {
+
           column colRuleOrder (
             attribute: SortOrder, caption: '#', Alignment: right,
             Sortable: false, ColumnWidth: manual, Size: 40)
@@ -84,7 +96,8 @@ create or replace page Ledger.Category_Overview
             Sortable: false, ColumnWidth: manual, Size: 110)
           column colRuleValue (
             attribute: MatchValue, caption: 'Value',
-            Sortable: false, ColumnWidth: manual, Size: 220)
+            Sortable: false, ColumnWidth: manual, Size: 220
+          )
           -- A dynamictext cannot walk an association; a nested dataview can.
           column colRuleCategory (
             caption: 'Assigns', Sortable: false,

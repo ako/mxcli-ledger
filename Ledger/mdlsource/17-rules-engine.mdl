@@ -318,6 +318,8 @@ begin
           change $T (
             Ledger.Transaction_Category = $R/Ledger.CategoryRule_Category,
             Ledger.Transaction_CategoryRule = $R);
+          @annotation 'The direction follows the category, so it is recomputed here rather than left at whatever the row was seeded with. An uncategorised transaction is seeded negative; a rule that files one under Salary would otherwise leave a negative income in every figure derived from SignedAmount.'
+          $Signed = call microflow Ledger.SET_TransactionSign (Tx = $T);
           commit $T;
           set $Applied = $Applied + 1;
           set $Caught = true;

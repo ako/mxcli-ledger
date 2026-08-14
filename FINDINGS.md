@@ -4182,3 +4182,133 @@ Plus before minus, identical value, and it round-trips. Parenthesising the
 subtraction works too. Neither is something an author should have to know, so
 the comment in `21b-dashboard-overview.mdl` says why the line is written
 backwards.
+
+---
+
+## Phase 14 — a list you can actually work (2026-08-14)
+
+The transactions screen was a wall of 932 rows: no search, no sorting, no paging
+beyond the default, and nothing editable — so the twelve transactions the
+dashboard said needed review could be counted but not acted on. Making it work
+turned up three ways the tooling loses without saying so.
+
+### 106. A doc comment with nothing after it makes the whole file unparseable — and one had been sitting in this project for weeks
+
+`05-pages-foundation.mdl` could not be applied. Not the statement — the file:
+
+```
+$ mxcli exec mdlsource/05-pages-foundation.mdl
+Parse error: line 207:0 no viable alternative at input '/**\n * Fill in the
+navigation now that every target page exists. […]'
+```
+
+`mxcli check` says the same. The comment is the last thing in the file, and it
+documents a statement that no longer exists: navigation moved out to file 27
+when the four-file menu trap was fixed (finding 81), and its `/** … */`
+introduction was left behind. A doc comment has to attach to something. A `--`
+line comment in the same position is fine.
+
+Two things make this worth writing down rather than filing as a typo.
+
+**It is invisible in exactly the way that matters.** The pages the file owns
+were already in the `.mpr`, put there before the comment was orphaned, so every
+screen worked and every `mx check` was clean. Nothing reads a file that nobody
+runs. It surfaced only when this session tried to *edit* the transactions page —
+the first change to that file since navigation moved.
+
+**A cold rebuild would have failed.** The project's claim is that the app is
+authored entirely through MDL and can be rebuilt from `mdlsource/`. That claim
+was false for as long as this comment sat there: applying the files in order
+stops at 05.
+
+The lesson is narrower than "check your comments": *when you delete a statement,
+delete its doc comment with it* — and the general one, that a file which nothing
+re-runs is a file nothing tests.
+
+### 107. A grid column's `Size` is a ratio, is only read alongside `ColumnWidth: manual`, and on its own builds a broken column
+
+The date and amount columns wanted to be about 130px, so:
+
+```
+column colDate (attribute: TxDate, caption: 'Date', ColumnWidth: manual, Size: 130, …)
+column colMerchant (attribute: Merchant, caption: 'Merchant')
+column colDesc (attribute: Description, caption: 'Description')
+```
+
+What rendered was a date column half the screen wide, an amount column the other
+half, and three columns of nothing in between — no header captions, no cell
+values. It reads as data loss, and the model is fine: `DESCRIBE PAGE` shows
+`column Merchant (Attribute: Merchant, Caption: 'Merchant')` exactly as written.
+
+`Size` is a **ratio**, not a pixel width, and the widget's default is 1. Asking
+for 130 on two columns and leaving three at the default is asking for
+130:1:1:1:130 — the middle three got a 260th of the width each and clipped to
+nothing. The skill file says "Width in pixels (when `ColumnWidth: manual`)",
+which is what sent me there; the widget's own XML says `size`, "Column size",
+integer, default 1.
+
+Dropping `ColumnWidth: manual` and keeping `Size` is worse, and this is the part
+with teeth:
+
+```
+$ mx check
+[error] [CE0463] "The definition of this widget has changed. Update this widget
+by right-clicking it and selecting 'Update widget'…" at Data grid 2 'dgTransactions'
+```
+
+A column with a `Size` and no `ColumnWidth` builds an invalid widget. The error
+does not mention the column, the property, or the page's source — it says the
+widget definition changed, which is what you get when a `.mpk` was rebuilt under
+a placed instance, so it sends you looking at widget versions. Eleven probe
+variants isolated it:
+
+```
+plain grid                              CE0463: 0
++ PageSize                              CE0463: 0
++ Size: 3                               CE0463: 1     <-- here
+ColumnWidth: manual + Size: 3           CE0463: 0
+ColumnWidth: autoFit, no Size           CE0463: 0
+column filter block (with manual+Size)  CE0463: 0
+```
+
+**The rule: `Size` and `ColumnWidth: manual` are one property in two halves.**
+Give every column both, as a set — a ratio only means anything relative to the
+other columns' ratios.
+
+### 108. A `filter` block at grid level parses, applies, and is silently dropped
+
+Data Grid 2 puts a filter widget in a column. Written at grid level:
+
+```
+datagrid dgTransactions (…) {
+  filter fltTransactions {
+    textfilter ftTxText (attributes: [Ledger.Transaction.Merchant, …])
+    datefilter ftTxDate (attributes: [Ledger.Transaction.TxDate])
+  }
+  column colDate (…)
+```
+
+`mxcli check` passes. `mxcli exec` reports the page created. `mx check` gives 0
+errors. The app builds, the grid renders — with no filters, and no filter
+widgets anywhere in the model:
+
+```
+$ mxcli -c "DESCRIBE PAGE Ledger.Transaction_Overview"
+datagrid dgTransactions (DataSource: …, PageSize: 25, …) {
+  column TxDate (…)            <-- the filter block is simply not here
+```
+
+Inside the column it works and lands in the right region — the rendered header
+carries `<div class="filter"><div class="filter-container mx-name-ftMerchant">`:
+
+```
+column colMerchant (attribute: Merchant, caption: 'Merchant', ColumnWidth: manual, Size: 3) {
+  filter fltMerchant { textfilter ftMerchant (attribute: Merchant) }
+}
+```
+
+Four steps of validation agreed the grid-level form was fine, and the only
+signal that it was not is that the screen has no search box. The failure mode
+this project keeps meeting: **the tool accepting something it does not
+implement is worse than rejecting it**, because every check you would run comes
+back green.
