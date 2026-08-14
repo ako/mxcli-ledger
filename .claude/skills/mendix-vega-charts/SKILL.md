@@ -94,13 +94,13 @@ It costs:
   so cap the result deliberately (`$top`) rather than discovering the cap.
 - **`check-spec.mjs` cannot fetch it.** Keep a sample `.data.json` beside the spec
   so it stays checkable offline.
-- **Publishing the endpoint may be the hard part.** In this project an OData
-  service authored in MDL could not be built at all: CE7375 demands the entity's
-  own `ID` as the published key, `ID` is a reserved column name, the system id is
-  not exposable from MDL, and supplying a casted-id key of your own does not
-  satisfy the check — on a view entity or a persistent one. Published REST takes
-  a different shape and is the likelier route. Check that you can publish before
-  designing a chart around a URL.
+- **Publishing the endpoint may be the hard part.** Mendix supports publishing a
+  view entity keyed on selected attributes, but an OData service authored purely
+  in MDL could not be built here: the service's *association representation*
+  defaults to "associated object ID", CE7375 then demands the entity's own `ID`
+  as key, and that representation is not a property MDL can set (FINDINGS 113).
+  Setting it once in Studio Pro unblocks it; published REST avoids it entirely.
+  Confirm you can publish before designing a chart around a URL.
 
 Default to the attribute for anything a microflow already computes — it keeps the
 figures checkable against SQL and the chart working with no endpoint to secure.

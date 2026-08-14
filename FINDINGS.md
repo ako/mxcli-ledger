@@ -4452,84 +4452,81 @@ text. Neither is fine for a probe that lets one throw.
 
 ---
 
-### 113. No OData service authored in MDL can be built: CE7375 wants the entity's own ID as key, and MDL cannot expose it
+### 113. MDL cannot set an OData service's association representation, so every published entity fails CE7375
 
-A chart can fetch its own data from an endpoint (see the Vega skill), so the
-obvious pairing is an OQL view entity published as OData — aggregation in the
-database, the chart fetching rows already summed.
+Publishing an OQL view entity as a read-only OData endpoint — aggregation in the
+database, a chart fetching rows already summed — is a supported Mendix
+capability. It cannot be authored in MDL today, and the reason is one setting.
 
 The service applies cleanly and fails at build:
 
 ```
-$ mxcli exec odata.mdl
-Created OData service: Ledger.ChartApi
-
-$ mx check Ledger.mpr
 [error] [CE7375] "Attribute ID for entity 'Ledger.VMonthCategory' must be
 published and be the key when associations are exposed as an associated object
 id." at Published entity 'VMonthCategory'
 ```
 
-The message points at associations, so the first suspicion was that
-`PublishAssociations: No` had not survived — `DESCRIBE ODATA SERVICE` does not
-echo it back. **That was wrong, and the model says so.** In the service's
-`.mxunit`:
+The entity has no associations. It is a view entity, which cannot carry one
+(CE6771, finding 41), and the service sets `PublishAssociations: No`.
+
+**Everything the message suggests is a dead end.** A key of your own does not
+satisfy it — a view carrying `cast(c.id as string) as RowId` published as the key,
+with `IsPartOfKey` confirmed `true` in the stored model, fails identically, as
+does a grouped view keyed on the columns that define its grain. The column cannot
+be named `ID` (`CE0174`, `CE7247` — reserved word). The system id cannot be
+exposed (`CE1613`). And it is not about view entities: publishing
+`Ledger.Category`, a persistent entity that does have an id, fails the same way.
+
+**`PublishAssociations` is not the setting the check reads.** It is stored
+correctly — the service's `.mxunit` carries `\x08PublishAssociations\x00\x00`, a
+BSON boolean set to false. (An earlier draft of this entry blamed mxcli for
+dropping it, inferred from `DESCRIBE` not echoing it back. `DESCRIBE` is lossy
+here, the same shape as finding 104, and absence in a description is not evidence
+of absence in a model.)
+
+The setting that matters is a different one. Mendix's
+[published OData service reference](https://docs.mendix.com/refguide/published-odata-services/)
+describes an **Associations** representation choice in the service configuration
+— how associations are represented, of which "as an associated object ID" is one
+option and the one CE7375 names. That is an enum, not the boolean.
+
+**mxcli has no such property.** Its generated metamodel for
+`ODataPublish$PublishedODataService2` binds twenty-one properties and none of
+them is the representation:
 
 ```
-\x08PublishAssociations\x00\x00        BSON boolean, false
+Excluded ExportLevel Namespace Path AllowedModuleRoles ServiceName Entities
+EntitySets Microflows Enumerations PublishAssociations Version
+AuthenticationMicroflow AuthenticationTypes Summary Description
+ReplaceIllegalChars UseGeneralization ODataVersion IncludeMetadataByDefault
+SupportsGraphQL
 ```
 
-It is stored, correctly, as false. `DESCRIBE` is simply lossy here (the same
-shape as finding 104), and inferring absence from it is not sound.
+And MDL accepts nine service properties, checked by name — an unknown one is
+rejected rather than passed through (MDL-ODATA01):
 
-So the check fires with associations unpublished. Four ways round it, all closed:
-
-**A key of your own does not satisfy it.** A view carrying its id as a casted
-string — the pattern finding 74 established — declared as the OData key:
-
-```sql
-create or modify view entity Ledger.VProbeRow (RowId: string(200), ...) as (
-  select cast(c.id as string) as RowId, ... from Ledger.Category as c
-);
+```go
+knownODataServiceProps = []string{
+    "Path", "Version", "ODataVersion", "Namespace", "ServiceName",
+    "Summary", "Description", "PublishAssociations", "Folder",
+}
 ```
 
-`IsPartOfKey` is stored as true on that column. CE7375 is unchanged. The same
-for a grouped view whose key is built from the columns that define its grain
-(`cast(datepart(YEAR, t.TxDate) as string) + '|' + cast(c.Name as string)`).
+So the model takes the default representation, the default is the one that
+demands the entity's `ID` as key, and there is no spelling of MDL that says
+otherwise.
 
-**The column cannot be called ID.** Naming it after what the check asks for:
-
-```
-[error] [CE0174] "All columns of the first select query must have a correct
-name. The name 'ID' is a reserved word." at Entity 'Ledger.VProbeRow'
-[error] [CE7247] "The name 'ID' is a reserved word."
-```
-
-**The real id cannot be exposed.** Publishing the system attribute the check
-names:
-
-```
-expose ( ID as 'ID' (key), ... )
-[error] [CE1613] "The selected attribute 'Ledger.VProbeRow.ID' no longer exists."
-```
-
-**And it is not about view entities.** The same service publishing
-`Ledger.Category` — a persistent entity, which does have an id — fails
-identically:
-
-```
-[error] [CE7375] "Attribute ID for entity 'Ledger.Category' must be published
-and be the key ..." at Published entity 'Category'
-```
-
-Whatever Studio Pro writes when it ticks the id as key, MDL does not write it,
-and there is no attribute-level route to it. An OData service can be created
-from MDL and cannot be made to build, for any entity.
+**What this is, precisely:** not a Mendix limitation and not a bad error message
+— a published entity keyed on selected attributes is exactly what the reference
+guide describes. It is one property missing from mxcli's OData surface. Setting
+the representation once in Studio Pro would unblock the whole path, and adding
+the property to `knownODataServiceProps` and the metamodel binding would unblock
+it from MDL.
 
 **Published REST is in the grammar** and takes a different shape — resources
-mapping HTTP verbs to microflows, with optional import/export mappings — so it
-is the likelier route for a chart endpoint today. It was not tested here.
+mapping HTTP verbs to microflows — so it does not go near CE7375 and is the
+likelier route for a chart endpoint today. It was not tested here.
 
-The chart half was verified separately against a static asset the app serves:
+The chart half was verified separately against an endpoint the app serves:
 `200`, six marks, no error, `format.property` unwrapping the OData envelope. It
-is the publishing half that has no working path through MDL.
+is the publishing half that MDL cannot currently reach.
