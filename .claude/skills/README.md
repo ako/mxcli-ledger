@@ -16,6 +16,7 @@ what stops it having to rediscover the awkward part every time.
 | Skill | What it gives you |
 |---|---|
 | [`mendix-vega-charts`](mendix-vega-charts/) | Vega-Lite charting through a pluggable widget that takes the spec and the data separately. Includes install and re-namespacing steps, seven working spec templates with sample data, a headless spec checker, and a catalogue of the failure modes that cost real time. |
+| [`mendix-bulk-oql-dml`](mendix-bulk-oql-dml/) | Set-based INSERT/UPDATE/DELETE through OQL statements, which the runtime supports and Studio Pro cannot author. Three Java actions ready to apply, the grammar matrix from sixteen probe statements, three working patterns, and the gotcha that wrote bad data. |
 
 ## Wanted
 
@@ -25,10 +26,9 @@ the shape is agreed before anyone writes them — **not yet written**:
 | Skill | What it would give you | Where the code is |
 |---|---|---|
 | `mendix-odata-pushdown` | Java actions that parse OData query parameters (`$filter`, `$orderby`, `$top`, `$skip`) and apply them to external database connector SQL, so paging and filtering happen in the source database instead of in memory. | the Formula 1 project |
-| `mendix-bulk-oql-dml` | Java actions for bulk DML through OQL — supported by the platform, not exposed in Studio Pro — so a set-based update or delete does not have to become a loop over retrieved objects. | to be written |
 
-Both are the same bet as the charting one: the awkward, verifiable, easily-got-wrong part
-is written once, with its failure modes documented, and an agent applies it.
+Same bet as the two that exist: the awkward, verifiable, easily-got-wrong part is
+written once, with its failure modes documented, and an agent applies it.
 
 ## What a skill here should carry
 

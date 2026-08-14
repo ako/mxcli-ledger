@@ -830,3 +830,11 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+
+// A rejected import row states its reason, and the reason is the point of the
+// screen — the loader table exists so a bad row can be looked at rather than
+// silently skipped.
+.ledger-import-bad {
+    color: var(--ledger-over, #a8321e);
+    font-size: 12.5px;
+}

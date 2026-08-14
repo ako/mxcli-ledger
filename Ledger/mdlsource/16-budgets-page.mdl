@@ -31,6 +31,27 @@ create or replace page Ledger.Budgets_Overview
           rendermode: paragraph,
           class: 'text-muted')
 
+        -- Copying a year is one insert-from-select per month rather than a
+        -- create per category per month. It sits on this screen because this is
+        -- where a household would think of it — in January, looking at last
+        -- year's numbers.
+        dataview dvCopy (datasource: microflow Ledger.DS_BudgetCopyContext) {
+          container ctnCopyPanel (class: 'card ledger-rules-panel') {
+            container ctnCopyFields (class: 'ledger-rules-figures') {
+              dynamictext txtCopyHeading (content: 'Copy a year', rendermode: H5)
+              dynamictext txtCopyStatus (attribute: Status, class: 'ledger-rules-status')
+            }
+            container ctnCopyActions (class: 'ledger-rules-actions') {
+              textbox txtFromYear (label: 'From', attribute: FromYear)
+              textbox txtToYear (label: 'To', attribute: ToYear)
+              actionbutton btnCopyYear (
+                caption: 'Copy overrides',
+                action: microflow Ledger.ACT_CopyBudgets(Context: $currentObject),
+                buttonstyle: primary)
+            }
+          }
+        }
+
         datagrid dgBudgets (
           datasource: microflow Ledger.DS_BudgetRows,
           PageSize: 20,

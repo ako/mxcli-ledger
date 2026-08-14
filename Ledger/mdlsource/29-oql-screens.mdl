@@ -1,0 +1,397 @@
+-- ============================================================================
+-- 29 - Screens for the OQL statement work
+-- ============================================================================
+-- The actions in 28 were reachable only from other microflows. This gives two
+-- of them a screen: copying a budget year, and the loader table.
+--
+-- One thing shapes both. An OQL statement does not go through the object cache,
+-- so nothing it changes refreshes a client that is already looking at it — a
+-- grid over the rows a statement just rewrote keeps showing the old ones. The
+-- fix is the same in both places: the action commits its context object with
+-- REFRESH, and the grids read through a constraint on that object, so
+-- refreshing it re-runs their queries. Without it the screen lies quietly.
+-- ============================================================================
+
+/** Screen state for the loader. One object per page instance. */
+create or modify non-persistent entity Ledger.ImportContext (
+  /** Which landed batch this screen is looking at */
+  Batch: string(50),
+  /** What the last action did */
+  Status: string(200),
+  /** Counts, refreshed after every action */
+  RowCount: integer default 0,
+  InvalidCount: integer default 0
+);
+/
+
+grant Ledger.User on Ledger.ImportContext (create, delete, read *, write *);
+/
+
+/** Screen state for the budget copy. */
+create or modify non-persistent entity Ledger.BudgetCopyContext (
+  FromYear: integer default 2026,
+  ToYear: integer default 2027,
+  Status: string(200)
+);
+/
+
+grant Ledger.User on Ledger.BudgetCopyContext (create, delete, read *, write *);
+/
+
+/**
+ * Recount a batch and write the counts onto the context.
+ *
+ * Refreshes in the client, which is what re-runs the grid: the grid's rows are
+ * constrained on this object, and the statements that changed them did not tell
+ * anyone.
+ *
+ * @param $Context The screen state
+ * @param $Status What to say happened
+ * @returns true
+ */
+create or modify microflow Ledger.REFRESH_ImportContext (
+  $Context: Ledger.ImportContext,
+  $Status: string
+)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+
+  retrieve $Rows from Ledger.ImportRow where [Batch = $Context/Batch];
+  retrieve $Bad from Ledger.ImportRow where [Batch = $Context/Batch] and [IsValid = false];
+
+  change $Context (
+    RowCount = length($Rows),
+    InvalidCount = length($Bad),
+    Status = $Status);
+
+  @annotation 'Refresh in client. The grid below reads through a constraint on this object, so refreshing it is what makes the rows the statements rewrote appear.'
+  commit $Context refresh;
+  return $Done;
+end;
+/
+
+/**
+ * The loader screen's context.
+ *
+ * @returns The context object
+ */
+create or modify microflow Ledger.DS_ImportContext ()
+returns Ledger.ImportContext as $Context
+folder 'OQL'
+begin
+  $Context = create Ledger.ImportContext (
+    Batch = 'import',
+    Status = 'Nothing landed yet.');
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = 'Nothing landed yet.');
+  return $Context;
+end;
+/
+
+/**
+ * Land a sample batch, so the screen can be used without a file upload.
+ *
+ * Two of the six rows are deliberately wrong — one names an account that does
+ * not exist, one has a zero amount — because a loader screen that only ever
+ * shows a clean batch teaches nobody what the reject list is for.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ImportSample ($Context: Ledger.ImportContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+
+  $Cleared = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'delete from Ledger.ImportRow where Batch = $b',
+    Name1 = 'b', Value1 = $Context/Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  $R1 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 1, TxDateText = '2026-08-03',
+    Merchant = 'Dille & Kamille', Description = 'iDEAL 90001', Amount = 24.50,
+    AccountName = 'ING Betaalrekening', CategoryName = 'Shopping');
+  $R2 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 2, TxDateText = '2026-08-04',
+    Merchant = 'Albert Heijn', Description = 'iDEAL 90002', Amount = 61.20,
+    AccountName = 'ING Betaalrekening', CategoryName = 'Groceries');
+  $R3 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 3, TxDateText = '2026-08-05',
+    Merchant = 'Koelewijn Holding BV', Description = 'SEPA overboeking', Amount = 4200.00,
+    AccountName = 'ING Betaalrekening', CategoryName = 'Salary');
+  $R4 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 4, TxDateText = '2026-08-06',
+    Merchant = 'Onbekend', Description = 'iDEAL 90004', Amount = 12.00,
+    AccountName = 'Rabobank Betaalrekening', CategoryName = '');
+  $R5 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 5, TxDateText = '2026-08-07',
+    Merchant = 'Marqt', Description = 'iDEAL 90005', Amount = 0,
+    AccountName = 'ING Betaalrekening', CategoryName = 'Groceries');
+  $R6 = create Ledger.ImportRow (Batch = $Context/Batch, RowNo = 6, TxDateText = '2026-08-08',
+    Merchant = 'Vinted', Description = 'iDEAL 90006', Amount = 9.99,
+    AccountName = 'ABN AMRO Creditcard', CategoryName = '');
+  commit $R1;
+  commit $R2;
+  commit $R3;
+  commit $R4;
+  commit $R5;
+  commit $R6;
+
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = 'Landed 6 rows. Validate them next.');
+  return $Done;
+end;
+/
+
+/**
+ * Validate the landed batch.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ImportValidate ($Context: Ledger.ImportContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+  declare $Status string = '';
+
+  $Bad = call microflow Ledger.VALIDATE_ImportBatch (Batch = $Context/Batch);
+
+  set $Status = if $Bad = 0
+    then 'Validated. Every row is ready to promote.'
+    else if $Bad = 1
+      then 'Validated. 1 row was rejected — see the reason on its row.'
+      else 'Validated. ' + toString($Bad) + ' rows were rejected — see the reason on each.';
+
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = $Status);
+  return $Done;
+end;
+/
+
+/**
+ * Promote the valid rows into Transaction.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ImportPromote ($Context: Ledger.ImportContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+  declare $Status string = '';
+
+  $Promoted = call microflow Ledger.PROMOTE_ImportBatch (Batch = $Context/Batch);
+
+  set $Status = if $Promoted = 0
+    then 'Nothing was promoted. Every row still has a problem.'
+    else toString($Promoted) + ' transaction(s) written. Rejected rows stay here with their reason.';
+
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = $Status);
+  return $Done;
+end;
+/
+
+/**
+ * Throw the batch away, rejects and all.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ImportDiscard ($Context: Ledger.ImportContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+
+  $Deleted = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'delete from Ledger.ImportRow where Batch = $b',
+    Name1 = 'b', Value1 = $Context/Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = 'Discarded ' + toString($Deleted) + ' row(s).');
+  return $Done;
+end;
+/
+
+/**
+ * The loader screen.
+ *
+ * Land, validate, promote — the three states a bulk import moves through, with
+ * the rows visible in each. The grid is the reject list after validation, which
+ * is the reason for having a loader table at all.
+ */
+create or replace page Ledger.Import_Overview
+(
+  title: 'Import',
+  layout: Atlas_Core.Atlas_Default,
+  url: 'import',
+  folder: 'Ledger'
+)
+{
+  layoutgrid lgImport {
+    row rowMain {
+      column colBody (desktopwidth: 12) {
+        dynamictext txtHeading (content: 'Import', rendermode: H2)
+        dynamictext txtSub (
+          content: 'Rows land here first. They are checked where they landed, and only the ones that pass are written into Transactions — each check is one statement over the whole batch.',
+          rendermode: paragraph,
+          class: 'text-muted')
+
+        dataview dvImport (datasource: microflow Ledger.DS_ImportContext) {
+          container ctnImportPanel (class: 'card ledger-rules-panel') {
+            container ctnImportFigures (class: 'ledger-rules-figures') {
+              dynamictext txtCounts (
+                content: '{1} row(s) landed · {2} rejected',
+                contentparams: [{1} = RowCount, {2} = InvalidCount],
+                rendermode: H5)
+              dynamictext txtStatus (attribute: Status, class: 'ledger-rules-status')
+            }
+            container ctnImportActions (class: 'ledger-rules-actions') {
+              actionbutton btnSample (
+                caption: 'Land sample batch',
+                action: microflow Ledger.ACT_ImportSample(Context: $currentObject))
+              actionbutton btnValidate (
+                caption: 'Validate',
+                action: microflow Ledger.ACT_ImportValidate(Context: $currentObject))
+              actionbutton btnPromote (
+                caption: 'Promote valid rows',
+                action: microflow Ledger.ACT_ImportPromote(Context: $currentObject),
+                buttonstyle: primary)
+              actionbutton btnDiscard (
+                caption: 'Discard batch',
+                action: microflow Ledger.ACT_ImportDiscard(Context: $currentObject))
+            }
+          }
+
+          -- Constrained on the context, which is what makes the statements
+          -- visible: nothing they change reaches the client on its own, and
+          -- refreshing the context re-runs this query.
+          datagrid dgImport (
+            datasource: database from Ledger.ImportRow
+              where [Batch = $currentObject/Batch]
+              sort by RowNo asc,
+            PageSize: 25
+          ) {
+            column colImpRow (
+              attribute: RowNo, caption: '#', Alignment: right,
+              ColumnWidth: manual, Size: 1)
+            column colImpDate (
+              attribute: TxDateText, caption: 'Date',
+              ColumnWidth: manual, Size: 2)
+            column colImpMerchant (
+              attribute: Merchant, caption: 'Merchant',
+              ColumnWidth: manual, Size: 3
+            ) {
+              filter fltImpMerchant { textfilter ftImpMerchant (attribute: Merchant) }
+            }
+            column colImpAmount (
+              attribute: Amount, caption: 'Amount', Alignment: right,
+              ColumnWidth: manual, Size: 2,
+              ShowContentAs: dynamicText,
+              Content: '{1}',
+              ContentParams: [{1} = Amount format (decimalPrecision: 2, groupDigits: true)])
+            column colImpAccount (
+              attribute: AccountName, caption: 'Account',
+              ColumnWidth: manual, Size: 3)
+            column colImpCategory (
+              attribute: CategoryName, caption: 'Category',
+              ColumnWidth: manual, Size: 2)
+            column colImpProblem (
+              attribute: Problem, caption: 'Problem',
+              ColumnWidth: manual, Size: 4,
+              DynamicCellClass: 'if $currentObject/IsValid then '''' else ''ledger-import-bad''')
+          }
+        }
+      }
+    }
+  }
+}
+/
+
+grant view on page Ledger.Import_Overview to Ledger.User;
+/
+grant execute on microflow Ledger.DS_ImportContext to Ledger.User;
+/
+grant execute on microflow Ledger.REFRESH_ImportContext to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ImportSample to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ImportValidate to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ImportPromote to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ImportDiscard to Ledger.User;
+/
+grant execute on microflow Ledger.VALIDATE_ImportBatch to Ledger.User;
+/
+grant execute on microflow Ledger.PROMOTE_ImportBatch to Ledger.User;
+/
+
+-- ============================================================================
+-- Budgets: copy a year
+-- ============================================================================
+
+/**
+ * The budget copy panel's state.
+ *
+ * @returns The context object
+ */
+create or modify microflow Ledger.DS_BudgetCopyContext ()
+returns Ledger.BudgetCopyContext as $Context
+folder 'OQL'
+begin
+  $Context = create Ledger.BudgetCopyContext (
+    FromYear = 2026,
+    ToYear = 2027,
+    Status = 'Copies every override of one year into the same months of another.');
+  return $Context;
+end;
+/
+
+/**
+ * Copy the overrides and report.
+ *
+ * @param $Context The panel's state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_CopyBudgets ($Context: Ledger.BudgetCopyContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+  declare $Status string = '';
+
+  if $Context/FromYear = $Context/ToYear then
+    change $Context (Status = 'Pick a different year to copy into.');
+    commit $Context refresh;
+    return $Done;
+  end if;
+
+  $Copied = call microflow Ledger.ACT_CopyBudgetYear (
+    FromYear = $Context/FromYear, ToYear = $Context/ToYear);
+
+  set $Status = if $Copied = 0
+    then toString($Context/FromYear) + ' has no overrides to copy.'
+    else toString($Copied) + ' override(s) copied into ' + toString($Context/ToYear)
+      + '. Running it again replaces them rather than doubling them.';
+
+  change $Context (Status = $Status);
+  commit $Context refresh;
+  return $Done;
+end;
+/
+
+grant execute on microflow Ledger.DS_BudgetCopyContext to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_CopyBudgets to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_CopyBudgetYear to Ledger.User;
+/

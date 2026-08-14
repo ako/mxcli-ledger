@@ -38,6 +38,7 @@ create or replace navigation Responsive
     -- the glyph its width in a collapsed sidebar. The result was one menu item
     -- whose caption stayed visible when the rest were pushed out of view.
     menu item 'Transactions' page Ledger.Transaction_Overview icon Atlas_Core.Atlas."cash-payment-bill";
+    menu item 'Import' page Ledger.Import_Overview icon Atlas_Core.Atlas."download-bottom";
     -- was a glyph icon (code 9999), which MDL cannot express
     menu item 'Accounts' page Ledger.Account_Overview icon Atlas_Core.Atlas."credit-card";
     -- was System.Images.Close, an image icon, which MDL cannot express

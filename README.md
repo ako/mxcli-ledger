@@ -292,6 +292,40 @@ Saving an amount equal to the category baseline **removes** the override rather
 than storing a redundant one — an override equal to the baseline would mark the
 cell as a deviation when nothing deviated.
 
+### Import
+
+Rows land in a loader table first, are checked where they landed, and only the
+ones that pass are written into Transactions.
+
+![Import](docs/screenshots/import.png)
+
+Every step is one OQL statement over the whole batch — no retrieve, no loop, no
+commit per row. Studio Pro cannot author an OQL statement; these go through
+three Java actions written in MDL (`28-oql-dml.mdl`), and the runtime API they
+call is two lines.
+
+The validation is set-based too: one `UPDATE` per check, stamping a reason onto
+the rows that fail it, each check constrained to rows that are still valid so a
+row keeps the *first* reason it failed rather than the last. Rejected rows stay
+behind with their reason — which is the whole argument for a loader table over
+an import that half-succeeds and reports a number.
+
+**The check that reads naturally is the one that silently passes everything.**
+Rejecting rows whose account name did not resolve was written
+`where Ledger.ImportRow_Account = null`, which matches no rows at all, in either
+spelling, with no error: the bad row was promoted with no account and the screen
+reported clean input. `not exists` against the source table finds it (finding
+111).
+
+Statements do not pass through the object cache, so nothing they change reaches
+a client on its own. The grid above refreshes because each action ends by
+committing the screen's context object with **refresh**, and the grid reads
+through a constraint on that object.
+
+The same actions put a **Copy a year** panel on Budgets: a year of overrides
+copied with `insert … select`, idempotent because the target year is cleared
+first in the same transaction.
+
 ### Categories & rules
 
 Ordered categorisation rules, first match wins, over transactions that have no
@@ -351,6 +385,7 @@ files apply in dependency order:
 | `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 | `28` | OQL statements: bulk insert/update/delete through Java actions |
+| `29` | The Import screen, and the copy-a-year panel on Budgets |
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
