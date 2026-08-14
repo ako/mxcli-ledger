@@ -1,0 +1,616 @@
+-- ============================================================================
+-- 28 - OQL DML through Java actions
+-- ============================================================================
+-- Mendix's runtime can execute OQL *statements* — insert, update, delete — and
+-- Studio Pro exposes no way to author one. The API is two calls:
+--
+--   com.mendix.core.Core.createOqlStatement(String)  ->  OqlStatement
+--   OqlStatement.setVariable(name, value)            ->  OqlStatement (chainable)
+--   OqlStatement.execute(IContext)                   ->  int rows affected
+--
+-- Both are in com.mendix.public-api.jar of 11.13.0, verified with javap before a
+-- line of this file was written.
+--
+-- What that buys is set-based work. Applying a categorisation rule to 932
+-- transactions is one statement the database runs, rather than a retrieve of
+-- every match into memory, a loop, and a commit per object. Copying a year of
+-- budgets is one insert-from-select rather than thirteen creates.
+--
+-- The cost is that the object cache does not see it. Nothing that these
+-- statements change fires an event handler, runs a validation rule, or refreshes
+-- an object a client is already holding — see the note on OQL_Execute.
+-- ============================================================================
+
+/**
+ * Execute one OQL DML statement. Returns the number of rows affected.
+ *
+ * This is the primitive the rest of the file builds on. It deliberately has no
+ * variables: a statement with variables goes through OQL_ExecuteWith, so the
+ * caller has to decide which values are data (bound, escaped) rather than
+ * getting a string-concatenation habit for free.
+ *
+ * WHAT THIS BYPASSES. The statement runs in the database, inside the calling
+ * microflow's transaction. It does not go through the object cache, so:
+ *   * no before/after-commit event handlers fire,
+ *   * no validation rules run,
+ *   * an object already retrieved in this context keeps its old values,
+ *   * a client holding the object is not refreshed.
+ * Use it for bulk work over rows nobody is looking at. For a single object a
+ * user is editing, change and commit the object.
+ *
+ * @param Statement An OQL insert, update or delete statement
+ * @returns Rows affected
+ */
+create or replace java action Ledger.OQL_Execute (
+  Statement: string
+)
+returns integer
+as $$
+if (Statement == null || Statement.trim().isEmpty()) {
+    throw new IllegalArgumentException("OQL_Execute: statement is empty");
+}
+com.mendix.datastorage.OqlStatement stmt = com.mendix.core.Core.createOqlStatement(Statement);
+int affected = stmt.execute(getContext());
+com.mendix.core.Core.getLogger("OQL").debug("OQL_Execute affected " + affected + " row(s): " + Statement);
+return (long) affected;
+$$;
+/
+
+/**
+ * Execute one OQL DML statement carrying up to four bound variables.
+ *
+ *
+ * Variables are written $Name in the statement and bound here by name, so a
+ * value never becomes part of the statement text. That matters for the same
+ * reason it matters in SQL: a merchant called O'Brien breaks a concatenated
+ * statement and does not break a bound one.
+ *
+ * Types are declared rather than guessed. A slot with an empty name is skipped,
+ * which is what makes one action serve a statement with one variable and a
+ * statement with four.
+ *
+ * @param Statement An OQL insert, update or delete statement using $Name variables
+ * @param Name1 Variable name without the $, or empty to skip
+ * @param Value1 The value, as text; converted according to Type1
+ * @param Type1 'string', 'integer', 'decimal', 'boolean', 'datetime' or 'id'
+ * @returns Rows affected
+ */
+create or replace java action Ledger.OQL_ExecuteWith (
+  Statement: string,
+  Name1: string,
+  Value1: string,
+  Type1: string,
+  Name2: string,
+  Value2: string,
+  Type2: string,
+  Name3: string,
+  Value3: string,
+  Type3: string,
+  Name4: string,
+  Value4: string,
+  Type4: string
+)
+returns integer
+as $$
+if (Statement == null || Statement.trim().isEmpty()) {
+    throw new IllegalArgumentException("OQL_ExecuteWith: statement is empty");
+}
+com.mendix.datastorage.OqlStatement stmt = com.mendix.core.Core.createOqlStatement(Statement);
+
+String[] names = { Name1, Name2, Name3, Name4 };
+String[] values = { Value1, Value2, Value3, Value4 };
+String[] types = { Type1, Type2, Type3, Type4 };
+
+for (int i = 0; i < names.length; i++) {
+    String name = names[i];
+    if (name == null || name.trim().isEmpty()) {
+        continue;
+    }
+    String value = values[i];
+    String type = (types[i] == null ? "string" : types[i].trim().toLowerCase());
+    switch (type) {
+        case "integer":
+        case "long":
+            stmt.setVariable(name, Long.parseLong(value.trim()));
+            break;
+        case "decimal":
+            stmt.setVariable(name, new java.math.BigDecimal(value.trim()));
+            break;
+        case "boolean":
+            stmt.setVariable(name, Boolean.parseBoolean(value.trim()));
+            break;
+        case "datetime":
+            // ISO-8601 instant, which is what formatDateTime with a UTC pattern emits.
+            stmt.setVariable(name, java.util.Date.from(java.time.Instant.parse(value.trim())));
+            break;
+        case "id":
+            stmt.setVariable(name,
+                com.mendix.core.Core.createMendixIdentifier(Long.parseLong(value.trim())));
+            break;
+        case "string":
+        default:
+            stmt.setVariable(name, value);
+            break;
+    }
+}
+
+int affected = stmt.execute(getContext());
+com.mendix.core.Core.getLogger("OQL").debug("OQL_ExecuteWith affected " + affected + " row(s): " + Statement);
+return (long) affected;
+$$;
+/
+
+/**
+ * Run a statement and report what happened instead of throwing.
+ *
+ * Returns 'OK rows=N' or 'ERR <exception>: <message>'. This exists because the
+ * grammar OQL DML accepts is not documented anywhere the model can see, so
+ * finding out what a statement does is an experiment, and an experiment that
+ * rolls the transaction back on the first surprise is a slow experiment.
+ *
+ * Not for production paths: a failure that returns a string is a failure the
+ * caller can ignore. Use OQL_Execute there and let it throw.
+ *
+ * @param Statement An OQL statement to try
+ * @returns 'OK rows=N' or 'ERR ...'
+ */
+create or replace java action Ledger.OQL_Try (
+  Statement: string
+)
+returns string
+as $$
+try {
+    com.mendix.datastorage.OqlStatement stmt = com.mendix.core.Core.createOqlStatement(Statement);
+    int affected = stmt.execute(getContext());
+    return "OK rows=" + affected;
+} catch (Throwable t) {
+    String message = String.valueOf(t.getMessage()).replace('\n', ' ').replace('\r', ' ');
+    if (message.length() > 300) {
+        message = message.substring(0, 300) + "...";
+    }
+    return "ERR " + t.getClass().getSimpleName() + ": " + message;
+}
+$$;
+/
+
+-- No grants here. A Java action has no security roles of its own in Mendix — it
+-- is reachable only through a microflow, and the microflow carries the access.
+
+
+-- ============================================================================
+-- Use case 1: apply the categorisation rules as one statement per rule
+-- ============================================================================
+-- The loop version retrieves every uncategorised transaction, walks the rules
+-- for each one, and commits per match: 932 objects into memory and a commit per
+-- assignment. This does the same work as one UPDATE per rule.
+--
+-- First match wins is preserved by the WHERE clause rather than by a flag: each
+-- statement only touches rows that are still uncategorised, so a rule later in
+-- the order cannot take a row an earlier one already claimed.
+--
+-- Rules are read through a view so their ids arrive as strings. A microflow has
+-- no way to get at an object's id, and the statement needs one to set an
+-- association — the same reason the drilldowns key on cast(id as string).
+-- ============================================================================
+
+/**
+ * The rules, with the ids the statements need and the direction of their
+ * category's group.
+ *
+ * GroupTypeName decides the sign: SignedAmount carries direction, and a rule
+ * filing a transaction under an income category has to flip a row that was
+ * seeded negative.
+ */
+create or modify view entity Ledger.VRule (
+  RuleId: string(200),
+  CategoryId: string(200),
+  SortOrder: integer,
+  RuleField: string(200),
+  RuleOperator: string(200),
+  MatchValue: string(200),
+  GroupTypeName: string(200)
+) as (
+  select
+    cast(r.id as string) as RuleId,
+    cast(c.id as string) as CategoryId,
+    r.SortOrder as SortOrder,
+    cast(r.RuleField as string) as RuleField,
+    cast(r.RuleOperator as string) as RuleOperator,
+    r.MatchValue as MatchValue,
+    cast(g.GroupType as string) as GroupTypeName
+  from Ledger.CategoryRule as r
+  inner join r/Ledger.CategoryRule_Category/Ledger.Category as c
+  inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
+);
+/
+
+/**
+ * Build the WHERE fragment for one rule.
+ *
+ * Case-insensitive on both sides, matching EVAL_RuleMatch, which lowercases the
+ * haystack and the needle. In a microflow that is toLowerCase(); in OQL it is
+ * UPPER() on the column against an upper-cased bound value — the comparison has
+ * to be done by the database, and Postgres is case-sensitive by default.
+ *
+ * The value never enters the statement text: it is bound as $v by the caller,
+ * so a merchant with an apostrophe is data rather than a syntax error.
+ *
+ * @param $Rule The rule
+ * @returns An OQL boolean expression over Ledger.Transaction
+ */
+create or modify microflow Ledger.OQL_RulePredicate ($Rule: Ledger.VRule)
+returns string as $Where
+folder 'OQL'
+begin
+  declare $Where string = '';
+  declare $Column string = '';
+
+  @annotation 'Amount rules are matched as a number; the text operators do not apply to them'
+  if $Rule/RuleField = 'Amount' then
+    set $Where = 'Amount = $v';
+    return $Where;
+  end if;
+
+  set $Column = if $Rule/RuleField = 'Description' then 'Description' else 'Merchant';
+
+  if $Rule/RuleOperator = 'Equals' then
+    set $Where = 'UPPER(' + $Column + ') = $v';
+  end if;
+  if $Rule/RuleOperator = 'StartsWith' then
+    set $Where = 'UPPER(' + $Column + ') like $v';
+  end if;
+  if $Rule/RuleOperator = 'Contains' then
+    set $Where = 'UPPER(' + $Column + ') like $v';
+  end if;
+  if $Rule/RuleOperator = 'IsOneOf' then
+    @annotation 'The list is delimiter-wrapped on both sides, exactly as EVAL_RuleMatch does it, so an entry matches whole rather than as a fragment'
+    set $Where = '$v like ''%,'' + UPPER(' + $Column + ') + '',%''';
+  end if;
+
+  return $Where;
+end;
+/
+
+/**
+ * The bound value for one rule, shaped for its operator.
+ *
+ * @param $Rule The rule
+ * @returns The value to bind as $v
+ */
+create or modify microflow Ledger.OQL_RuleValue ($Rule: Ledger.VRule)
+returns string as $Value
+folder 'OQL'
+begin
+  declare $Value string = '';
+  set $Value = toUpperCase(trim($Rule/MatchValue));
+
+  if $Rule/RuleOperator = 'StartsWith' then
+    set $Value = $Value + '%';
+  end if;
+  if $Rule/RuleOperator = 'Contains' then
+    set $Value = '%' + $Value + '%';
+  end if;
+  if $Rule/RuleOperator = 'IsOneOf' then
+    set $Value = ',' + replaceAll($Value, ', ', ',') + ',';
+  end if;
+
+  return $Value;
+end;
+/
+
+/**
+ * Apply every rule to the uncategorised transactions, one statement per rule.
+ *
+ * @param $Context The rules panel's context, refreshed with the outcome
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ApplyRulesBulk ($Context: Ledger.RulesContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+  declare $Applied integer = 0;
+  declare $Sign string = '';
+  declare $Statement string = '';
+  declare $Status string = '';
+
+  log info node 'OQLBULK' 'ACT_ApplyRulesBulk start';
+
+  retrieve $Rules from Ledger.VRule sort by SortOrder asc;
+
+  loop $R in $Rules
+  begin
+    $Where = call microflow Ledger.OQL_RulePredicate (Rule = $R);
+    $Value = call microflow Ledger.OQL_RuleValue (Rule = $R);
+
+    @annotation 'The direction follows the category, decided here because the group type is known before the statement runs'
+    set $Sign = if $R/GroupTypeName = 'Income' then 'Amount' else '0 - Amount';
+
+    set $Statement = 'update Ledger.Transaction set '
+      + 'Ledger.Transaction_Category = $cat, '
+      + 'Ledger.Transaction_CategoryRule = $rule, '
+      + 'SignedAmount = ' + $Sign
+      + ' where Ledger.Transaction_Category = null and IsMirror = false and '
+      + $Where;
+
+    $N = call java action Ledger.OQL_ExecuteWith (
+      Statement = $Statement,
+      Name1 = 'cat', Value1 = $R/CategoryId, Type1 = 'id',
+      Name2 = 'rule', Value2 = $R/RuleId, Type2 = 'id',
+      Name3 = 'v', Value3 = $Value, Type3 = 'string',
+      Name4 = '', Value4 = '', Type4 = '');
+
+    set $Applied = $Applied + $N;
+  end loop;
+
+  log info node 'OQLBULK' 'ACT_ApplyRulesBulk done, applied ' + toString($Applied);
+
+  $Sync = call microflow Ledger.SYNC_RuleCounts ();
+
+  set $Status = if $Applied = 0
+    then 'Ran the rules as statements. Nothing matched.'
+    else 'Ran the rules as statements. ' + toString($Applied) + ' transactions categorised.';
+
+  $Refreshed = call microflow Ledger.REFRESH_RulesContext (
+    Context = $Context, Status = $Status);
+
+  return $Done;
+end;
+/
+
+-- ============================================================================
+-- Use case 2: copy a year of budget overrides with insert-from-select
+-- ============================================================================
+-- Twelve statements rather than one, because MonthKey is 'YYYY-MM' text and OQL
+-- has no substring to take the month off it. The month arithmetic is the
+-- caller's; each statement still copies every category for that month in one
+-- go, so this is twelve statements rather than one per override.
+-- ============================================================================
+
+/**
+ * Copy every budget override from one year to the same months of another.
+ *
+ * Idempotent: the target year is cleared first, so running it twice leaves one
+ * copy rather than two. That delete is also the only thing here that could
+ * destroy data, which is why it is scoped to the target year and nothing else.
+ *
+ * @param $FromYear The year to copy from
+ * @param $ToYear The year to copy into
+ * @returns How many overrides were written
+ */
+create or modify microflow Ledger.ACT_CopyBudgetYear (
+  $FromYear: integer,
+  $ToYear: integer
+)
+returns integer as $Copied
+folder 'OQL'
+begin
+  declare $Copied integer = 0;
+  declare $M integer = 1;
+  declare $FromKey string = '';
+  declare $ToKey string = '';
+  declare $Pad string = '';
+
+  log info node 'OQLBULK' 'ACT_CopyBudgetYear ' + toString($FromYear) + ' -> ' + toString($ToYear);
+
+  @annotation 'Clear the target year first so the copy is idempotent'
+  $Cleared = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'delete from Ledger.BudgetOverride where MonthKey like $y',
+    Name1 = 'y', Value1 = toString($ToYear) + '-%', Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+  log info node 'OQLBULK' 'cleared ' + toString($Cleared) + ' existing override(s)';
+
+  while $M <= 12
+  begin
+    set $Pad = if $M < 10 then '-0' else '-';
+    set $FromKey = toString($FromYear) + $Pad + toString($M);
+    set $ToKey = toString($ToYear) + $Pad + toString($M);
+
+    @annotation 'The association is written by its qualified name and read as a path ending in /id. The bare association name is rejected: "Member BudgetOverride_Category of entity Ledger.BudgetOverride not found".'
+    $N = call java action Ledger.OQL_ExecuteWith (
+      Statement = 'insert into Ledger.BudgetOverride (MonthKey, Amount, Ledger.BudgetOverride_Category) '
+        + 'select $to, o.Amount, o/Ledger.BudgetOverride_Category/Ledger.Category/id '
+        + 'from Ledger.BudgetOverride as o where o.MonthKey = $from',
+      Name1 = 'to', Value1 = $ToKey, Type1 = 'string',
+      Name2 = 'from', Value2 = $FromKey, Type2 = 'string',
+      Name3 = '', Value3 = '', Type3 = '',
+      Name4 = '', Value4 = '', Type4 = '');
+
+    set $Copied = $Copied + $N;
+    set $M = $M + 1;
+  end while;
+
+  log info node 'OQLBULK' 'ACT_CopyBudgetYear copied ' + toString($Copied) + ' override(s)';
+  return $Copied;
+end;
+/
+
+-- ============================================================================
+-- Use case 3: the loader table — stage, validate, promote
+-- ============================================================================
+-- The shape a bulk import wants: land the rows somewhere harmless, check them
+-- where they landed, then move the good ones across in one statement. Mendix's
+-- own documentation demonstrates the promote half (Loader.TemporaryData ->
+-- Module.Order); what makes the pattern worth the staging table is that the
+-- validation is set-based too.
+--
+-- Each check is one UPDATE that stamps a problem on the rows that fail it. Ten
+-- checks over ten thousand rows is ten statements, not a hundred thousand
+-- comparisons in a microflow, and the rows that fail carry the reason with them
+-- rather than being counted and thrown away.
+-- ============================================================================
+
+/**
+ * A landed import row, before it is anything.
+ *
+ * Everything text: this is what arrived, not what it means. TxDateText is
+ * parsed by the promote statement rather than here, because DATEPARSE is
+ * available in OQL and a row that cannot be parsed should fail validation
+ * rather than fail an import.
+ */
+@Position(1200, 320)
+create or modify persistent entity Ledger.ImportRow (
+  /** Groups one file or one paste; every statement here is scoped to it */
+  Batch: string(50),
+  /** Line number in the source, for the rejection report */
+  RowNo: integer default 0,
+  /** Date as it arrived, expected yyyy-MM-dd */
+  TxDateText: string(30),
+  Merchant: string(200),
+  Description: string(500),
+  /** Always positive; direction comes from the category, as everywhere else */
+  Amount: decimal default 0,
+  /** Account and category as names, resolved into associations by validation */
+  AccountName: string(100),
+  CategoryName: string(100),
+  /** Set by VALIDATE_ImportBatch */
+  IsValid: boolean default true,
+  Problem: string(200)
+);
+/
+
+create or modify association Ledger.ImportRow_Account
+  from Ledger.ImportRow to Ledger.Account;
+/
+
+create or modify association Ledger.ImportRow_Category
+  from Ledger.ImportRow to Ledger.Category;
+/
+
+grant Ledger.User on Ledger.ImportRow (create, delete, read *, write *);
+/
+
+/**
+ * Validate a landed batch, in place, one statement per check.
+ *
+ * Every statement is scoped to the batch. The order matters: resolve the
+ * references first, then fail the rows whose references did not resolve.
+ *
+ * @param $Batch The batch to validate
+ * @returns How many rows are invalid
+ */
+create or modify microflow Ledger.VALIDATE_ImportBatch ($Batch: string)
+returns integer as $Invalid
+folder 'OQL'
+begin
+  declare $Invalid integer = 0;
+
+  @annotation 'Start clean, so validating twice does not accumulate problems'
+  $Reset = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set IsValid = true, Problem = '''' where Batch = $b',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  @annotation 'Resolve the account by name. A correlated subquery in SET is what the docs call a long path; the correlation is written with the fully qualified entity path.'
+  $Acct = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set Ledger.ImportRow_Account = '
+      + '(select a.id from Ledger.Account as a where UPPER(a.Name) = UPPER(Ledger.ImportRow/AccountName)) '
+      + 'where Batch = $b',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  @annotation 'Category is optional — a row with no category lands as one that needs review, which is what the rest of the app already handles'
+  $Cat = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set Ledger.ImportRow_Category = '
+      + '(select c.id from Ledger.Category as c where UPPER(c.Name) = UPPER(Ledger.ImportRow/CategoryName)) '
+      + 'where Batch = $b and CategoryName != ''''',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  $P1 = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set IsValid = false, Problem = ''Merchant is empty'' '
+      + 'where Batch = $b and IsValid = true and Merchant = ''''',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  $P2 = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set IsValid = false, Problem = ''Amount must be positive'' '
+      + 'where Batch = $b and IsValid = true and Amount <= 0',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  @annotation 'not exists over the source table, NOT "Ledger.ImportRow_Account = null". An association compared to null in a WHERE matches no rows at all, so the check passed every row and a transaction with no account was written (FINDINGS 111).'
+  $P3 = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set IsValid = false, Problem = ''Unknown account: '' + AccountName '
+      + 'where Batch = $b and IsValid = true and not exists '
+      + '(select 1 from Ledger.Account as a where UPPER(a.Name) = UPPER(Ledger.ImportRow/AccountName))',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  @annotation 'A category that was given and did not resolve is a mistake; one that was not given is not'
+  $P4 = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'update Ledger.ImportRow set IsValid = false, Problem = ''Unknown category: '' + CategoryName '
+      + 'where Batch = $b and IsValid = true and CategoryName != '''' and not exists '
+      + '(select 1 from Ledger.Category as c where UPPER(c.Name) = UPPER(Ledger.ImportRow/CategoryName))',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  set $Invalid = $P1 + $P2 + $P3 + $P4;
+  log info node 'OQLBULK' 'VALIDATE_ImportBatch ' + $Batch + ': ' + toString($Invalid) + ' row(s) rejected';
+  return $Invalid;
+end;
+/
+
+/**
+ * Move the valid rows of a batch into Transaction, in one statement.
+ *
+ * The rejected rows stay in the loader table with their reason attached, which
+ * is the point of staging: an import that half-fails leaves something to look
+ * at rather than a number in a message box.
+ *
+ * @param $Batch The batch to promote
+ * @returns How many transactions were written
+ */
+create or modify microflow Ledger.PROMOTE_ImportBatch ($Batch: string)
+returns integer as $Promoted
+folder 'OQL'
+begin
+  declare $Promoted integer = 0;
+
+  @annotation 'Every column in the select list is aliased. Two association paths both end in /id, so an unaliased list gives them the same column name and the statement fails with "Duplicate column name: ID" — an analysis error naming a column that appears nowhere in the text. DATEPARSE turns the landed text into a date inside the statement. SignedAmount follows the category: negative when there is one and it is not income, negative when there is none (an uncategorised row is spend until someone says otherwise).'
+  $Written = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'insert into Ledger.Transaction '
+      + '(TxDate, Merchant, Description, Amount, SignedAmount, IsMirror, '
+      + 'Ledger.Transaction_Account, Ledger.Transaction_Category) '
+      + 'select DATEPARSE(r.TxDateText, ''yyyy-MM-dd'') as TxDate, r.Merchant as Merchant, '
+      + 'r.Description as Description, r.Amount as Amount, '
+      + 'case when r/Ledger.ImportRow_Category/Ledger.Category/Ledger.Category_CategoryGroup/Ledger.CategoryGroup/GroupType = ''Income'' '
+      + 'then r.Amount else 0 - r.Amount end as SignedAmount, '
+      + 'false as IsMirror, '
+      + 'r/Ledger.ImportRow_Account/Ledger.Account/id as AccountId, '
+      + 'r/Ledger.ImportRow_Category/Ledger.Category/id as CategoryId '
+      + 'from Ledger.ImportRow as r where r.Batch = $b and r.IsValid = true',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+  set $Promoted = $Written;
+
+  @annotation 'Promoted rows leave the loader; rejected rows stay with their reason'
+  $Cleared = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'delete from Ledger.ImportRow where Batch = $b and IsValid = true',
+    Name1 = 'b', Value1 = $Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  log info node 'OQLBULK' 'PROMOTE_ImportBatch ' + $Batch + ': promoted ' + toString($Promoted);
+  return $Promoted;
+end;
+/

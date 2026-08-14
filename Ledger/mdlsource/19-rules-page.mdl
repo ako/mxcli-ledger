@@ -64,6 +64,12 @@ create or replace page Ledger.Category_Overview
                 caption: 'Run rules',
                 action: microflow Ledger.ACT_ApplyRules(Context: $currentObject),
                 buttonstyle: primary)
+              -- The same work as the button beside it, as one UPDATE per rule
+              -- instead of a nested loop with a commit per match. Both are here
+              -- so the two can be run against the same data and compared.
+              actionbutton btnRunRulesBulk (
+                caption: 'Run rules (statements)',
+                action: microflow Ledger.ACT_ApplyRulesBulk(Context: $currentObject))
               actionbutton btnResetRules (
                 caption: 'Undo rule assignments',
                 action: microflow Ledger.ACT_ResetRuleAssignments(Context: $currentObject))

@@ -4312,3 +4312,140 @@ signal that it was not is that the screen has no search box. The failure mode
 this project keeps meeting: **the tool accepting something it does not
 implement is worse than rejecting it**, because every check you would run comes
 back green.
+
+---
+
+## Phase 15 — OQL statements (2026-08-14)
+
+The runtime can execute OQL `insert`, `update` and `delete`. Studio Pro cannot
+author one, and nothing in the model can reach them without a Java action. Three
+use cases were built on them — applying the categorisation rules, copying a year
+of budgets, and a loader table — and the grammar was mapped by running
+statements rather than by reading about them.
+
+### 109. OQL DML is in the public API, and the version it arrived in is the version this app runs
+
+Two calls, both in `com.mendix.public-api.jar`, found with `javap` before any
+code was written:
+
+```
+com.mendix.core.Core.createOqlStatement(String)  -> OqlStatement
+OqlStatement.setVariable(name, value)            -> OqlStatement
+OqlStatement.execute(IContext)                   -> int rows affected
+```
+
+The [reference guide](https://docs.mendix.com/refguide/oql-statements/) dates
+each piece, and the dates matter more than usual here:
+
+| Statement | Available from |
+|---|---|
+| `DELETE` | 11.1.0 |
+| `UPDATE` | 11.3.0 — associations 11.4.0 |
+| `INSERT … SELECT` | 11.6.0 — associations 11.7.0 |
+| `INSERT … VALUES` | **11.13.0** |
+
+This project is on 11.13.0, so `INSERT … VALUES` works here and would not have
+worked one patch release earlier. Anything built on this needs the runtime
+version pinned deliberately, not inherited.
+
+Sixteen statements were run through a probe that reports rather than throws.
+What parses:
+
+```
+update E set col = <literal | expression | $var> where …      OK
+update E as t set t.col = …                                    OK   (alias)
+update E set Module.E_Assoc = <id | path | null> where …       OK
+delete from E where …                                          OK
+insert into E (cols) values (…)                                OK
+insert into E (cols) select … from …                           OK
+where … like '%x%' / in (…) / exists (select …) / id in (…)    OK
+select …                                                       ERR  "Unexpected statement type READ"
+$var with no setVariable                                       ERR  "No value supplied for the parameter"
+```
+
+`select` through the statement API is rejected, which is the right shape: these
+are statements, and reads keep going through `retrieveOQLDataTable`.
+
+**The association column must be module-qualified.** `BudgetOverride_Category`
+fails with *"Member BudgetOverride_Category of entity Ledger.BudgetOverride not
+found"*; `Ledger.BudgetOverride_Category` works. The value is either a path
+ending in `/id` or a LONG.
+
+### 110. Two association paths in one select list collide on a column name that is not in the statement
+
+The promote half of the loader — one `insert into Transaction … select … from
+ImportRow` — failed with:
+
+```
+com.mendix.datastorage.oqltree.AnalysisException: Duplicate column name: ID
+```
+
+There is no column called `ID` in the statement. There are two paths that end in
+one:
+
+```sql
+select …, r/Ledger.ImportRow_Account/Ledger.Account/id,
+          r/Ledger.ImportRow_Category/Ledger.Category/id
+```
+
+Both arrive named `ID`. The fix is an alias on every column in the list, which
+is worth doing from the start rather than when the second association is added:
+the error arrives at analysis time, names nothing that appears in the text, and
+is identical whichever pair collided.
+
+### 111. An association compared to null in a WHERE matches nothing, and says nothing
+
+This one wrote bad data. The loader resolves an account name into an
+association, then rejects the rows where the resolution failed:
+
+```sql
+update Ledger.ImportRow set IsValid = false, Problem = 'Unknown account'
+where Batch = $b and Ledger.ImportRow_Account = null
+```
+
+Six rows in, one deliberately naming an account that does not exist. The
+validation reported **one** rejection — the row with a zero amount — and the row
+with the unresolvable account was promoted into `Transaction` **with no account
+at all**.
+
+Three idioms, same batch, same row, counted by the statement itself:
+
+```
+update … where Ledger.ImportRow_Account = null                           rows=0
+update … where Ledger.ImportRow/Ledger.ImportRow_Account/…/id = null     rows=0
+update … where not exists (select 1 from Ledger.Account as a
+                           where UPPER(a.Name) = UPPER(…/AccountName))   rows=1
+```
+
+Neither null comparison errors. Neither matches. A validation written that way
+passes every row it is given, and the only symptom is that nothing is ever
+rejected — which looks exactly like clean input.
+
+With `not exists`, the same batch rejects 2 of 6 and promotes 4, which is the
+planted answer.
+
+**Test the source, not the association.** Ask whether a matching row exists in
+the table you are resolving against; do not ask whether the association came out
+empty.
+
+### 112. A failing after-startup microflow takes the app down and rolls back everything it did
+
+Using the after-startup microflow as a probe harness is a fast loop — no UI, no
+clicking, results in the log. It has two properties worth knowing before relying
+on it.
+
+The exception from the promote statement above did not just fail that step:
+
+```
+ERROR - Core: An exception occurred while running the after-startup-action.
+ERROR - M2EE: Starting Mendix Runtime failed.
+Caused by: The after-startup-action failed with an exception or returned false.
+```
+
+The app did not start at all. And the two budget-copy statements that had
+already logged success were gone — 0 rows in the database afterwards. One
+transaction wraps the whole action, so a failure at the end silently undoes
+everything before it, including the parts whose log lines say they worked.
+
+Both are fine for a probe that catches its own exceptions and reports them as
+text. Neither is fine for a probe that lets one throw.
