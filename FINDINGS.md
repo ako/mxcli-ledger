@@ -4452,7 +4452,7 @@ text. Neither is fine for a probe that lets one throw.
 
 ---
 
-### 113. An OData service authored in MDL cannot be built: `PublishAssociations` is dropped, and the key it then demands does not exist
+### 113. No OData service authored in MDL can be built: CE7375 wants the entity's own ID as key, and MDL cannot expose it
 
 A chart can fetch its own data from an endpoint (see the Vega skill), so the
 obvious pairing is an OQL view entity published as OData — aggregation in the
@@ -4470,40 +4470,65 @@ published and be the key when associations are exposed as an associated object
 id." at Published entity 'VMonthCategory'
 ```
 
-The service was written with `PublishAssociations: No`, which is exactly the
-setting that should make the check moot. It does not survive:
+The message points at associations, so the first suspicion was that
+`PublishAssociations: No` had not survived — `DESCRIBE ODATA SERVICE` does not
+echo it back. **That was wrong, and the model says so.** In the service's
+`.mxunit`:
 
 ```
-$ mxcli -c "DESCRIBE ODATA SERVICE Ledger.ChartApi"
-create odata service Ledger.ChartApi (
-  Path: 'odata/chartapi/v1/',
-  ...
-  Summary: 'Aggregates for charts that fetch their own data'
-)                                    <- no PublishAssociations
+\x08PublishAssociations\x00\x00        BSON boolean, false
 ```
 
-`DESCRIBE` is lossy for some elements (finding 104), so absence there is not
-proof on its own — but the error is precisely the associations-exposed case, on a
-**view entity**, which cannot carry an association at all (CE6771, finding 41).
-Something is publishing associations that the model does not have.
+It is stored, correctly, as false. `DESCRIBE` is simply lossy here (the same
+shape as finding 104), and inferring absence from it is not sound.
 
-The error names its own fix, and the fix is unreachable:
+So the check fires with associations unpublished. Four ways round it, all closed:
+
+**A key of your own does not satisfy it.** A view carrying its id as a casted
+string — the pattern finding 74 established — declared as the OData key:
+
+```sql
+create or modify view entity Ledger.VProbeRow (RowId: string(200), ...) as (
+  select cast(c.id as string) as RowId, ... from Ledger.Category as c
+);
+```
+
+`IsPartOfKey` is stored as true on that column. CE7375 is unchanged. The same
+for a grouped view whose key is built from the columns that define its grain
+(`cast(datepart(YEAR, t.TxDate) as string) + '|' + cast(c.Name as string)`).
+
+**The column cannot be called ID.** Naming it after what the check asks for:
+
+```
+[error] [CE0174] "All columns of the first select query must have a correct
+name. The name 'ID' is a reserved word." at Entity 'Ledger.VProbeRow'
+[error] [CE7247] "The name 'ID' is a reserved word."
+```
+
+**The real id cannot be exposed.** Publishing the system attribute the check
+names:
 
 ```
 expose ( ID as 'ID' (key), ... )
-[error] [CE1613] "The selected attribute 'Ledger.VMonthCategory.ID' no longer exists."
+[error] [CE1613] "The selected attribute 'Ledger.VProbeRow.ID' no longer exists."
 ```
 
-The same on a persistent entity — `Ledger.Transaction.ID` — so this is not about
-view entities. Mendix's object id is not addressable as an attribute from MDL,
-and composite keys over the real columns do not satisfy CE7375 either.
+**And it is not about view entities.** The same service publishing
+`Ledger.Category` — a persistent entity, which does have an id — fails
+identically:
 
-Three routes, all closed: no `PublishAssociations`, no `ID`, no composite key. An
-OData service can be created from MDL and cannot be made to build.
+```
+[error] [CE7375] "Attribute ID for entity 'Ledger.Category' must be published
+and be the key ..." at Published entity 'Category'
+```
+
+Whatever Studio Pro writes when it ticks the id as key, MDL does not write it,
+and there is no attribute-level route to it. An OData service can be created
+from MDL and cannot be made to build, for any entity.
 
 **Published REST is in the grammar** and takes a different shape — resources
-mapping HTTP verbs to microflows, with optional import/export mappings — so it is
-the likelier route for a chart endpoint today, and it was not tested here.
+mapping HTTP verbs to microflows, with optional import/export mappings — so it
+is the likelier route for a chart endpoint today. It was not tested here.
 
 The chart half was verified separately against a static asset the app serves:
 `200`, six marks, no error, `format.property` unwrapping the OData envelope. It
