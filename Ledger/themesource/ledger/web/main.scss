@@ -609,6 +609,67 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
     font-variant-numeric: tabular-nums;
 }
 
+// A row that opens something has to say so before it is clicked. The cursor is
+// the only affordance a list row gets - there is no border, no chevron and no
+// button - so the hover tint carries the rest of the message.
+.ledger-line-clickable {
+    cursor: pointer;
+    transition: background-color 120ms ease;
+
+    &:hover,
+    &:focus-visible {
+        background-color: var(--ledger-hover, rgba(0, 0, 0, 0.03));
+    }
+}
+
+// ── Transaction detail popup ────────────────────────────────────────────────
+// A label/value table rather than a form: nothing here is editable, because a
+// view row cannot be written back to the object it came from (findings 41, 74).
+.ledger-tx-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--ledger-rule);
+}
+
+.ledger-tx-amount {
+    font-family: var(--ledger-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    margin: 0;
+}
+
+.ledger-tx-fields {
+    display: grid;
+    gap: 0;
+    margin-top: 4px;
+}
+
+.ledger-tx-row {
+    display: flex;
+    gap: 16px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--ledger-divider);
+}
+
+.ledger-tx-label {
+    flex: 0 0 120px;
+    font-family: var(--ledger-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ledger-ink-3);
+    padding-top: 2px;
+}
+
+.ledger-tx-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+}
+
 // ── Rules panel ─────────────────────────────────────────────────────────────
 // The bar above the rule list: what is waiting, what running the rules would
 // do, and the three controls. Laid out as a single row so the promise and the

@@ -27,7 +27,12 @@ cats.forEach((cat, i) => {
 const view = new vega.View(vega.parse(vl.compile(spec).spec), { renderer: 'none' }).data('table', table);
 await view.runAsync();
 
-for (let i = 0; i < 4; i++) {
-  const d = view.data(`concat_1_concat_${i}_row_domain`);
+// Iterate until the dataset stops existing rather than hard-coding a count:
+// the table grew a column, and a check that silently stopped at four would have
+// gone on reporting agreement it was no longer measuring.
+for (let i = 0; ; i++) {
+  let d;
+  try { d = view.data(`concat_1_concat_${i}_row_domain`); } catch { break; }
+  if (!d) break;
   console.log(`panel ${i}:`, d.map(r => r.cat ?? r.value ?? JSON.stringify(r)).join(' | '));
 }

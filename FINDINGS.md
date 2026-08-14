@@ -3806,3 +3806,111 @@ where they disagree.
 **The general shape: when CE0174 blocks an expression, look for a column that
 already carries the answer.** Rephrasing the aggregate will not help, because
 the checker is not reading the expression.
+
+### 100. `bounds: "flush"` also stops the layout aligning row-header labels, and the DOM says they are aligned
+
+Reported as "the category labels on the left are not aligned", which they were —
+by up to sixty pixels. What made it hard to see is that every one of them
+insisted otherwise:
+
+```
+Salary               anchor=end translate(0,3) L=244 R=276
+Rent                 anchor=end translate(0,3) L=259 R=282
+Savings transfer     anchor=end translate(0,3) L=155 R=237
+Restaurants & cafes  anchor=end translate(0,3) L=120 R=221
+```
+
+Identical `text-anchor="end"`, identical local transform, right edges 61px
+apart. Rendering the same spec headless gave `distinct x = 1` — right-aligned,
+as declared. The spec was not wrong and the browser was not wrong.
+
+**The alignment is not the label's, it is the group's.** Each facet row's header
+is its own group, and `bounds: "flush"` — needed so the four columns keep the
+same row pitch (finding 94) — stops the layout measuring those groups. Each one
+comes to rest at its own text width, and a label right-anchored at x=0 inside a
+group that starts wherever is ragged no matter what its anchor says. Node's
+render agreed because its font metrics are uniform, so every group landed in the
+same place.
+
+Chasing it through header properties is wasted effort: `labelAnchor` positions
+the label *along the row* (and on a row header the anchors read backwards —
+`start` puts it on the bottom edge, `end` on the top), `labelAlign` sets the text
+anchor, and neither of them moves the group.
+
+**The fix is to stop using the header.** The category names are a column of the
+table, so they are drawn as one — a fifth faceted panel with
+`header: {labels: false}` and a text mark right-aligned at a fixed x:
+
+```json
+"spec": {
+  "width": 118, "height": 26,
+  "mark": {"type": "text", "align": "right", "fontSize": 10},
+  "encoding": {
+    "x": {"datum": 118, "axis": null, "scale": {"domain": [0, 118]}},
+    "text": {"field": "cat", "type": "nominal"}
+  }
+}
+```
+
+Every label now ends at the same pixel:
+
+```
+Salary               R=289      Restaurants & cafes  R=289
+Rent                 R=289      Internet & phone     R=289
+Savings transfer     R=290      Needs review         R=289
+```
+
+(The 290 is one glyph's right side bearing, not a misalignment.)
+
+It is also the better structure. The panel count check in `o.mjs` was hard-coded
+to four and would have gone on reporting agreement across a table that now has
+five columns, so it was changed to iterate until the dataset runs out — a check
+that silently stops measuring is worse than no check.
+
+### 101. The viewport Playwright is asked for is not always the viewport it gets, and the failure looks like a broken feature
+
+Twice now. The first time it produced a whole false diagnosis of a chart
+"growing horizontally"; the second time it made half a chart look unclickable.
+
+Clicking the delta bars of a fourteen-row table, rows 0–11 selected their
+category and rows 12–13 did nothing:
+
+```
+bar 11 y=706 -> title="Internet & phone"
+bar 12 y=735 -> title="Internet & phone"    <- unchanged
+bar 13 y=764 -> title="Internet & phone"    <- unchanged
+```
+
+The marks were in the DOM with correct bounding boxes. What gave it away:
+
+```js
+document.elementFromPoint(697, 739)   // -> null
+```
+
+`null` from `elementFromPoint` at a coordinate that is inside the element's own
+bounding box means the point is outside the *viewport*. And it was:
+
+```
+requested: { width: 1600, height: 1400 }
+actual:    { w: 1280, h: 720 }
+```
+
+`browser.newPage({ viewportSize })` had been ignored. Everything below y=720 was
+off-screen, `page.mouse.click()` at those coordinates went nowhere, and the app
+looked broken for exactly the rows that mattered — including the one the whole
+change was about.
+
+**Three habits that make this class of bug cheap:**
+
+- `page.setViewportSize()` *after* creating the page applies reliably where the
+  constructor option did not.
+- Prefer `elementHandle.click()` over `page.mouse.click(x, y)`: it scrolls the
+  element into view first, so it is immune to this entirely.
+- Assert the viewport you got. One line —
+  `await p.evaluate(() => ({w: innerWidth, h: innerHeight}))` — printed at the
+  top of every run would have caught both incidents in seconds.
+
+The general lesson is the same one as finding 94's "do not measure a
+screenshot": **the browser is an instrument, and an instrument that has silently
+changed scale reports confident nonsense.** Check the instrument before
+believing the measurement.

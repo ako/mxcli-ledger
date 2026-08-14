@@ -290,7 +290,13 @@ create or replace page Ledger.Cashflow_Overview
                     class: 'ledger-inspector-list'
                   ) {
                     template tplDrill {
-                      container ctnLine (class: 'ledger-line') {
+                      -- The row opens the transaction. A container's OnClick is
+                      -- the only place this can hang: the row is not a button,
+                      -- and a listview has no per-row action of its own.
+                      container ctnLine (
+                        class: 'ledger-line ledger-line-clickable',
+                        onclick: microflow Ledger.ACT_ShowTransaction(Line: $currentObject)
+                      ) {
                         container ctnLineText (class: 'ledger-line-text') {
                           dynamictext txtLineMerchant (attribute: Merchant, class: 'ledger-line-merchant')
                           dynamictext txtLineMeta (

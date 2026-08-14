@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 99 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 101 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -48,9 +48,33 @@ else, and a row cannot be dismissed the way a number off to one side can. Today
 that row reads € 764 across twelve transactions, all in one month — which is
 why it renders as a point rather than a line.
 
-Clicking a row opens what is behind it — every transaction in that category,
-against a scale that starts where the data does rather than at zero, because
-zero is not a value any grocery shop ever charged:
+Clicking a row lists what is behind it, beside the chart:
+
+![Dashboard inspector](docs/screenshots/dashboard-inspector.png)
+
+**The review row is the one that had to work.** The dashboard could count twelve
+transactions needing review and had no way to show them: every consumer of the
+shared transaction view reached rows through an inner join on Category, so a
+transaction without one was invisible everywhere except the count complaining
+about it. The view now carries them as a second `UNION ALL` branch under the
+name 'Needs review', which is the same argument the table already makes for
+giving them a row rather than a badge — and it means the list, the click-through
+and the detail chart all work on them with no special case. The twelve read back
+€ 764.40 against SQL, in the same order.
+
+Any row in either inspector — here or on Cashflow — opens the transaction:
+
+![Transaction detail](docs/screenshots/transaction-popup.png)
+
+The popup takes the *view row*, not the transaction object, because there is no
+route back to the object: a view entity cannot carry an association (CE6771) and
+`[id = $Text]` is not a constraint Mendix XPath supports (MDL048). What the view
+carries is more than the object has anyway — the category, group and account are
+already resolved.
+
+Below both, the same selection as a scatter, against a scale that starts where
+the data does rather than at zero, because zero is not a value any grocery shop
+ever charged:
 
 ![Dashboard detail](docs/screenshots/dashboard-detail.png)
 
@@ -66,10 +90,14 @@ and both were shape-first: you read the picture, then went hunting for the
 figure. Neither showed a trend, an outlier, or anything you could act on.
 
 The replacement is Vega-Lite through the project's own widget, and the whole
-table is one spec: an `hconcat` of four faceted panels sharing a row order,
-because Vega-Lite cannot put a concatenation *inside* a facet. Panels that must
-align is the fragile part of that arrangement, and two ways of breaking it are
-in finding 94 — facet rows default to sizing themselves to their content, and a
+table is one spec: an `hconcat` of five faceted panels sharing a row order,
+because Vega-Lite cannot put a concatenation *inside* a facet. Even the category
+names are a panel — drawn as a text column rather than as facet headers, because
+`bounds: "flush"` keeps the row pitch identical across panels and stops the
+layout aligning header groups in the same breath, so the labels came out ragged
+while every one of them reported `text-anchor="end"` (finding 100). Panels that
+must align is the fragile part of the arrangement, and two ways of breaking it
+are in finding 94 — facet rows default to sizing themselves to their content, and a
 transform that aggregates away the sort field drops one panel back to
 alphabetical order while the others hold. Both were found by rendering the spec
 headless in node and reading the row geometry off the scenegraph, which turns a
@@ -272,7 +300,7 @@ files apply in dependency order:
 |---|---|
 | `01`–`04` | Domain model, enumerations, demo data |
 | `05` | Transactions, Accounts, Categories screens |
-| `06`–`11` | Cashflow matrix, shared views, inspector |
+| `06`–`11` | Cashflow matrix, shared views, inspector, transaction popup |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
 | `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
@@ -383,7 +411,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              99 numbered findings — the main deliverable alongside the app
+FINDINGS.md              101 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
