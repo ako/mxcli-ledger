@@ -4449,3 +4449,62 @@ everything before it, including the parts whose log lines say they worked.
 
 Both are fine for a probe that catches its own exceptions and reports them as
 text. Neither is fine for a probe that lets one throw.
+
+---
+
+### 113. An OData service authored in MDL cannot be built: `PublishAssociations` is dropped, and the key it then demands does not exist
+
+A chart can fetch its own data from an endpoint (see the Vega skill), so the
+obvious pairing is an OQL view entity published as OData — aggregation in the
+database, the chart fetching rows already summed.
+
+The service applies cleanly and fails at build:
+
+```
+$ mxcli exec odata.mdl
+Created OData service: Ledger.ChartApi
+
+$ mx check Ledger.mpr
+[error] [CE7375] "Attribute ID for entity 'Ledger.VMonthCategory' must be
+published and be the key when associations are exposed as an associated object
+id." at Published entity 'VMonthCategory'
+```
+
+The service was written with `PublishAssociations: No`, which is exactly the
+setting that should make the check moot. It does not survive:
+
+```
+$ mxcli -c "DESCRIBE ODATA SERVICE Ledger.ChartApi"
+create odata service Ledger.ChartApi (
+  Path: 'odata/chartapi/v1/',
+  ...
+  Summary: 'Aggregates for charts that fetch their own data'
+)                                    <- no PublishAssociations
+```
+
+`DESCRIBE` is lossy for some elements (finding 104), so absence there is not
+proof on its own — but the error is precisely the associations-exposed case, on a
+**view entity**, which cannot carry an association at all (CE6771, finding 41).
+Something is publishing associations that the model does not have.
+
+The error names its own fix, and the fix is unreachable:
+
+```
+expose ( ID as 'ID' (key), ... )
+[error] [CE1613] "The selected attribute 'Ledger.VMonthCategory.ID' no longer exists."
+```
+
+The same on a persistent entity — `Ledger.Transaction.ID` — so this is not about
+view entities. Mendix's object id is not addressable as an attribute from MDL,
+and composite keys over the real columns do not satisfy CE7375 either.
+
+Three routes, all closed: no `PublishAssociations`, no `ID`, no composite key. An
+OData service can be created from MDL and cannot be made to build.
+
+**Published REST is in the grammar** and takes a different shape — resources
+mapping HTTP verbs to microflows, with optional import/export mappings — so it is
+the likelier route for a chart endpoint today, and it was not tested here.
+
+The chart half was verified separately against a static asset the app serves:
+`200`, six marks, no error, `format.property` unwrapping the OData envelope. It
+is the publishing half that has no working path through MDL.
