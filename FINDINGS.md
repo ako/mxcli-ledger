@@ -4449,3 +4449,84 @@ everything before it, including the parts whose log lines say they worked.
 
 Both are fine for a probe that catches its own exceptions and reports them as
 text. Neither is fine for a probe that lets one throw.
+
+---
+
+### 113. MDL cannot set an OData service's association representation, so every published entity fails CE7375
+
+Publishing an OQL view entity as a read-only OData endpoint — aggregation in the
+database, a chart fetching rows already summed — is a supported Mendix
+capability. It cannot be authored in MDL today, and the reason is one setting.
+
+The service applies cleanly and fails at build:
+
+```
+[error] [CE7375] "Attribute ID for entity 'Ledger.VMonthCategory' must be
+published and be the key when associations are exposed as an associated object
+id." at Published entity 'VMonthCategory'
+```
+
+The entity has no associations. It is a view entity, which cannot carry one
+(CE6771, finding 41), and the service sets `PublishAssociations: No`.
+
+**Everything the message suggests is a dead end.** A key of your own does not
+satisfy it — a view carrying `cast(c.id as string) as RowId` published as the key,
+with `IsPartOfKey` confirmed `true` in the stored model, fails identically, as
+does a grouped view keyed on the columns that define its grain. The column cannot
+be named `ID` (`CE0174`, `CE7247` — reserved word). The system id cannot be
+exposed (`CE1613`). And it is not about view entities: publishing
+`Ledger.Category`, a persistent entity that does have an id, fails the same way.
+
+**`PublishAssociations` is not the setting the check reads.** It is stored
+correctly — the service's `.mxunit` carries `\x08PublishAssociations\x00\x00`, a
+BSON boolean set to false. (An earlier draft of this entry blamed mxcli for
+dropping it, inferred from `DESCRIBE` not echoing it back. `DESCRIBE` is lossy
+here, the same shape as finding 104, and absence in a description is not evidence
+of absence in a model.)
+
+The setting that matters is a different one. Mendix's
+[published OData service reference](https://docs.mendix.com/refguide/published-odata-services/)
+describes an **Associations** representation choice in the service configuration
+— how associations are represented, of which "as an associated object ID" is one
+option and the one CE7375 names. That is an enum, not the boolean.
+
+**mxcli has no such property.** Its generated metamodel for
+`ODataPublish$PublishedODataService2` binds twenty-one properties and none of
+them is the representation:
+
+```
+Excluded ExportLevel Namespace Path AllowedModuleRoles ServiceName Entities
+EntitySets Microflows Enumerations PublishAssociations Version
+AuthenticationMicroflow AuthenticationTypes Summary Description
+ReplaceIllegalChars UseGeneralization ODataVersion IncludeMetadataByDefault
+SupportsGraphQL
+```
+
+And MDL accepts nine service properties, checked by name — an unknown one is
+rejected rather than passed through (MDL-ODATA01):
+
+```go
+knownODataServiceProps = []string{
+    "Path", "Version", "ODataVersion", "Namespace", "ServiceName",
+    "Summary", "Description", "PublishAssociations", "Folder",
+}
+```
+
+So the model takes the default representation, the default is the one that
+demands the entity's `ID` as key, and there is no spelling of MDL that says
+otherwise.
+
+**What this is, precisely:** not a Mendix limitation and not a bad error message
+— a published entity keyed on selected attributes is exactly what the reference
+guide describes. It is one property missing from mxcli's OData surface. Setting
+the representation once in Studio Pro would unblock the whole path, and adding
+the property to `knownODataServiceProps` and the metamodel binding would unblock
+it from MDL.
+
+**Published REST is in the grammar** and takes a different shape — resources
+mapping HTTP verbs to microflows — so it does not go near CE7375 and is the
+likelier route for a chart endpoint today. It was not tested here.
+
+The chart half was verified separately against an endpoint the app serves:
+`200`, six marks, no error, `format.property` unwrapping the OData envelope. It
+is the publishing half that MDL cannot currently reach.

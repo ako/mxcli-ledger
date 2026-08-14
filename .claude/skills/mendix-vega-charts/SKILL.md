@@ -49,7 +49,65 @@ Two rules worth carrying in your head:
 - **`chartHeight: 0` means "as tall as it renders".** A chart whose height is decided by its data — a facet row per category, a legend entry per series — has no height the page can be told in advance, and a fixed container silently stops matching the moment the data grows.
 - **Single quotes inside the spec must be doubled.** MDL strings are single-quoted, so a Vega expression like `['Jan','Feb'][datum.m-1]` is written `[''Jan'',''Feb''][datum.m-1]`. It is stored unescaped.
 
-## The data side
+## Two ways to get data in
+
+**As an attribute (the default).** A microflow builds a JSON array into a string
+attribute, `chartData` binds to it, and the widget folds it into the spec. Nothing
+is fetched; the payload arrives with the page.
+
+**As a URL.** Leave `chartData` unbound and put the address in the spec:
+
+```json
+"data": {
+  "url": "/odata/chartapi/v1/MonthCategory?$filter=Yr eq 2026",
+  "format": {"type": "json", "property": "value"}
+}
+```
+
+The widget needs no change for this — with no data bound it passes the spec
+through untouched and Vega's own loader does the fetch. Verified end to end
+against an endpoint served by the app itself: one `200`, six marks, no error, and
+`format.property` unwrapping the `{"value": […]}` envelope OData returns.
+
+Same-origin requests carry the session cookie, so an endpoint authenticated by
+session is reachable from a chart on a page of the same app without any token
+handling.
+
+### Which to use
+
+The URL form buys: browser caching, a payload that is not part of the page state,
+query parameters (`$filter`, `$top`) as the chart's own controls, and one endpoint
+serving several charts.
+
+It costs:
+
+- **A second round trip**, after the page has already rendered.
+- **The endpoint is API surface.** It is reachable by anything holding a session,
+  not just by the chart, so its own security rules have to be right — a chart
+  cannot restrict what a URL returns.
+- **Rows, not aggregates,** unless the endpoint aggregates. A feed over a
+  transaction table sends every row and lets Vega sum them client-side, which is
+  fine at hundreds and not at hundreds of thousands. Publishing an OQL **view
+  entity** is what keeps the aggregation in the database.
+- **Paging is silent.** An OData feed returns its page size and a `nextLink`;
+  Vega fetches once. A chart over a paged endpoint quietly plots the first page,
+  so cap the result deliberately (`$top`) rather than discovering the cap.
+- **`check-spec.mjs` cannot fetch it.** Keep a sample `.data.json` beside the spec
+  so it stays checkable offline.
+- **Publishing the endpoint may be the hard part.** Mendix supports publishing a
+  view entity keyed on selected attributes, but an OData service authored purely
+  in MDL could not be built here: the service's *association representation*
+  defaults to "associated object ID", CE7375 then demands the entity's own `ID`
+  as key, and that representation is not a property MDL can set (FINDINGS 113).
+  Setting it once in Studio Pro unblocks it; published REST avoids it entirely.
+  Confirm you can publish before designing a chart around a URL.
+
+Default to the attribute for anything a microflow already computes — it keeps the
+figures checkable against SQL and the chart working with no endpoint to secure.
+Reach for the URL when the data is genuinely shared, already published, or large
+enough that caching matters.
+
+## The data side (attribute form)
 
 The microflow emits JSON and nothing else. Build it as a string concatenation over a retrieve, ideally over an **OQL view entity** so the aggregation happens in the database:
 
