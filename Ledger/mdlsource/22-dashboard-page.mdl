@@ -157,7 +157,8 @@ create or replace page Ledger.Dashboard
       ],
       "encoding": {
         "x": {"field": "t", "type": "temporal",
-              "axis": {"title": null, "format": "%b %y", "tickCount": 10, "grid": false}}
+              "axisNote": "One tick per year rather than a fixed count. tickCount: 10 put ten ticks wherever they fell, which was fine across twenty months and collided into \'Jan 22Apr 22\' across fifty-six. An interval tick lands on January whatever the span is, and the labels can never crowd because there is one per year.",
+              "axis": {"title": null, "format": "%Y", "tickCount": {"interval": "year", "step": 1}, "grid": false}}
       }
     },
     {
@@ -185,7 +186,8 @@ create or replace page Ledger.Dashboard
           }
         },
         {
-          "title": "Twenty months, against the usual range",
+          "title": "Each month against the usual range",
+          "titleNote": "The span is not named here. It used to read \'Twenty months\', which was true when the seed generated twenty and a lie the moment it generated fifty-six — and unlike the caption above, a title inside a static spec cannot count anything. The caption states the span once; a panel header repeating it is a second copy that can only ever go stale.",
           "transform": [{"filter": "datum.k === \'m\'"}],
           "bounds": "flush",
           "boundsNote": "Every panel is flush, and that is what makes the table a table. Vega-Lite sizes a facet row to its content bounds by default, so a panel whose marks overflow the declared 26px - an outlier dot straddling the top of the sparkline, a rule drawn to the row edge - gets taller rows than a panel of plain text. Four panels, three different row pitches, and by the fourteenth category the labels sat a full row below their numbers.",

@@ -20,7 +20,17 @@ create or modify non-persistent entity Ledger.ImportContext (
   Status: string(200),
   /** Counts, refreshed after every action */
   RowCount: integer default 0,
-  InvalidCount: integer default 0
+  InvalidCount: integer default 0,
+  /**
+   * The pasted text, unbounded.
+   *
+   * No length, because the length is a property of whatever the user selected
+   * in their banking screen and any number chosen here would be wrong for
+   * someone. The parser caps the *rows* it will land, and says so on a row.
+   */
+  Csv: string,
+  /** One character, the word 'tab', or empty to detect it from the first line */
+  Delimiter: string(10)
 );
 /
 
@@ -145,6 +155,53 @@ end;
 /
 
 /**
+ * Land the pasted CSV text.
+ *
+ * Replaces the batch rather than adding to it. A paste is a whole statement
+ * export, not a line, and appending would silently double every row when
+ * someone pastes again after fixing a header — the reject list would then be
+ * describing rows that no longer correspond to the text in the box.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_ImportPaste ($Context: Ledger.ImportContext)
+returns boolean as $Done
+folder 'OQL'
+begin
+  declare $Done boolean = true;
+  declare $Status string = '';
+
+  if trim($Context/Csv) = '' then
+    $Empty = call microflow Ledger.REFRESH_ImportContext (
+      Context = $Context, Status = 'Nothing to land — paste some CSV text first.');
+    return $Done;
+  end if;
+
+  @annotation 'A paste replaces the batch. See the note above.'
+  $Cleared = call java action Ledger.OQL_ExecuteWith (
+    Statement = 'delete from Ledger.ImportRow where Batch = $b',
+    Name1 = 'b', Value1 = $Context/Batch, Type1 = 'string',
+    Name2 = '', Value2 = '', Type2 = '',
+    Name3 = '', Value3 = '', Type3 = '',
+    Name4 = '', Value4 = '', Type4 = '');
+
+  $Landed = call java action Ledger.CSV_LandImportRows (
+    Csv = $Context/Csv,
+    Batch = $Context/Batch,
+    Delimiter = $Context/Delimiter);
+
+  set $Status = if $Landed = 0
+    then 'Nothing was read from that text. Check that the rows are separated by newlines.'
+    else 'Landed ' + toString($Landed) + ' row(s) from the pasted text. Validate them next.';
+
+  $Refreshed = call microflow Ledger.REFRESH_ImportContext (
+    Context = $Context, Status = $Status);
+  return $Done;
+end;
+/
+
+/**
  * Validate the landed batch.
  *
  * @param $Context The screen state
@@ -255,9 +312,6 @@ create or replace page Ledger.Import_Overview
               dynamictext txtStatus (attribute: Status, class: 'ledger-rules-status')
             }
             container ctnImportActions (class: 'ledger-rules-actions') {
-              actionbutton btnSample (
-                caption: 'Land sample batch',
-                action: microflow Ledger.ACT_ImportSample(Context: $currentObject))
               actionbutton btnValidate (
                 caption: 'Validate',
                 action: microflow Ledger.ACT_ImportValidate(Context: $currentObject))
@@ -268,6 +322,43 @@ create or replace page Ledger.Import_Overview
               actionbutton btnDiscard (
                 caption: 'Discard batch',
                 action: microflow Ledger.ACT_ImportDiscard(Context: $currentObject))
+            }
+          }
+
+          -- The paste box. It sits above the grid because it is the first step,
+          -- and the grid below it is the result of pressing the button in it —
+          -- the three later actions live in the panel above because they act on
+          -- what landed, not on what was typed.
+          container ctnPastePanel (class: 'card ledger-paste-panel') {
+            container ctnPasteHead (class: 'ledger-paste-head') {
+              dynamictext txtPasteHeading (content: 'Paste transactions', rendermode: H5)
+              dynamictext txtPasteHint (
+                content: 'Comma, semicolon or tab separated, quoted fields allowed. With a header row the columns can be in any order (date, merchant, description, amount, account, category — Dutch names work too); without one, that is the order assumed. Amounts are taken as written and the sign is ignored: direction comes from the category. Lines that cannot be read still land, in the list below, with the reason.',
+                rendermode: paragraph,
+                class: 'text-muted')
+            }
+            textarea txtCsv (
+              label: 'CSV',
+              attribute: Csv,
+              -- No `rows` property: MDL accepts it and drops it on write
+              -- (MDL-WIDGET07), so the height is set in the stylesheet where it
+              -- will actually survive.
+              placeholder: 'date,merchant,description,amount,account,category
+2026-08-03,Dille & Kamille,iDEAL 90001,24.50,ING Betaalrekening,Shopping',
+              class: 'ledger-paste-input')
+            container ctnPasteActions (class: 'ledger-rules-actions') {
+              textbox txtDelimiter (
+                label: 'Delimiter',
+                attribute: Delimiter,
+                placeholder: 'auto',
+                class: 'ledger-paste-delim')
+              actionbutton btnPaste (
+                caption: 'Land pasted rows',
+                action: microflow Ledger.ACT_ImportPaste(Context: $currentObject),
+                buttonstyle: primary)
+              actionbutton btnSample (
+                caption: 'Use a sample instead',
+                action: microflow Ledger.ACT_ImportSample(Context: $currentObject))
             }
           }
 
@@ -323,6 +414,8 @@ grant execute on microflow Ledger.DS_ImportContext to Ledger.User;
 grant execute on microflow Ledger.REFRESH_ImportContext to Ledger.User;
 /
 grant execute on microflow Ledger.ACT_ImportSample to Ledger.User;
+/
+grant execute on microflow Ledger.ACT_ImportPaste to Ledger.User;
 /
 grant execute on microflow Ledger.ACT_ImportValidate to Ledger.User;
 /

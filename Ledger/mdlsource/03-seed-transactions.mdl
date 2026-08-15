@@ -74,6 +74,11 @@ begin
     where Ledger.Merchant_Category = $Category
     sort by SortOrder asc;
 
+  @annotation 'The generator restarts from SeedBase for every year, so without this every year would draw the same month-by-month shape and the only difference between them would be the level — five years of history that trace one wiggle five times. Offsetting the seed per year fixes that, and the offset is zero for 2025 and 2026 on purpose: those two years are the ones whose figures are quoted in the README and FINDINGS, and they must not move because history grew behind them.'
+  if $Year < 2025 then
+    set $Seed = $SeedBase + (2025 - $Year) * 977;
+  end if;
+
   @annotation 'One month per iteration; stops at the current month'
   while $Month <= $ThroughMonth
   begin

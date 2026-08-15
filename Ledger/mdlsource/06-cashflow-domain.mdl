@@ -128,31 +128,9 @@ create or modify non-persistent entity Ledger.ReportContext (
 );
 /
 
-/**
- * One line of the drilldown list.
- *
- * A preformatted copy of a Transaction rather than the Transaction itself.
- * MDL has no number or date format on a list, so a Decimal renders as '-51.3'
- * and a DateTime in the browser's locale — neither of which is what a Dutch
- * bank statement looks like. Formatting in the builder is the same choice
- * CashflowRow makes, for the same reason.
- *
- * The shape follows the prototype's inspector: merchant on top, date and
- * account beneath it, amount right-aligned.
- */
-create or modify non-persistent entity Ledger.DrillLine (
-  /** Counterparty, the line's headline */
-  Merchant: string(200),
-  /** Second line, e.g. '5 Mar · ING Betaalrekening' */
-  MetaText: string(200),
-  /** Signed amount with cents, e.g. '-€ 51.30' */
-  AmountText: string(24),
-  /** Display order */
-  SortOrder: integer default 0
-);
-/
-
-
+-- DrillLine is gone: it held a preformatted copy of a Transaction for the old
+-- sunburst drilldown list. The cashflow inspector formats its own lines
+-- (mdlsource/10a), so nothing read this any more.
 
 -- CashflowRow_Category and ReportContext_DrillCategory are gone: the drill key
 -- is a casted id string now (see CategoryIdText / DrillCategoryId above).

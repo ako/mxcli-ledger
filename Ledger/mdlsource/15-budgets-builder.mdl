@@ -12,13 +12,150 @@
 -- here reference that page and so have to come after it.
 -- ============================================================================
 
+-- MARK: Year selection
+
+/**
+ * Recomputes the derived fields on the year context after Year has moved.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.SET_BudgetContextLabels ($Context: Ledger.BudgetContext)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+
+  change $Context (
+    YearText = toString($Context/Year),
+    RangeText = toString($Context/FirstYear) + '-' + toString($Context/LastYear) + ' available',
+    IsFirst = $Context/Year <= $Context/FirstYear,
+    IsLast = $Context/Year >= $Context/LastYear);
+
+  return $Done;
+end;
+/
+
+/**
+ * The Budgets screen's year context, opened on the reference year.
+ *
+ * The bounds come from the data rather than from a declaration. The earliest
+ * year is the earliest year with a transaction; the latest is one year past
+ * whichever is later, the data or the reference year, so there is always a
+ * blank year ahead to budget into — which is exactly what the copy panel on
+ * this screen produces.
+ *
+ * @returns The context object
+ */
+create or modify microflow Ledger.DS_BudgetContext ()
+returns Ledger.BudgetContext as $Context
+folder 'Budgets'
+begin
+  declare $First integer = 2026;
+  declare $Last integer = 2026;
+  declare $Guard integer = 0;
+
+  @annotation 'One row per year, grouped in the database, so finding the bounds does not pull thousands of transactions into memory.'
+  retrieve $Years from Ledger.VTransactionYear sort by Yr asc;
+
+  @annotation 'An aggregate declares its own variable rather than assigning to one (CE0111 otherwise), so it cannot go inside the branch that guards it. It runs unconditionally and the guard picks whether to use it.'
+  $MinYear = min($Years.Yr);
+  $MaxYear = max($Years.Yr);
+
+  if $Years != empty then
+    set $First = $MinYear;
+    set $Last = $MaxYear;
+  end if;
+
+  @annotation 'Never offer less than the reference year, even against an empty database'
+  if $Last < 2026 then
+    set $Last = 2026;
+  end if;
+  if $First > 2026 then
+    set $First = 2026;
+  end if;
+
+  @annotation 'Always one blank year ahead to budget into'
+  set $Last = $Last + 1;
+
+  @annotation 'An override copied further ahead than that would otherwise be unreachable — its year would exist in the database with no way to steer to it. MonthKey is YYYY-MM, so the latest key sorts last and comparing it as text needs no parsing. The guard is there because a while loop over data is a while loop over data.'
+  retrieve $Latest from Ledger.BudgetOverride sort by MonthKey desc limit 1;
+  if $Latest != empty then
+    while toString($Last) + '-12' < $Latest/MonthKey and $Guard < 50
+    begin
+      set $Last = $Last + 1;
+      set $Guard = $Guard + 1;
+    end while;
+  end if;
+
+  $Context = create Ledger.BudgetContext (
+    Year = 2026,
+    FirstYear = $First,
+    LastYear = $Last);
+
+  $Labelled = call microflow Ledger.SET_BudgetContextLabels (Context = $Context);
+
+  return $Context;
+end;
+/
+
+/**
+ * Steps the Budgets grid back a year.
+ *
+ * Refreshes the context, which is what re-runs the grid: its datasource takes
+ * the context as a parameter, so a refreshed context is a rebuilt matrix.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_BudgetYearPrev ($Context: Ledger.BudgetContext)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+
+  if $Context/Year > $Context/FirstYear then
+    change $Context (Year = $Context/Year - 1);
+    $Labelled = call microflow Ledger.SET_BudgetContextLabels (Context = $Context);
+    change $Context refresh;
+  end if;
+
+  return $Done;
+end;
+/
+
+/**
+ * Steps the Budgets grid forward a year.
+ *
+ * @param $Context The screen state
+ * @returns true
+ */
+create or modify microflow Ledger.ACT_BudgetYearNext ($Context: Ledger.BudgetContext)
+returns boolean as $Done
+folder 'Budgets'
+begin
+  declare $Done boolean = true;
+
+  if $Context/Year < $Context/LastYear then
+    change $Context (Year = $Context/Year + 1);
+    $Labelled = call microflow Ledger.SET_BudgetContextLabels (Context = $Context);
+    change $Context refresh;
+  end if;
+
+  return $Done;
+end;
+/
+
+-- MARK: The matrix
+
 /**
  * Builds the editable budget matrix: one row per category, twelve resolved
  * monthly budgets, with the overridden months flagged.
  *
+ * @param $Context Supplies the year; the grid re-runs this whenever it changes
  * @returns Rows in display order
  */
-create or modify microflow Ledger.DS_BudgetRows ()
+create or modify microflow Ledger.DS_BudgetRows ($Context: Ledger.BudgetContext)
 returns list of Ledger.BudgetRow as $Rows
 folder 'Budgets'
 begin
@@ -30,6 +167,7 @@ begin
   begin
     $Row = create Ledger.BudgetRow (
       Label = $C/Name,
+      Year = $Context/Year,
       SortOrder = $C/SortOrder);
     change $Row (Ledger.BudgetRow_Category = $C);
 
@@ -61,7 +199,7 @@ begin
   declare $Amount decimal = 0;
   declare $IsOverride boolean = false;
 
-  $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $MonthIndex);
+  $MK = call microflow Ledger.FMT_MonthKey (Year = $Row/Year, MonthIndex = $MonthIndex);
   set $MonthKey = $MK;
   $MonthName = call microflow Ledger.FMT_MonthName (MonthIndex = $MonthIndex);
 
@@ -79,7 +217,7 @@ begin
   $Edit = create Ledger.BudgetEdit (
     MonthIndex = $MonthIndex,
     MonthKey = $MonthKey,
-    Caption = $Row/Label + ' · ' + $MonthName + ' 2026',
+    Caption = $Row/Label + ' · ' + $MonthName + ' ' + toString($Row/Year),
     Amount = $Amount,
     BaselineBudget = $Row/Ledger.BudgetRow_Category/BaselineBudget,
     IsOverridden = $IsOverride);

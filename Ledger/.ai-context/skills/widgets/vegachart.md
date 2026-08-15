@@ -19,7 +19,7 @@ PLUGGABLEWIDGET 'ledger.widget.web.vegachart.VegaChart' widget1
 | `datasetName` | string |  | table | The name the spec uses to refer to the data (Vega-Lite: {"data": {"name": "ta... |
 | `selection` | attribute |  |  | Written with the clicked mark's datum as JSON. Only the datum's own scalar fi... |
 | `onClick` | action |  |  | Runs after the selection attribute is written. Leave empty to make the chart ... |
-| `chartHeight` | integer | Yes | 360 | Height of the chart container. |
+| `chartHeight` | integer | Yes | 360 | Height of the chart container. Zero lets the container take the height the ch... |
 | `renderer` | enumeration | Yes | svg | SVG keeps marks selectable and styleable by CSS; canvas is faster for very de... |
 | `showActions` | boolean | Yes | false | Vega's own export / view-source menu. Off by default so the chart carries no ... |
 

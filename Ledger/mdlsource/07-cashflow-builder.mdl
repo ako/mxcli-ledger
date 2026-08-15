@@ -14,20 +14,26 @@
 -- MARK: Formatting helpers
 
 /**
- * Month index to the MonthKey stored on Transaction / BudgetOverride.
+ * Year and month index to the MonthKey stored on Transaction / BudgetOverride.
  *
+ * The year used to be the literal 2026. It is a parameter because the Budgets
+ * screen now edits any year, and a key that silently says 2026 while the grid
+ * says 2024 writes the override into the wrong year — the kind of defect that
+ * looks like the save failing.
+ *
+ * @param $Year Calendar year
  * @param $MonthIndex 1-12
- * @returns 'YYYY-MM' for 2026
+ * @returns 'YYYY-MM'
  */
-create or modify microflow Ledger.FMT_MonthKey ($MonthIndex: integer)
+create or modify microflow Ledger.FMT_MonthKey ($Year: integer, $MonthIndex: integer)
 returns string as $Key
 folder 'Cashflow'
 begin
   declare $Key string = '';
   if $MonthIndex < 10 then
-    set $Key = '2026-0' + toString($MonthIndex);
+    set $Key = toString($Year) + '-0' + toString($MonthIndex);
   else
-    set $Key = '2026-' + toString($MonthIndex);
+    set $Key = toString($Year) + '-' + toString($MonthIndex);
   end if;
   return $Key;
 end;
@@ -133,63 +139,10 @@ end;
 
 -- MARK: Figures
 
-/**
- * Budget for one category in one month: an override when present, otherwise
- * the category baseline.
- *
- * @param $Category Category to look up
- * @param $MonthKey 'YYYY-MM'
- * @returns Budget amount
- */
-create or modify microflow Ledger.CALC_Budget ($Category: Ledger.Category, $MonthKey: string)
-returns decimal as $Budget
-folder 'Cashflow'
-begin
-  declare $Budget decimal = 0;
-  retrieve $Override from Ledger.BudgetOverride
-    where Ledger.BudgetOverride_Category = $Category and MonthKey = $MonthKey
-    limit 1;
-  if $Override != empty then
-    set $Budget = $Override/Amount;
-  else
-    set $Budget = $Category/BaselineBudget;
-  end if;
-  return $Budget;
-end;
-/
-
-/**
- * Actual spend or income for one category in one month.
- *
- * Mirrors are excluded: an internal transfer books on both accounts, and
- * counting both would double the category total.
- *
- * Filters on a date range rather than a denormalised month key. TxDate is the
- * only source of truth for when a transaction happened (FINDINGS 38).
- *
- * @param $Category Category to total
- * @param $MonthIndex 1-12
- * @returns Sum of transaction amounts
- */
-create or modify microflow Ledger.CALC_Actual ($Category: Ledger.Category, $MonthIndex: integer)
-returns decimal as $Total
-folder 'Cashflow'
-begin
-  declare $Start datetime = [%CurrentDateTime%];
-  declare $End datetime = [%CurrentDateTime%];
-
-  set $Start = addMonths(dateTime(2026, 1, 1), $MonthIndex - 1);
-  set $End = addMonths($Start, 1);
-
-  retrieve $TxList from Ledger.Transaction
-    where Ledger.Transaction_Category = $Category
-      and TxDate >= $Start
-      and TxDate < $End
-      and IsMirror = false;
-  $Total = sum($TxList.Amount);
-  return $Total;
-end;
-/
+-- CALC_Budget and CALC_Actual are gone. They computed one cell at a time, a
+-- retrieve per category per month; the matrix has been built from the
+-- VCashflowActual / VCashflowBudget view entities since mdlsource/10, which
+-- does the same arithmetic in the database in one pass.
 
 /**
  * Heatmap band for a cell.

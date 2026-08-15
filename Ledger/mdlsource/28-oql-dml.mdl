@@ -467,7 +467,18 @@ create or modify persistent entity Ledger.ImportRow (
   CategoryName: string(100),
   /** Set by VALIDATE_ImportBatch */
   IsValid: boolean default true,
-  Problem: string(200)
+  Problem: string(200),
+  /**
+   * Set by the CSV parser, never by validation.
+   *
+   * A line that could not be read into columns has no fields to validate — the
+   * problem is the line itself, and it is already written on the row. Validation
+   * begins by clearing IsValid and Problem so that running it twice does not
+   * accumulate reasons; without this flag that reset would erase the parse
+   * failure and then re-reject the row for an empty merchant, which describes
+   * the symptom instead of the cause.
+   */
+  HasParseError: boolean default false
 );
 /
 
@@ -497,9 +508,10 @@ folder 'OQL'
 begin
   declare $Invalid integer = 0;
 
-  @annotation 'Start clean, so validating twice does not accumulate problems'
+  @annotation 'Start clean, so validating twice does not accumulate problems. Rows that failed to parse are left alone: their problem is the line, not the fields, and clearing it would replace the cause with whichever symptom the checks below happen to notice first.'
   $Reset = call java action Ledger.OQL_ExecuteWith (
-    Statement = 'update Ledger.ImportRow set IsValid = true, Problem = '''' where Batch = $b',
+    Statement = 'update Ledger.ImportRow set IsValid = true, Problem = '''' '
+      + 'where Batch = $b and HasParseError = false',
     Name1 = 'b', Value1 = $Batch, Type1 = 'string',
     Name2 = '', Value2 = '', Type2 = '',
     Name3 = '', Value3 = '', Type3 = '',

@@ -86,11 +86,12 @@ begin
 
   set $Baseline = $Row/Ledger.BudgetRow_Category/BaselineBudget;
 
+  @annotation 'Every override, not just this year\'s: the match below is on the full YYYY-MM key, so a key from another year simply never matches. Constraining the retrieve would need an XPath on a computed prefix, and the table is small enough that reading it whole is cheaper than being clever.'
   retrieve $Overrides from Ledger.BudgetOverride;
 
   while $M <= 12
   begin
-    $MK = call microflow Ledger.FMT_MonthKey (MonthIndex = $M);
+    $MK = call microflow Ledger.FMT_MonthKey (Year = $Row/Year, MonthIndex = $M);
     set $MonthKey = $MK;
 
     @annotation 'Baseline unless an override says otherwise'

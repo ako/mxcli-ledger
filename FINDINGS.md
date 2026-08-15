@@ -4452,6 +4452,15 @@ text. Neither is fine for a probe that lets one throw.
 
 ---
 
+---
+
+## Phase 16 — a chart that fetches its own data (2026-08-14)
+
+The widget hands the spec and the data over as separate properties, and the data
+has so far always been a string attribute a microflow built. A spec can also
+carry a URL, which would let a chart ask the app for its own rows. The chart half
+works. The publishing half does not, for one reason.
+
 ### 113. MDL cannot set an OData service's association representation, so every published entity fails CE7375
 
 Publishing an OQL view entity as a read-only OData endpoint — aggregation in the
@@ -4516,12 +4525,39 @@ So the model takes the default representation, the default is the one that
 demands the entity's `ID` as key, and there is no spelling of MDL that says
 otherwise.
 
+**What Mendix actually requires of a key.** From the
+[published OData entity reference](https://docs.mendix.com/refguide/published-odata-entity/),
+a key is one or more *attributes* — not the object id — of type Integer, Long,
+String or AutoNumber, and they must be:
+
+| | |
+|---|---|
+| unique | the combination points to exactly one object |
+| required | an empty key value makes the object unfindable |
+| stable | the values must not change, or it cannot be found again |
+
+Composite keys are OData v4 only. A view entity carrying a casted id, or the
+columns that define its grain, satisfies every one of those. Nothing about the
+intended design is unsupported.
+
 **What this is, precisely:** not a Mendix limitation and not a bad error message
 — a published entity keyed on selected attributes is exactly what the reference
-guide describes. It is one property missing from mxcli's OData surface. Setting
-the representation once in Studio Pro would unblock the whole path, and adding
-the property to `knownODataServiceProps` and the metamodel binding would unblock
-it from MDL.
+guide describes. It is one property missing from mxcli's OData surface.
+
+**The ask, for whoever files it.** mxcli needs the service's association
+representation as a settable property. Three places, all in `mxcli`:
+
+1. `modelsdk/gen/odatapublish` — bind the property on
+   `ODataPublish$PublishedODataService2`, which today binds twenty-one and not
+   this one.
+2. `generated/metamodel/types.go` — add it to
+   `ODataPublishPublishedODataService2`.
+3. `mdl/executor/validate_odata_properties.go` — add the name to
+   `knownODataServiceProps`, or the CREATE path rejects it as unknown
+   (MDL-ODATA01).
+
+Until then the workaround is to set it once in Studio Pro, which this project has
+a precedent for (commit `b1856a7`), or to publish through REST instead.
 
 **Published REST is in the grammar** and takes a different shape — resources
 mapping HTTP verbs to microflows — so it does not go near CE7375 and is the
@@ -4530,3 +4566,275 @@ likelier route for a chart endpoint today. It was not tested here.
 The chart half was verified separately against an endpoint the app serves:
 `200`, six marks, no error, `format.property` unwrapping the OData envelope. It
 is the publishing half that MDL cannot currently reach.
+
+---
+
+## Phase 17 — five years of history, and a year to select (2026-08-15)
+
+The demo seed generated two years and the Budgets screen edited one of them.
+Widening the seed to five and putting a year stepper on Budgets turned up three
+things worth writing down, and confirmed a fourth that was already latent.
+
+### 114. `div` between two Integers is a Decimal, so the obvious integer loop fails CE0117
+
+A category's level for a year compounds a one-year ratio held in permille. The
+natural way to write that is:
+
+```
+declare $Level integer = 1000;
+set $Level = $Level * $RatioPermille div 1000;
+```
+
+`mxcli check` passes. `mxcli exec` writes it. `mx check` then says:
+
+```
+[error] [CE0117] "Error(s) in expression." at Change variable activity 'Change variable Level'
+```
+
+`div` is Mendix's integer-division operator, and the operands here are both
+Integer, so the expression reads as though it must yield an Integer. It does
+not: **`div` returns a Decimal whatever it is given**, and a Decimal will not go
+into an Integer variable. The fix is a `round()` that looks redundant and is
+not:
+
+```
+set $Level = round($Level * $RatioPermille div 1000);
+```
+
+The project's own `.ai-context/skills/write-microflows.md` documents this, which
+is the useful part of the finding: the rule is written down, the error message
+does not mention division, types, or `div`, and nothing between authoring and
+`mx check` connects the two. `mxcli check` could — it knows the declared type of
+`$Level` and it knows `div` yields Decimal.
+
+**Ask:** have `mxcli check` flag a `div` result assigned to an Integer target,
+with the message naming `round()`. It is a static check over information the
+checker already holds.
+
+### 115. An aggregate declares its variable, so it cannot sit inside the branch that guards it
+
+Finding the bounds of the year range means taking the min and max of a grouped
+view. Written the obvious way — aggregate only when there is something to
+aggregate — it fails:
+
+```
+declare $First integer = 2026;
+retrieve $Years from Ledger.VTransactionYear sort by Yr asc;
+if $Years != empty then
+  set $First = min($Years.Yr);        -- CE0111 Duplicate variable name 'First'
+end if;
+```
+
+`set $X = min(list.attr)` does not assign to `$X`. It compiles to an **Aggregate
+list** activity, and that activity *declares* its output variable — so a
+pre-declared `$First` is a duplicate, and an undeclared one is scoped to the
+branch and unreachable after it. Either way the guarded form cannot be written.
+
+The shape that works runs the aggregate unconditionally and lets the guard
+choose whether to use the answer:
+
+```
+retrieve $Years from Ledger.VTransactionYear sort by Yr asc;
+$MinYear = min($Years.Yr);
+$MaxYear = max($Years.Yr);
+if $Years != empty then
+  set $First = $MinYear;
+end if;
+```
+
+An aggregate over an empty list is defined, so nothing is lost. What is lost is
+the ability to read the microflow as though `min()` were a function.
+
+### 116. MDL005 reports a variable declared before an `if` as declared inside it
+
+The microflow above draws:
+
+```
+⚠ variable '$Last' is declared inside if branch but used outside [MDL005]
+    at Ledger.DS_BudgetContext
+    → Declare '$Last' before the if/else block
+```
+
+`$Last` **is** declared before the `if` — three lines above the `retrieve`, in
+the same block. What is inside the branch is a `set` on it. The rule appears to
+treat any assignment inside a branch as the declaration, so the advice it gives
+is the thing the code already does.
+
+Harmless on its own, but it is a warning that cannot be silenced by being
+correct, which over a file of them trains you to skim the ones that matter.
+
+**Ask:** MDL005 should key on `declare`, not on assignment.
+
+### 117. A literal in a chart specification is a number that cannot be recounted
+
+The dashboard caption counts its own span — `21b` computes `MonthSpan` from the
+data, and a previous finding records it being made to do so after reading
+`Twenty months, thirteen categories` as a literal. What survived that fix was a
+second copy of the same number, one level down, inside the Vega-Lite spec:
+
+```json
+{"title": "Twenty months, against the usual range", ... }
+```
+
+The seed went from twenty months to fifty-six and the caption above the chart
+duly said `56 months, 13 categories` while the panel header under it still said
+`Twenty months`. Nothing was wrong with either mechanism; there were simply two
+of them, and only one could count.
+
+A spec is a static string. It has no access to a datasource, so a span inside it
+can only ever be a literal, and a literal is a claim that ages. The fix is not to
+make the spec smarter — it is to stop the spec making the claim: the header now
+reads `Each month against the usual range` and the caption is the only place the
+figure appears.
+
+The general form, which cost time here twice: **a figure derived from data should
+appear exactly once in a screen.** A second copy is not redundancy, it is a
+second thing to keep true.
+
+The same pass fixed the axis under it. `"tickCount": 10` was fine over twenty
+months and collided into `Jan 22Apr 22` over fifty-six; `{"interval": "year"}`
+lands one tick per January and cannot crowd at any span. Same lesson: a count
+that suits one size of data is a literal too.
+
+### 118. A page can reference a microflow a later file defines, and only a from-scratch build finds out
+
+`16-budgets-page.mdl` binds the copy panel to `DS_BudgetCopyContext` and
+`ACT_CopyBudgets`, both defined in `29-oql-screens.mdl`. Applied in numeric
+order to an empty project, `16` runs thirteen files before the microflows it
+needs exist.
+
+Verified against a probe page:
+
+```
+$ mxcli check probe.mdl -p Ledger.mpr --references
+Reference errors:
+  statement 1: page 'Ledger.ProbeFwd' has reference errors:
+  - microflow not found: Ledger.DS_DoesNotExistYet
+✗ 1 reference error(s) found
+```
+
+So it is a hard error, not a warning — and it has never fired, because every
+run of the set has been over an existing `.mpr` where `29` had already been
+applied once. The defect is invisible for exactly as long as nobody does the
+thing the README says the set supports.
+
+The awkward part is that the obvious fix is worse. Authoring the panel in `29`
+with `ALTER PAGE INSERT` is what finding 103 is about: the insert is silently
+discarded the next time `16` runs, and the widget disappears with no error at
+all. Between a loud failure on a build nobody performs and a quiet failure on a
+build performed constantly, the loud one is correct — but it should be stated,
+not discovered, so it is now in the file header and in the README.
+
+**Ask:** a `mxcli check mdlsource/*.mdl --references --ordered` that validates a
+set in sequence, each file against the state the previous ones would leave,
+would catch this in one command. Checking files independently against a
+finished project cannot.
+
+---
+
+## Phase 18 — pasting a CSV into the loader (2026-08-15)
+
+The loader screen could land a sample batch and nothing else. Giving it a paste
+box turned up two widget properties that do not survive the write, and one
+design trap that only shows up when two failure kinds meet.
+
+### 119. `rows` on a textarea is accepted and dropped; `Label` has no position
+
+`textarea txtCsv (attribute: Csv, rows: 8)` draws:
+
+```
+⚠ page Ledger.Import_Overview: widget `txtCsv` (textarea) property `rows` is
+  not recognized and will be silently dropped on write [MDL-WIDGET07]
+```
+
+Credit where due — mxcli **warns**. That is a real improvement on the class of
+finding this project has collected repeatedly (67–69, 108), where an unsupported
+property was accepted in silence and the widget simply came out wrong. A warning
+naming the widget, the property and the consequence is exactly what those needed.
+
+The height therefore lives in the stylesheet, and needs `min-height` rather than
+`height`: Mendix writes an inline `style="height: 113px !important"` on the
+textarea, which no stylesheet rule can outrank. `min-height` clamps the used
+height without competing.
+
+The other half has no warning because it is not a property at all. MDL's label
+support is `Label: 'text'` and nothing else — no position, no visibility. Atlas
+lays a form group out horizontally, so a full-width textarea gets its label
+stranded in a three-column gutter, and `Delimiter` renders as `Delim…`.
+
+**The cause is worth writing down because the obvious fix does not work.** The
+gutter is not a `width`:
+
+```
+labelWidth: 30, cssWidth: "30px", maxWidth: "25%"
+```
+
+Atlas clamps `.control-label` with `max-width: 25%`. Setting `width: auto`
+changes nothing — the element is still capped at a quarter of its group, which
+at a 120px control is 30px, and the ellipsis is Atlas's own. `max-width: none`
+is the line that matters. Found by reading the computed style off the element
+rather than by trying rules, which took one command against several guesses.
+
+**Ask:** `LabelPosition: top | left | none` on input widgets. Every screen that
+puts one wide control on its own row needs it, and the CSS workaround has to
+know an Atlas implementation detail to be written at all.
+
+### 120. Two kinds of failure on one row, and the second erases the first
+
+`VALIDATE_ImportBatch` opens by clearing its own verdict:
+
+```sql
+update Ledger.ImportRow set IsValid = true, Problem = '' where Batch = $b
+```
+
+That is correct, and finding 111's predecessor depends on it: without it,
+validating twice accumulates reasons. It stops being correct the moment rows can
+arrive already broken.
+
+A line the parser could not read has no fields to validate — the problem is the
+line. It lands as `IsValid = false` with *"Amount could not be read from
+'niet-een-bedrag' — 2026-08-24;niet-een-bedrag;Marqt;…"*. Then validation runs,
+clears that, and the checks below re-reject the same row for a zero amount. The
+row is still rejected, the count is still right, and **the reason now describes
+a consequence of the failure rather than the failure**. Nobody would ever find
+the stray delimiter from "Amount must be positive".
+
+The fix is one column and one clause — `HasParseError`, and
+`where Batch = $b and HasParseError = false` on the reset. The general shape:
+**a pipeline stage that resets state must know which state is not its to reset.**
+Anywhere two stages can both mark a row bad, the later one owns only its own
+verdict.
+
+Verified end to end, one paste of nine lines: semicolon delimiter detected,
+Dutch header mapped out of order (`Datum;Bedrag;Naam;…` — amount second, not
+fourth), a quoted field containing a comma kept whole, a quoted field containing
+a **newline** landing as one row and arriving in `Transaction.Description` with
+the newline intact, `-24,50` landing as 24.50, `€ 1.234,56` as 1234.56 and
+booked `+1234.56` because its category is income, a blank line skipped, and three
+rows rejected for three different reasons — one parse, one unknown account, one
+short line. 2,588 transactions became 2,592.
+
+### 121. A test harness that runs twice looks exactly like an application bug
+
+Worth one paragraph because the wrong conclusion was one step away. A promote
+reported `Nothing was promoted` while the loader visibly went from seven rows to
+three — four rows had moved and the count said zero. That reads as a defect in
+the statement that returns the affected-row count.
+
+The runtime log settled it in one command:
+
+```
+08:57:02.767 INFO - OQLBULK: PROMOTE_ImportBatch import: promoted 4
+08:57:04.508 INFO - OQLBULK: PROMOTE_ImportBatch import: promoted 0
+```
+
+Two runs, 1.7 seconds apart. A backgrounded copy of the browser test was still
+running against the same app as the foreground one; the second promote found the
+batch already emptied by the first and correctly reported zero. The application
+was right and the harness was wrong.
+
+The general point, and the reason it is numbered: **the log is the arbiter, not
+the screen.** Every action here logs what it did, which cost one line each to
+write and turned a plausible-looking bug into a two-minute diagnosis. The
+statements had already been verified against Postgres in Phase 15; the thing
+that had not been verified was that only one client was talking to the app.

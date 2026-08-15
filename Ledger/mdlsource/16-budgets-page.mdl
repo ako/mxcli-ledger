@@ -9,6 +9,16 @@
 -- Overridden months are marked rather than merely coloured differently — the
 -- point of this screen is seeing where the household deviated from its own
 -- baseline.
+--
+-- KNOWN ORDERING DEFECT: the copy panel at the foot of this page binds to
+-- DS_BudgetCopyContext and ACT_CopyBudgets, which are defined in 29. Applying
+-- this file to a project that has not yet run 29 fails with
+-- `microflow not found` — verified, mxcli check --references reports it.
+-- Re-applying the whole set over an existing .mpr is fine, which is why it has
+-- not bitten, but a genuinely from-scratch build needs 29 run before this file.
+-- The panel is authored here rather than inserted by 29 because an ALTER PAGE
+-- INSERT from a later file is silently wiped the next time this file runs
+-- (FINDINGS 103), which is the worse of the two failures: it is quiet.
 -- ============================================================================
 
 /**
@@ -31,29 +41,32 @@ create or replace page Ledger.Budgets_Overview
           rendermode: paragraph,
           class: 'text-muted')
 
-        -- Copying a year is one insert-from-select per month rather than a
-        -- create per category per month. It sits on this screen because this is
-        -- where a household would think of it — in January, looking at last
-        -- year's numbers.
-        dataview dvCopy (datasource: microflow Ledger.DS_BudgetCopyContext) {
-          container ctnCopyPanel (class: 'card ledger-rules-panel') {
-            container ctnCopyFields (class: 'ledger-rules-figures') {
-              dynamictext txtCopyHeading (content: 'Copy a year', rendermode: H5)
-              dynamictext txtCopyStatus (attribute: Status, class: 'ledger-rules-status')
-            }
-            container ctnCopyActions (class: 'ledger-rules-actions') {
-              textbox txtFromYear (label: 'From', attribute: FromYear)
-              textbox txtToYear (label: 'To', attribute: ToYear)
-              actionbutton btnCopyYear (
-                caption: 'Copy overrides',
-                action: microflow Ledger.ACT_CopyBudgets(Context: $currentObject),
-                buttonstyle: primary)
-            }
+        -- The year selector and the matrix share one dataview, because the grid
+        -- takes the context as a datasource parameter: stepping the year is a
+        -- change-and-refresh on that one object, and the grid rebuilds itself.
+        -- The same wiring the Cashflow mode switch uses.
+        --
+        -- Stepping rather than a list of years. The span is a property of the
+        -- data — it grows every January, and an import of older statements moves
+        -- the other end — so a fixed set of buttons or an enumeration would be
+        -- wrong the moment either happened. The arrows disappear at the bounds
+        -- instead of sitting there doing nothing.
+        dataview dvYear (datasource: microflow Ledger.DS_BudgetContext) {
+          container ctnYearBar (class: 'ledger-modes ledger-yearbar') {
+            actionbutton btnYearPrev (
+              caption: '← Earlier',
+              visible: [IsFirst = false],
+              action: microflow Ledger.ACT_BudgetYearPrev(Context: $currentObject))
+            dynamictext txtYear (attribute: YearText, rendermode: H3, class: 'ledger-year')
+            actionbutton btnYearNext (
+              caption: 'Later →',
+              visible: [IsLast = false],
+              action: microflow Ledger.ACT_BudgetYearNext(Context: $currentObject))
+            dynamictext txtYearRange (attribute: RangeText, class: 'text-muted')
           }
-        }
 
         datagrid dgBudgets (
-          datasource: microflow Ledger.DS_BudgetRows,
+          datasource: microflow Ledger.DS_BudgetRows(Context: $currentObject),
           PageSize: 20,
           class: 'ledger-matrix'
         ) {
@@ -162,6 +175,33 @@ create or replace page Ledger.Budgets_Overview
             attribute: TotalText, caption: 'Year', Alignment: right,
             Sortable: false, ColumnWidth: manual, Size: 140,
             DynamicCellClass: '''cf-total''')
+        }
+        }
+
+        -- Copying a year is one insert-from-select per month rather than a
+        -- create per category per month. It sits on this screen because this is
+        -- where a household would think of it — in January, looking at last
+        -- year's numbers.
+        --
+        -- Below the matrix, not above it. Its own From and To are independent of
+        -- the year on screen, and above the stepper the two pairs of years read
+        -- as one control: a grid showing 2023 under a panel saying 2026 → 2027
+        -- invites you to believe the panel is labelling the grid.
+        dataview dvCopy (datasource: microflow Ledger.DS_BudgetCopyContext) {
+          container ctnCopyPanel (class: 'card ledger-rules-panel') {
+            container ctnCopyFields (class: 'ledger-rules-figures') {
+              dynamictext txtCopyHeading (content: 'Copy a year', rendermode: H5)
+              dynamictext txtCopyStatus (attribute: Status, class: 'ledger-rules-status')
+            }
+            container ctnCopyActions (class: 'ledger-rules-actions') {
+              textbox txtFromYear (label: 'From', attribute: FromYear)
+              textbox txtToYear (label: 'To', attribute: ToYear)
+              actionbutton btnCopyYear (
+                caption: 'Copy overrides',
+                action: microflow Ledger.ACT_CopyBudgets(Context: $currentObject),
+                buttonstyle: primary)
+            }
+          }
         }
       }
     }
