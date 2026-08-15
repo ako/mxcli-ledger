@@ -4729,3 +4729,112 @@ not discovered, so it is now in the file header and in the README.
 set in sequence, each file against the state the previous ones would leave,
 would catch this in one command. Checking files independently against a
 finished project cannot.
+
+---
+
+## Phase 18 — pasting a CSV into the loader (2026-08-15)
+
+The loader screen could land a sample batch and nothing else. Giving it a paste
+box turned up two widget properties that do not survive the write, and one
+design trap that only shows up when two failure kinds meet.
+
+### 119. `rows` on a textarea is accepted and dropped; `Label` has no position
+
+`textarea txtCsv (attribute: Csv, rows: 8)` draws:
+
+```
+⚠ page Ledger.Import_Overview: widget `txtCsv` (textarea) property `rows` is
+  not recognized and will be silently dropped on write [MDL-WIDGET07]
+```
+
+Credit where due — mxcli **warns**. That is a real improvement on the class of
+finding this project has collected repeatedly (67–69, 108), where an unsupported
+property was accepted in silence and the widget simply came out wrong. A warning
+naming the widget, the property and the consequence is exactly what those needed.
+
+The height therefore lives in the stylesheet, and needs `min-height` rather than
+`height`: Mendix writes an inline `style="height: 113px !important"` on the
+textarea, which no stylesheet rule can outrank. `min-height` clamps the used
+height without competing.
+
+The other half has no warning because it is not a property at all. MDL's label
+support is `Label: 'text'` and nothing else — no position, no visibility. Atlas
+lays a form group out horizontally, so a full-width textarea gets its label
+stranded in a three-column gutter, and `Delimiter` renders as `Delim…`.
+
+**The cause is worth writing down because the obvious fix does not work.** The
+gutter is not a `width`:
+
+```
+labelWidth: 30, cssWidth: "30px", maxWidth: "25%"
+```
+
+Atlas clamps `.control-label` with `max-width: 25%`. Setting `width: auto`
+changes nothing — the element is still capped at a quarter of its group, which
+at a 120px control is 30px, and the ellipsis is Atlas's own. `max-width: none`
+is the line that matters. Found by reading the computed style off the element
+rather than by trying rules, which took one command against several guesses.
+
+**Ask:** `LabelPosition: top | left | none` on input widgets. Every screen that
+puts one wide control on its own row needs it, and the CSS workaround has to
+know an Atlas implementation detail to be written at all.
+
+### 120. Two kinds of failure on one row, and the second erases the first
+
+`VALIDATE_ImportBatch` opens by clearing its own verdict:
+
+```sql
+update Ledger.ImportRow set IsValid = true, Problem = '' where Batch = $b
+```
+
+That is correct, and finding 111's predecessor depends on it: without it,
+validating twice accumulates reasons. It stops being correct the moment rows can
+arrive already broken.
+
+A line the parser could not read has no fields to validate — the problem is the
+line. It lands as `IsValid = false` with *"Amount could not be read from
+'niet-een-bedrag' — 2026-08-24;niet-een-bedrag;Marqt;…"*. Then validation runs,
+clears that, and the checks below re-reject the same row for a zero amount. The
+row is still rejected, the count is still right, and **the reason now describes
+a consequence of the failure rather than the failure**. Nobody would ever find
+the stray delimiter from "Amount must be positive".
+
+The fix is one column and one clause — `HasParseError`, and
+`where Batch = $b and HasParseError = false` on the reset. The general shape:
+**a pipeline stage that resets state must know which state is not its to reset.**
+Anywhere two stages can both mark a row bad, the later one owns only its own
+verdict.
+
+Verified end to end, one paste of nine lines: semicolon delimiter detected,
+Dutch header mapped out of order (`Datum;Bedrag;Naam;…` — amount second, not
+fourth), a quoted field containing a comma kept whole, a quoted field containing
+a **newline** landing as one row and arriving in `Transaction.Description` with
+the newline intact, `-24,50` landing as 24.50, `€ 1.234,56` as 1234.56 and
+booked `+1234.56` because its category is income, a blank line skipped, and three
+rows rejected for three different reasons — one parse, one unknown account, one
+short line. 2,588 transactions became 2,592.
+
+### 121. A test harness that runs twice looks exactly like an application bug
+
+Worth one paragraph because the wrong conclusion was one step away. A promote
+reported `Nothing was promoted` while the loader visibly went from seven rows to
+three — four rows had moved and the count said zero. That reads as a defect in
+the statement that returns the affected-row count.
+
+The runtime log settled it in one command:
+
+```
+08:57:02.767 INFO - OQLBULK: PROMOTE_ImportBatch import: promoted 4
+08:57:04.508 INFO - OQLBULK: PROMOTE_ImportBatch import: promoted 0
+```
+
+Two runs, 1.7 seconds apart. A backgrounded copy of the browser test was still
+running against the same app as the foreground one; the second promote found the
+batch already emptied by the first and correctly reported zero. The application
+was right and the harness was wrong.
+
+The general point, and the reason it is numbered: **the log is the arbiter, not
+the screen.** Every action here logs what it did, which cost one line each to
+write and turned a plausible-looking bug into a two-minute diagnosis. The
+statements had already been verified against Postgres in Phase 15; the thing
+that had not been verified was that only one client was talking to the app.

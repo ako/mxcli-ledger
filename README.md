@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 118 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 121 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -318,15 +318,46 @@ cell as a deviation when nothing deviated.
 
 ### Import
 
-Rows land in a loader table first, are checked where they landed, and only the
-ones that pass are written into Transactions.
+Paste the text of a statement export into the box; rows land in a loader table
+first, are checked where they landed, and only the ones that pass are written
+into Transactions.
 
 ![Import](docs/screenshots/import.png)
 
-Every step is one OQL statement over the whole batch — no retrieve, no loop, no
-commit per row. Studio Pro cannot author an OQL statement; these go through
-three Java actions written in MDL (`28-oql-dml.mdl`), and the runtime API they
-call is two lines.
+The paste is deliberately forgiving, because what arrives is a clipboard rather
+than a contract. The delimiter — comma, semicolon or tab — is detected from the
+first line. Quoted fields work, including a field containing the delimiter and a
+field containing a **newline**, which is why the parser is a character state
+machine and not a split on `\n` followed by a split on `,`. A header row is
+detected and its columns mapped by name in any order, in English or Dutch
+(`date`/`datum`, `amount`/`bedrag`, `account`/`rekening`); without one the order
+is date, merchant, description, amount, account, category. Both decimal
+conventions read — `1.234,56` and `1,234.56` both give 1234.56 — and the sign is
+discarded, because direction comes from the category everywhere else in this app.
+
+**A line that cannot be parsed still lands.** It arrives flagged, carrying the
+reason and the line itself, in the same list as the validation failures. An
+import that throws away ninety-nine good rows because the hundredth had a stray
+quote is not a loader table, it is a dialog box.
+
+That is also why `ImportRow` carries `HasParseError` as well as `IsValid`.
+Validation begins by clearing the problem so that running it twice does not
+accumulate reasons; without the flag that reset would erase *"Amount could not be
+read from 'niet-een-bedrag'"* and replace it with whichever symptom the checks
+happened to notice next — describing the consequence instead of the cause.
+
+Everything after landing is one OQL statement over the whole batch — no retrieve,
+no loop, no commit per row. Studio Pro cannot author an OQL statement; these go
+through three Java actions written in MDL (`28-oql-dml.mdl`), and the runtime API
+they call is two lines.
+
+The parser is Java too (`28a-csv-import.mdl`), for the same reason and no other:
+a Mendix microflow expression has no split and no regular expressions, so
+tracking whether you are inside a quoted field would be several hundred
+activities nobody could read. It resolves nothing and decides nothing — every
+field lands as text and the statements below do the rest, because a parser that
+started making judgements would be a second place an import could go wrong
+quietly.
 
 The validation is set-based too: one `UPDATE` per check, stamping a reason onto
 the rows that fail it, each check constrained to rows that are still valid so a
@@ -408,6 +439,7 @@ files apply in dependency order:
 | `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 | `28` | OQL statements: bulk insert/update/delete through Java actions |
+| `28a` | The CSV parser behind the paste box on Import |
 | `29` | The Import screen, and the copy-a-year panel on Budgets |
 
 `16` binds the copy panel to two microflows that `29` defines, so a genuinely
@@ -523,7 +555,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              118 numbered findings — the main deliverable alongside the app
+FINDINGS.md              121 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

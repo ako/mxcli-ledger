@@ -868,3 +868,98 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
         letter-spacing: 0.02em;
     }
 }
+
+// The paste box. Stacked rather than the single row the rules panel uses,
+// because the input here is the tall thing on the screen and the controls read
+// as belonging under it.
+.ledger-paste-panel {
+    padding: 14px 16px;
+    margin-bottom: 12px;
+
+    .ledger-rules-actions {
+        margin-top: 10px;
+        align-items: flex-end;
+    }
+}
+
+.ledger-paste-head {
+    margin-bottom: 10px;
+
+    h5 {
+        margin: 0 0 4px;
+    }
+
+    // The format note is long by design — the whole point of a paste box is
+    // that you should not have to guess what it accepts — so it gets a measure
+    // rather than running the width of the screen.
+    p {
+        max-width: 78ch;
+        margin: 0;
+        font-size: 12.5px;
+        line-height: 1.5;
+    }
+}
+
+// Atlas lays a form group out horizontally: the label in a three-column gutter
+// and the control in the remaining nine. That is right for a form and wrong for
+// both controls here — it strands "CSV" a quarter of a screen away from a
+// full-width box, and it is too narrow for the word "Delimiter", which arrives
+// as "Delim...". MDL has no label-position property (only `Label:`), so the two
+// groups are stacked here instead.
+.ledger-paste-input,
+.ledger-paste-delim {
+    &.form-group {
+        display: block;
+        margin-bottom: 0;
+    }
+
+    > .control-label {
+        display: block;
+        float: none;
+        width: auto;
+        // Atlas clamps the label with max-width: 25%, not width, so setting
+        // width alone leaves it at a quarter of the group — 30px here, which
+        // rendered "Delimiter" as "DEL…" against an ellipsis nobody asked for.
+        max-width: none;
+        padding: 0 0 4px;
+        text-align: left;
+        font-family: var(--ledger-mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ledger-ink-2);
+    }
+
+    > [class^='col-'],
+    > [class*=' col-'] {
+        float: none;
+        width: 100%;
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
+
+.ledger-paste-delim {
+    width: 120px;
+    flex-shrink: 0;
+}
+
+// Height lives here because MDL accepts `rows` on a textarea and drops it
+// (MDL-WIDGET07). min-height rather than height: the widget writes an inline
+// `height: …px !important` that nothing else can outrank, and min-height clamps
+// the used height without arguing with it.
+//
+// Monospace because the thing being pasted is delimited text, and columns that
+// line up are how you see a delimiter guessed wrong. No wrapping, for the same
+// reason — a long description folding into the next line reads as a row break.
+.ledger-paste-input {
+    textarea {
+        min-height: 190px;
+        font-family: var(--ledger-mono);
+        font-size: 12.5px;
+        line-height: 1.55;
+        white-space: pre;
+        overflow-wrap: normal;
+        overflow-x: auto;
+    }
+}
