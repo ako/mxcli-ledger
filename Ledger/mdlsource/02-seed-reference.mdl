@@ -278,6 +278,32 @@ begin
   change $B5 (Ledger.BudgetOverride_Category = $CatRestaurants);
   commit $B5;
 
+  -- Earlier years carry deviations too. Without them the Budgets year selector
+  -- would step back into a grid of thirteen identical baselines and look like
+  -- it had failed to load rather than like a year nobody overrode.
+  --
+  -- These are the same shape as the reference year's: a summer holiday showing
+  -- up as transport and restaurants, a winter energy bill, a December of
+  -- presents.
+  $B6 = create Ledger.BudgetOverride (MonthKey = '2025-08', Amount = 520);
+  change $B6 (Ledger.BudgetOverride_Category = $CatTransport);
+  commit $B6;
+  $B7 = create Ledger.BudgetOverride (MonthKey = '2025-12', Amount = 640);
+  change $B7 (Ledger.BudgetOverride_Category = $CatShopping);
+  commit $B7;
+  $B8 = create Ledger.BudgetOverride (MonthKey = '2025-01', Amount = 290);
+  change $B8 (Ledger.BudgetOverride_Category = $CatUtilities);
+  commit $B8;
+  $B9 = create Ledger.BudgetOverride (MonthKey = '2024-12', Amount = 580);
+  change $B9 (Ledger.BudgetOverride_Category = $CatShopping);
+  commit $B9;
+  $B10 = create Ledger.BudgetOverride (MonthKey = '2024-02', Amount = 265);
+  change $B10 (Ledger.BudgetOverride_Category = $CatUtilities);
+  commit $B10;
+  $B11 = create Ledger.BudgetOverride (MonthKey = '2023-07', Amount = 410);
+  change $B11 (Ledger.BudgetOverride_Category = $CatRestaurants);
+  commit $B11;
+
   -- MARK: Categorisation rules
   -- Evaluated in SortOrder on import; first match wins.
 

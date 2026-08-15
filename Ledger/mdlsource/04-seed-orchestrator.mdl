@@ -9,9 +9,48 @@
 -- ============================================================================
 
 /**
+ * A category's level for a year, compounding its one-year trend backwards.
+ *
+ * The per-category figures below are the ratio between one year and the next,
+ * in permille: 820 means that category cost 82% as much a year earlier. Applying
+ * it once gives the year before the reference year, twice the year before that,
+ * and so on — a category that has been creeping up for five years should look
+ * like it has been creeping up for five years, not like it stepped once.
+ *
+ * Compounding rather than extrapolating linearly is what keeps the early years
+ * sane. Subscriptions at -220 permille a year is a plausible trend; subtracting
+ * 220 four times is 120 permille, which is not a subscription, it is a rounding
+ * error.
+ *
+ * @param $RatioPermille One-year ratio, 1000 being flat
+ * @param $YearsBack How many years before the reference year, 0 for the reference year itself
+ * @returns Level in permille
+ */
+create or modify microflow Ledger.Seed_Level (
+  $RatioPermille: integer,
+  $YearsBack: integer
+)
+returns integer as $Level
+folder 'Demo data'
+begin
+  declare $Level integer = 1000;
+  declare $I integer = 0;
+
+  @annotation 'round() because div is a Decimal even between two Integers, and a Decimal will not go into an Integer (CE0117).'
+  while $I < $YearsBack
+  begin
+    set $Level = round($Level * $RatioPermille div 1000);
+    set $I = $I + 1;
+  end while;
+
+  return $Level;
+end;
+/
+
+/**
  * Seeds one year of transactions across all thirteen categories.
  *
- * Split out of Seed_DemoData so a second year can be generated without
+ * Split out of Seed_DemoData so any number of years can be generated without
  * duplicating thirteen call sites. The only things that vary by year are the
  * date the generator steps off and the per-category level.
  *
@@ -27,36 +66,25 @@ returns integer as $Created
 folder 'Demo data'
 begin
   declare $Created integer = 0;
-  declare $LvlSalary integer = 1000;
-  declare $LvlFreelance integer = 1000;
-  declare $LvlRent integer = 1000;
-  declare $LvlUtilities integer = 1000;
-  declare $LvlInternet integer = 1000;
-  declare $LvlGroceries integer = 1000;
-  declare $LvlRestaurants integer = 1000;
-  declare $LvlTransport integer = 1000;
-  declare $LvlSubs integer = 1000;
-  declare $LvlShopping integer = 1000;
-  declare $LvlHealth integer = 1000;
-  declare $LvlInsurance integer = 1000;
-  declare $LvlSavings integer = 1000;
+  declare $Back integer = 0;
 
-  @annotation 'A year at its baseline is 1000. 2025 is deliberately not flat against 2026, or the year-over-year view would have nothing to find: energy and subscriptions were cheaper then and have since crept up, freelance income was better, and eating out has been cut back. The current year stays at the baseline so every figure documented elsewhere is untouched.'
-  if $Year = 2025 then
-    set $LvlSalary = 960;
-    set $LvlFreelance = 1200;
-    set $LvlRent = 950;
-    set $LvlUtilities = 820;
-    set $LvlInternet = 1050;
-    set $LvlGroceries = 930;
-    set $LvlRestaurants = 1120;
-    set $LvlTransport = 1000;
-    set $LvlSubs = 780;
-    set $LvlShopping = 1080;
-    set $LvlHealth = 1000;
-    set $LvlInsurance = 900;
-    set $LvlSavings = 900;
-  end if;
+  @annotation '2026 is the reference year the whole app is built around — the cashflow views constrain on it and the dashboard reports it. It is the year that sits at its baseline, and every earlier year is a number of years back from it.'
+  set $Back = 2026 - $Year;
+
+  @annotation 'Ratios, not levels: each is what a category cost one year earlier, in permille. Energy and subscriptions have crept up year after year, freelance income has fallen away, eating out has been cut back, and the rest drift gently. The reference year is 1000 across the board, so every figure documented elsewhere is untouched however many years of history exist.'
+  $LvlSalary = call microflow Ledger.Seed_Level (RatioPermille = 960, YearsBack = $Back);
+  $LvlFreelance = call microflow Ledger.Seed_Level (RatioPermille = 1200, YearsBack = $Back);
+  $LvlRent = call microflow Ledger.Seed_Level (RatioPermille = 950, YearsBack = $Back);
+  $LvlUtilities = call microflow Ledger.Seed_Level (RatioPermille = 820, YearsBack = $Back);
+  $LvlInternet = call microflow Ledger.Seed_Level (RatioPermille = 1050, YearsBack = $Back);
+  $LvlGroceries = call microflow Ledger.Seed_Level (RatioPermille = 930, YearsBack = $Back);
+  $LvlRestaurants = call microflow Ledger.Seed_Level (RatioPermille = 1120, YearsBack = $Back);
+  $LvlTransport = call microflow Ledger.Seed_Level (RatioPermille = 1000, YearsBack = $Back);
+  $LvlSubs = call microflow Ledger.Seed_Level (RatioPermille = 780, YearsBack = $Back);
+  $LvlShopping = call microflow Ledger.Seed_Level (RatioPermille = 1080, YearsBack = $Back);
+  $LvlHealth = call microflow Ledger.Seed_Level (RatioPermille = 1000, YearsBack = $Back);
+  $LvlInsurance = call microflow Ledger.Seed_Level (RatioPermille = 900, YearsBack = $Back);
+  $LvlSavings = call microflow Ledger.Seed_Level (RatioPermille = 900, YearsBack = $Back);
 
   retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' limit 1;
   retrieve $AccSpaar from Ledger.Account where Name = 'ING Spaarrekening' limit 1;
@@ -166,12 +194,14 @@ end;
  * Does nothing when data already exists, so it is safe as an after-startup
  * microflow.
  *
- * Two years are generated. 2025 is complete; the current year stops at the
- * month that has happened, so later months carry budgets but no actuals.
+ * Five years are generated: 2022 through 2025 in full, then the reference year
+ * to the month that has happened, so later months carry budgets but no actuals.
+ *
  * History exists so the year-over-year view on the Insights page has something
- * to compare against — and it is additive by construction: VMatrixActual,
- * VCategoryBudget and VMerchantSpend all constrain on 2026, so no figure the
- * Dashboard or Cashflow reports moves because of it.
+ * to compare against and the Budgets year selector has years to select — and it
+ * is additive by construction: VMatrixActual and VCategoryBudget constrain on
+ * 2026, so no figure the Dashboard or Cashflow reports moves however far back
+ * the history runs.
  *
  * @returns Number of transactions created, 0 when seeding was skipped
  */
@@ -182,6 +212,12 @@ begin
   declare $Created integer = 0;
   declare $ThroughMonth integer = 12;
   declare $Year integer = 0;
+  declare $Y integer = 0;
+  declare $Months integer = 12;
+  declare $Prior integer = 0;
+
+  @annotation 'The first year of history. Four full years before the reference year, which is enough for the year-over-year charts to show a trend rather than a step, and enough that the Budgets year selector has somewhere to go.'
+  declare $FirstYear integer = 2022;
 
   retrieve $ExistingAccount from Ledger.Account limit 1;
 
@@ -206,19 +242,34 @@ begin
   retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' limit 1;
   retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' limit 1;
 
-  @annotation 'Last year in full, then this year to date'
-  $Prior = call microflow Ledger.Seed_Year (Year = 2025, ThroughMonth = 12);
-  $Current = call microflow Ledger.Seed_Year (Year = 2026, ThroughMonth = $ThroughMonth);
+  @annotation 'Every year of history in full, then the reference year to date'
+  set $Y = $FirstYear;
+  while $Y <= 2026
+  begin
+    if $Y < 2026 then
+      set $Months = 12;
+    else
+      set $Months = $ThroughMonth;
+    end if;
+
+    $YearCount = call microflow Ledger.Seed_Year (Year = $Y, ThroughMonth = $Months);
+    set $Created = $Created + $YearCount;
+    if $Y < 2026 then
+      set $Prior = $Prior + $YearCount;
+    end if;
+
+    set $Y = $Y + 1;
+  end while;
 
   @annotation 'The review backlog is a property of now, not of history, so it is seeded for the current year only.'
   $N14 = call microflow Ledger.Seed_UncategorisedTransactions (
     AccIng = $AccIng, AccAbn = $AccAbn, ThroughMonth = $ThroughMonth);
 
-  set $Created = $Prior + $Current + $N14;
+  set $Created = $Created + $N14;
 
-  log info node 'LedgerSeed' 'Demo data seeded: {1} transactions ({2} in 2025, {3} in 2026 through month {4})'
+  log info node 'LedgerSeed' 'Demo data seeded: {1} transactions ({2} in {3}-2025, the rest in 2026 through month {4})'
     with ({1} = toString($Created), {2} = toString($Prior),
-          {3} = toString($Current), {4} = toString($ThroughMonth));
+          {3} = toString($FirstYear), {4} = toString($ThroughMonth));
 
   return $Created;
 end;

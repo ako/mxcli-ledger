@@ -21,6 +21,16 @@
 create or modify non-persistent entity Ledger.BudgetRow (
   /** Category name */
   Label: string(100),
+  /**
+   * The year this row was built for.
+   *
+   * Carried on the row rather than passed alongside it, because the two things
+   * that act on a row — rebuilding it after an edit, and opening a cell — are
+   * reached from the grid, where the row is the only thing in hand. A cell
+   * click that had to be told the year separately would be one page edit away
+   * from writing an override into 2026 while the grid showed 2023.
+   */
+  Year: integer default 2026,
   /** Display order, group then category */
   SortOrder: integer default 0,
   /** Baseline, for the popup to offer as a reset */
@@ -41,6 +51,60 @@ create or modify non-persistent entity Ledger.BudgetRow (
   M11Text: string(24), M11IsOverride: boolean default false,
   M12Text: string(24), M12IsOverride: boolean default false
 );
+/
+
+/**
+ * Which year the Budgets grid is showing.
+ *
+ * A page-level object rather than a page parameter: the grid, the heading and
+ * the stepper all read it, and stepping a year is a change-and-refresh on one
+ * object rather than a re-navigation. The same shape ReportContext has on
+ * Cashflow, for the same reason.
+ *
+ * FirstYear and LastYear are the bounds the stepper clamps to. They are
+ * computed from the data, not declared, so importing a decade of history makes
+ * a decade reachable without a model change.
+ */
+create or modify non-persistent entity Ledger.BudgetContext (
+  /** The year on screen */
+  Year: integer default 2026,
+  /** The same year as text. An Integer rendered by a widget picks up the locale's grouping separator, and '2,026' is not a year. */
+  YearText: string(8),
+  /** Earliest year with anything in it */
+  FirstYear: integer default 2026,
+  /** Latest year worth budgeting, always at least one year ahead */
+  LastYear: integer default 2027,
+  /** e.g. '2022-2027 available' */
+  RangeText: string(60),
+  /** True while the year on screen is the earliest / latest */
+  IsFirst: boolean default false,
+  IsLast: boolean default false
+);
+/
+
+grant Ledger.User on Ledger.BudgetContext (create, delete, read *, write *);
+/
+
+/**
+ * The years transactions exist in, one row each.
+ *
+ * The Budgets stepper needs its bounds without dragging every transaction into
+ * memory to find them. Grouping in the database returns one row per year — five
+ * rows against thousands — and the microflow takes the min and max of that.
+ */
+create or modify view entity Ledger.VTransactionYear (
+  Yr: integer,
+  TxCount: integer
+) as (
+  select
+    datepart(YEAR, t.TxDate) as Yr,
+    count(*) as TxCount
+  from Ledger.Transaction as t
+  group by datepart(YEAR, t.TxDate)
+);
+/
+
+grant Ledger.User on Ledger.VTransactionYear (read *);
 /
 
 /**

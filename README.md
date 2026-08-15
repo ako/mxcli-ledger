@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 113 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 118 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -26,10 +26,16 @@ otherwise open four screens to compare.
 ![Dashboard](docs/screenshots/dashboard.png)
 
 A net strip across the top — income above the axis, spend below, net through
-the middle, twenty months. Then the table: each category's own twenty months
+the middle, every month there is. Then the table: each category's own history
 against the band it usually occupies, this year against the same months of last
 year as a bar either side of zero, the year's total direct-labelled, and how
 much of it is standing cost. Clicking a row lists what is behind it.
+
+The span is counted, never written down. The seed generates fifty-six months
+and the caption says fifty-six; it said twenty when the seed generated twenty.
+The one place that had the number as a literal was a panel header inside the
+chart specification, which cannot count anything — so it no longer names a span
+at all, and the caption above it is the single place the figure appears.
 
 The readings are meant to be made in that order and to lead somewhere. A red
 dot is a month more than two deviations above that category's own normal:
@@ -169,7 +175,8 @@ axis was visible immediately.
 ### Insights
 
 Six charts over one datasource, all Vega-Lite through the project's own widget.
-The page reads two years: 2025 in full and 2026 to date.
+It opens on the last two years — 2025 in full and 2026 to date — and the From
+date reaches back to 2022, which is as far as the seed goes.
 
 ![Insights filter](docs/screenshots/insights-filter.png)
 
@@ -281,12 +288,29 @@ string the spec references but never parses.
 
 ### Budgets
 
-The same matrix, editable. Click a cell to set that month's budget; months that
-override the category baseline are marked.
+The same matrix, editable, for any year. Click a cell to set that month's
+budget; months that override the category baseline are marked.
 
 ![Budgets](docs/screenshots/budgets.png)
 
 ![Editing a budget cell](docs/screenshots/budget-edit.png)
+
+A stepper above the grid moves the year, and the arrows disappear at the ends
+of the range rather than sitting there doing nothing. The range is derived, not
+declared — the earliest year with a transaction, through one year past the
+latest, so there is always a blank year ahead to budget into. Nothing about
+that is a constant, so importing older statements makes older years reachable
+without a model change.
+
+Stepping rather than a list of years, for the same reason: a fixed set of
+buttons or an enumeration of years would be wrong the first January after it
+was written.
+
+The year travels on the row rather than beside it. Both things that act on a
+row — rebuilding it after an edit, and opening a cell — are reached from the
+grid, where the row is all there is to hold; a cell click that had to be told
+the year separately is one page edit away from writing an override into 2026
+while the grid shows 2023.
 
 Saving an amount equal to the category baseline **removes** the override rather
 than storing a redundant one — an override equal to the baseline would mark the
@@ -375,16 +399,24 @@ files apply in dependency order:
 
 | Files | Slice |
 |---|---|
-| `01`–`04` | Domain model, enumerations, demo data |
+| `01`–`04` | Domain model, enumerations, demo data — five years, 2022 to date |
 | `05` | Transactions, Accounts, Categories screens |
 | `06`–`11` | Cashflow matrix, shared views, sparkline column, inspector, transaction popup |
-| `12`–`16` | Budgets, per-cell overrides |
+| `12`–`16` | Budgets, per-cell overrides, the year stepper |
 | `17`–`19` | Rules engine |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
 | `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 | `28` | OQL statements: bulk insert/update/delete through Java actions |
 | `29` | The Import screen, and the copy-a-year panel on Budgets |
+
+`16` binds the copy panel to two microflows that `29` defines, so a genuinely
+from-scratch build needs `29` applied before it — `mxcli check --references`
+reports `microflow not found` otherwise. Re-applying the whole set over an
+existing `.mpr` is unaffected, which is why it has not bitten. The panel is
+authored in `16` rather than inserted by `29` because an `ALTER PAGE INSERT`
+from a later file is silently wiped the next time the owning file runs
+(finding 103), and a quiet failure is the worse of the two.
 
 A runtime monitoring pass — what the app actually does under load, and the four
 N+1 datasources it found and fixed (2,194 SELECTs per pass down to 173) — is in
@@ -491,7 +523,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              102 numbered findings — the main deliverable alongside the app
+FINDINGS.md              118 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

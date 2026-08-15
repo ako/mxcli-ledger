@@ -14,20 +14,26 @@
 -- MARK: Formatting helpers
 
 /**
- * Month index to the MonthKey stored on Transaction / BudgetOverride.
+ * Year and month index to the MonthKey stored on Transaction / BudgetOverride.
  *
+ * The year used to be the literal 2026. It is a parameter because the Budgets
+ * screen now edits any year, and a key that silently says 2026 while the grid
+ * says 2024 writes the override into the wrong year — the kind of defect that
+ * looks like the save failing.
+ *
+ * @param $Year Calendar year
  * @param $MonthIndex 1-12
- * @returns 'YYYY-MM' for 2026
+ * @returns 'YYYY-MM'
  */
-create or modify microflow Ledger.FMT_MonthKey ($MonthIndex: integer)
+create or modify microflow Ledger.FMT_MonthKey ($Year: integer, $MonthIndex: integer)
 returns string as $Key
 folder 'Cashflow'
 begin
   declare $Key string = '';
   if $MonthIndex < 10 then
-    set $Key = '2026-0' + toString($MonthIndex);
+    set $Key = toString($Year) + '-0' + toString($MonthIndex);
   else
-    set $Key = '2026-' + toString($MonthIndex);
+    set $Key = toString($Year) + '-' + toString($MonthIndex);
   end if;
   return $Key;
 end;
