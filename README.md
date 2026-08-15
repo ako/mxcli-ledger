@@ -380,7 +380,6 @@ files apply in dependency order:
 | `06`–`11` | Cashflow matrix, shared views, sparkline column, inspector, transaction popup |
 | `12`–`16` | Budgets, per-cell overrides |
 | `17`–`19` | Rules engine |
-| `20`–`21a` | The sunburst and sankey the dashboard used to show — now orphaned |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
 | `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
@@ -405,9 +404,12 @@ cd Ledger
 mxcli widget init -p Ledger.mpr                          # required first — see below
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
 ~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
-mxcli test tests/*.test.mdl -p Ledger.mpr --local        # microflow tests
 mxcli run --local --ensure-db                            # run it
 ```
+
+There is no `mxcli test` step in that list any more. The one suite this project
+had (`tests/sankey.test.mdl`) tested the sankey builder, which is gone — the
+findings it produced, 80 and 93, are in `FINDINGS.md` and still stand.
 
 Three rules learned the hard way and worth stating up front:
 
@@ -497,7 +499,6 @@ docs/widget-recovery.md  open work order — restoring the widget packages
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
 widgets-src/vegachart/   the project's own pluggable widget (Vega-Lite / Vega)
-Ledger/tests/            microflow tests (mxcli test --local)
 Ledger/theme/            Atlas token overrides
 Ledger/themesource/      component styling
 docs/screenshots/        the images above
