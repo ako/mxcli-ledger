@@ -4452,6 +4452,15 @@ text. Neither is fine for a probe that lets one throw.
 
 ---
 
+---
+
+## Phase 16 — a chart that fetches its own data (2026-08-14)
+
+The widget hands the spec and the data over as separate properties, and the data
+has so far always been a string attribute a microflow built. A spec can also
+carry a URL, which would let a chart ask the app for its own rows. The chart half
+works. The publishing half does not, for one reason.
+
 ### 113. MDL cannot set an OData service's association representation, so every published entity fails CE7375
 
 Publishing an OQL view entity as a read-only OData endpoint — aggregation in the
@@ -4516,12 +4525,39 @@ So the model takes the default representation, the default is the one that
 demands the entity's `ID` as key, and there is no spelling of MDL that says
 otherwise.
 
+**What Mendix actually requires of a key.** From the
+[published OData entity reference](https://docs.mendix.com/refguide/published-odata-entity/),
+a key is one or more *attributes* — not the object id — of type Integer, Long,
+String or AutoNumber, and they must be:
+
+| | |
+|---|---|
+| unique | the combination points to exactly one object |
+| required | an empty key value makes the object unfindable |
+| stable | the values must not change, or it cannot be found again |
+
+Composite keys are OData v4 only. A view entity carrying a casted id, or the
+columns that define its grain, satisfies every one of those. Nothing about the
+intended design is unsupported.
+
 **What this is, precisely:** not a Mendix limitation and not a bad error message
 — a published entity keyed on selected attributes is exactly what the reference
-guide describes. It is one property missing from mxcli's OData surface. Setting
-the representation once in Studio Pro would unblock the whole path, and adding
-the property to `knownODataServiceProps` and the metamodel binding would unblock
-it from MDL.
+guide describes. It is one property missing from mxcli's OData surface.
+
+**The ask, for whoever files it.** mxcli needs the service's association
+representation as a settable property. Three places, all in `mxcli`:
+
+1. `modelsdk/gen/odatapublish` — bind the property on
+   `ODataPublish$PublishedODataService2`, which today binds twenty-one and not
+   this one.
+2. `generated/metamodel/types.go` — add it to
+   `ODataPublishPublishedODataService2`.
+3. `mdl/executor/validate_odata_properties.go` — add the name to
+   `knownODataServiceProps`, or the CREATE path rejects it as unknown
+   (MDL-ODATA01).
+
+Until then the workaround is to set it once in Studio Pro, which this project has
+a precedent for (commit `b1856a7`), or to publish through REST instead.
 
 **Published REST is in the grammar** and takes a different shape — resources
 mapping HTTP verbs to microflows — so it does not go near CE7375 and is the
