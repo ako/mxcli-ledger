@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 121 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 125 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -468,12 +468,42 @@ cd Ledger
 mxcli widget init -p Ledger.mpr                          # required first — see below
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
 ~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
+mxcli test tests/ -p Ledger.mpr --local                  # 38 unit tests
 mxcli run --local --ensure-db                            # run it
 ```
 
-There is no `mxcli test` step in that list any more. The one suite this project
-had (`tests/sankey.test.mdl`) tested the sankey builder, which is gone — the
-findings it produced, 80 and 93, are in `FINDINGS.md` and still stand.
+**Not while the app is running.** The test runner rebuilds the deployment
+folder underneath a live app (finding 93) and strips the browser bundle on the
+way out — it says so, and `mxcli run --local` puts it back.
+
+It also leaves `Ledger.mpr` byte-modified even though it reports the project
+restored — the model is restored, the file is not (finding 125). Run the tests
+before staging and discard the file afterwards.
+
+### What is and is not tested
+
+One suite, `tests/csv-import.test.mdl`, over the CSV parser: 38 tests, 512 ms.
+Delimiter detection, quoting, header mapping in two languages, six ways of
+writing an amount, and the rows that fail to parse.
+
+That is the whole of it, and the reason is worth being plain about. The parser
+is the only substantial piece of this app that takes a value and returns a
+value. Everything else reads the database, writes it, or draws it, and a unit
+test over those either seeds a fixture and then tests the fixture, or needs a
+browser. The rest of the project is verified the way the rest of this README
+describes — figures read back out of Postgres, and screenshots.
+
+The suite was checked against deliberate breakage rather than trusted because it
+was green. Inverting the "last separator wins" rule failed three tests, as it
+should. Removing the `abs()` on parsed amounts failed **none** — which was the
+useful result: the character filter drops the minus sign long before `abs()` is
+reached, so that line is unreachable and the test named "a negative amount lands
+positive" is really exercising the filter. The code now says so.
+
+One case is untestable rather than untested: a tab inside an MDL string is
+stored as backslash-t and never reaches the runtime (finding 122), so the
+tab-delimited fixture cannot be written at all. That path is verified in the
+browser instead, where a paste carries real tabs.
 
 Three rules learned the hard way and worth stating up front:
 
@@ -555,7 +585,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              121 numbered findings — the main deliverable alongside the app
+FINDINGS.md              125 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
@@ -563,6 +593,7 @@ docs/widget-recovery.md  open work order — restoring the widget packages
 scripts/setup-tools.sh   idempotent toolchain build
 Ledger/mdlsource/        all MDL source, numbered in dependency order
 widgets-src/vegachart/   the project's own pluggable widget (Vega-Lite / Vega)
+Ledger/tests/            unit tests over the CSV parser (mxcli test --local)
 Ledger/theme/            Atlas token overrides
 Ledger/themesource/      component styling
 docs/screenshots/        the images above

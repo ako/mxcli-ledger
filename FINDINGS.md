@@ -4838,3 +4838,144 @@ the screen.** Every action here logs what it did, which cost one line each to
 write and turned a plausible-looking bug into a two-minute diagnosis. The
 statements had already been verified against Postgres in Phase 15; the thing
 that had not been verified was that only one client was talking to the app.
+
+---
+
+## Phase 19 — putting a unit test back (2026-08-16)
+
+The project went to zero tests when the sankey went, and stayed there. Writing a
+suite over the CSV parser — the one piece of logic that takes a value and
+returns a value — turned up three things.
+
+### 122. A tab inside an MDL string is stored as backslash-t and never reaches the runtime
+
+Two of the first forty tests failed, both about tab-delimited input, and both
+for the same reason: the fixture had no tabs in it by the time it ran.
+
+The file has real tab bytes — `od -c` shows `\t` between the fields. What the
+model holds is something else:
+
+```
+/** @test length of a two-field tab string
+ *  @expect $len = 3 */
+declare $s string = 'a<TAB>b';
+set $len = length($s);
+
+FAIL  expected $len = 3, actual: 4
+```
+
+Four, not three. And not a space either — the value compares unequal to `'a b'`.
+Two further probes pin it exactly:
+
+```
+PASS  a tab literal equals a backslash-t literal      ('a<TAB>b' = 'a\tb')
+PASS  a backslash-t source literal also measures 4     length('a\tb') = 4
+```
+
+So a tab byte in a single-quoted MDL string is serialized as the **two
+characters** backslash and `t`. The runtime receives `a\tb`, and a tab-delimited
+CSV fixture arrives as one unsplit field.
+
+**Nothing in MDL can work around it.** There is no character-code function to
+build a tab from, and no string in the model contains one to slice out. The
+fixture is unwritable, not merely awkward — which is a different and worse thing
+than an escaping inconvenience, because there is no amount of care that fixes it.
+
+The feature is unaffected: a paste carries real tabs from the browser and never
+passes through MDL serialization. Verified in the app — tab-separated text
+detected and landed correctly, two rows, right amounts and accounts. Only the
+*test* is impossible.
+
+**Ask:** either round-trip the tab, or reject it at parse time. Silently
+substituting two characters for one is the failure mode this file keeps
+recording — the value that comes back is not the value that went in, and nothing
+says so.
+
+### 123. `@verify` is documented and not implemented — and says so loudly
+
+The project's own `test-microflows` skill lists `@verify <oql>` as one of five
+annotations, with an example. The runner rejects it:
+
+```
+ERROR: @verify select count(*) from Ledger.ImportRow where Batch = 't-comma' = 1:
+  @verify is not implemented — no runner evaluates it, so it would assert
+  nothing. Assert on the microflow's own result with @expect instead
+```
+
+That is the right behaviour, stated well, and worth recording as a **good**
+example rather than a complaint. An unimplemented assertion that was quietly
+skipped would be worse than useless: a suite full of green `@verify` lines
+asserting nothing, which is a test suite that actively lies. The error names the
+annotation, says what would happen, and gives the alternative.
+
+The gap is the documentation, not the runner. Post-conditions are written by
+retrieving the landed rows in the test body and asserting with `@expect`:
+
+```
+$n = call java action Ledger.CSV_LandImportRows (Csv = '…', Batch = 't-x', …);
+retrieve $row from Ledger.ImportRow where Batch = 't-x' limit 1;
+/** @expect $row/Amount = 61.20 */
+```
+
+Which is better anyway — the assertion is in the runner's own language rather
+than a second query language embedded in a comment.
+
+**Ask:** drop `@verify` from `.ai-context/skills/test-microflows.md`, or mark it
+unimplemented there.
+
+### 124. A green suite proved a line of the parser is unreachable
+
+Thirty-eight tests passed, which says nothing on its own. Two deliberate
+mutations, applied together:
+
+| Mutation | Result |
+|---|---|
+| Invert "the last separator is the decimal one" | **3 tests failed** — Dutch, English, currency |
+| Remove `.abs()` from the parsed amount | **0 tests failed** |
+
+The second is the useful one. The test named *"a negative amount lands
+positive"* passes with or without `abs()`, because the character filter above it
+keeps only digits, `.` and `,` — a minus sign or a bracketed negative is
+discarded before `BigDecimal` ever sees the text. `abs()` cannot fire. The test
+is correct about the observable behaviour and wrong about why.
+
+That matters for the next edit rather than this one. Widening the filter to
+carry `-` through is a plausible change if someone wants signed amounts, and the
+test would keep passing while `abs()` silently threw the sign away again. The
+code now says which line is doing the work, and why the other one is still
+there.
+
+**The general point: a suite that has never failed has not been tested.** Two
+mutations and one rebuild were enough to find a dead line and confirm the rest
+bites — cheaper than the suite was to write.
+
+### 125. `mxcli test` leaves the `.mpr` modified after it says "project restored"
+
+The runner writes a `MxTest` module with one microflow per test, sets security
+off and after-startup to its own endpoint, runs, then puts everything back:
+
+```
+Cleaning up...
+  project restored
+```
+
+The model *is* restored — `SHOW MODULES` finds no `MxTest` afterwards, and the
+Ledger module still has its 84 microflows. The **file** is not:
+
+```
+$ git status --short
+ M Ledger/Ledger.mpr
+```
+
+Byte-level churn from the write-and-restore cycle, on a tree that was clean
+before the run. Harmless to the model, and `git checkout -- Ledger.mpr`
+discards it with `mx check` still reporting 0 errors.
+
+It is worth knowing because of where it lands. A committed `.mpr` plus a test
+command that dirties it means every test run shows up as an uncommitted change,
+which is exactly the signal a pre-commit hook, a CI dirty-tree check, or a
+person reading `git status` is watching for. Run the tests before staging, not
+after, and expect to discard the file.
+
+**Ask:** restore the file bytes, or say in the cleanup line that the file will
+differ. "project restored" currently means the model, and reads as the file.

@@ -237,6 +237,13 @@ public class CSV_LandImportRows extends UserAction<java.lang.Long>
 		    }
 		
 		    try {
+		        // The sign is already gone: the filter above keeps only digits, '.' and
+		        // ',', so a minus or a bracketed negative never reaches here and t
+		        // cannot parse negative. abs() is therefore unreachable today — it is
+		        // kept as a guard for the one edit that would reintroduce a sign, which
+		        // is widening that filter to carry '-' through. Mutation testing found
+		        // this: removing abs() breaks no test, because the filter is what the
+		        // "a negative amount lands positive" test is really exercising.
 		        return new java.math.BigDecimal(t).abs();
 		    } catch (NumberFormatException e) {
 		        return null;

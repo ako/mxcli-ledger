@@ -1,0 +1,502 @@
+-- ============================================================================
+-- CSV_LandImportRows — parser tests
+-- ============================================================================
+-- Run with:  mxcli test tests/csv-import.test.mdl -p Ledger.mpr --local
+--
+-- NOT while `mxcli run` is live: the runner rebuilds the deployment folder
+-- underneath a running app (FINDINGS 93). It also strips the browser bundle on
+-- the way out and says so — `mxcli run --local` afterwards restores it.
+--
+-- WHY THIS IS THE THING THAT GETS TESTED. It is the one piece of logic in the
+-- project that takes a value and returns a value. Everything else either reads
+-- the database, writes it, or renders it, and asserting on those means either
+-- seeding a fixture and then testing the fixture, or a browser. The parser
+-- resolves nothing and decides nothing about meaning — text in, ImportRow out —
+-- so every assertion below is about the code and none of it is about the data.
+--
+-- HOW THE ASSERTIONS WORK. `@verify <oql>` is documented in the project's own
+-- skills but the runner rejects it as unimplemented, so post-conditions are
+-- written by retrieving the landed rows in the test body and asserting on them
+-- with `@expect`. Each test lands under its own batch and every retrieve
+-- constrains on it, so the tests are independent of each other and of anything
+-- else in the database.
+--
+-- The amount cases are the ones worth having. A statement export can write
+-- 61.20, 61,20, EUR 1.234,56 or 1,234.56 for the same kind of number, and the
+-- rule that reads all four — whichever separator appears last is the decimal
+-- one — is the sort of thing that looks like an over-complication until it is
+-- removed.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Delimiters
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test Comma is the default when nothing else is more frequent
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,Albert Heijn,boodschappen,61.20,ING,Groceries',
+  Batch = 't-comma', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-comma' limit 1;
+/
+
+/**
+ * @test Semicolon is detected over comma
+ * @expect $row/Merchant = 'Albert Heijn'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Albert Heijn;boodschappen;61,20;ING;Groceries',
+  Batch = 't-semi', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-semi' limit 1;
+/
+
+/**
+ * A semicolon export whose description is full of commas. Counting delimiters
+ * without regard for quotes would call this comma-separated and shred it.
+ *
+ * @test Commas inside quotes do not win the delimiter vote
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Albert Heijn;"een, twee, drie, vier";61,20;ING;Groceries',
+  Batch = 't-vote', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-vote' limit 1;
+/
+
+/**
+ * @test An explicit delimiter overrides detection
+ * @expect $row/Merchant = 'Albert Heijn'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20|Albert Heijn|boodschappen|61.20|ING|Groceries',
+  Batch = 't-forced', Delimiter = '|');
+retrieve $row from Ledger.ImportRow where Batch = 't-forced' limit 1;
+/
+
+-- THE TAB-DELIMITED CASE IS NOT TESTED HERE, AND CANNOT BE.
+--
+-- A real tab byte inside an MDL single-quoted string is stored in the model as
+-- the two characters backslash and 't', not as a tab (FINDINGS 122, measured:
+-- length('a<TAB>b') returns 4, and the value compares equal to 'a\t' + 'b').
+-- The tab never reaches the runtime, so a tab-delimited fixture written here
+-- arrives as a single unsplit field and the row lands as a parse error — the
+-- test would fail for a reason that has nothing to do with the parser.
+--
+-- Nothing in MDL can construct a tab either: there is no character-code
+-- function to build one from, and no string in the model contains one to slice.
+-- So the fixture is unwritable rather than merely awkward.
+--
+-- The path itself is fine, which is the part that matters and had to be checked
+-- rather than assumed: pasting tab-separated text into the Import screen in a
+-- browser lands correctly, because a paste carries real tabs from the client
+-- and never passes through MDL serialization. Verified — header detected, tab
+-- delimiter detected, two rows landed with the right amounts and accounts.
+-- Re-check it there, not here, if the delimiter logic changes.
+
+-- ---------------------------------------------------------------------------
+-- Quoting
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test A quoted delimiter stays inside its field
+ * @expect $row/Description = 'Boodschappen, week 34'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,Albert Heijn,"Boodschappen, week 34",61.20,ING,Groceries',
+  Batch = 't-qdelim', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-qdelim' limit 1;
+/
+
+/**
+ * The case that makes this a state machine rather than two splits: the record
+ * spans two physical lines and is still one row. If quoting were ignored this
+ * lands as two rows, both malformed.
+ *
+ * @test A quoted newline stays inside its field
+ * @expect $c = 1
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-22,Koelewijn Holding BV,"SEPA overboeking
+tweede regel",4200.00,ING,Salary',
+  Batch = 't-qnl', Delimiter = '');
+retrieve $rows from Ledger.ImportRow where Batch = 't-qnl';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * @test A field spanning two lines keeps both of them
+ * @expect $row/Amount = 4200.00
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-22,Koelewijn Holding BV,"SEPA overboeking
+tweede regel",4200.00,ING,Salary',
+  Batch = 't-qnl2', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-qnl2' limit 1;
+/
+
+/**
+ * @test A doubled quote is a literal quote
+ * @expect $row/Merchant = 'De "Gouden" Leeuw'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,"De ""Gouden"" Leeuw",diner,61.20,ABN,Restaurants',
+  Batch = 't-qq', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-qq' limit 1;
+/
+
+-- ---------------------------------------------------------------------------
+-- Header detection and column mapping
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test A header row is recognised and not landed as data
+ * @expect $c = 1
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'date,merchant,description,amount,account,category
+2026-08-20,Albert Heijn,boodschappen,61.20,ING,Groceries',
+  Batch = 't-head', Delimiter = '');
+retrieve $rows from Ledger.ImportRow where Batch = 't-head';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * Amount second rather than fourth. Without header mapping this lands the
+ * merchant name in the amount column and rejects the row.
+ *
+ * @test Header columns map by name, in any order
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'date,amount,merchant,description,account,category
+2026-08-20,61.20,Albert Heijn,boodschappen,ING,Groceries',
+  Batch = 't-order', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-order' limit 1;
+/
+
+/**
+ * @test A reordered header puts the merchant in the merchant column
+ * @expect $row/Merchant = 'Albert Heijn'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'date,amount,merchant,description,account,category
+2026-08-20,61.20,Albert Heijn,boodschappen,ING,Groceries',
+  Batch = 't-order2', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-order2' limit 1;
+/
+
+/**
+ * @test Dutch header names map
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'Datum;Bedrag;Naam;Omschrijving;Rekening;Categorie
+2026-08-20;61,20;Albert Heijn;boodschappen;ING;Groceries',
+  Batch = 't-nl', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-nl' limit 1;
+/
+
+/**
+ * @test A Dutch header maps the account column too
+ * @expect $row/AccountName = 'ING'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'Datum;Bedrag;Naam;Omschrijving;Rekening;Categorie
+2026-08-20;61,20;Albert Heijn;boodschappen;ING;Groceries',
+  Batch = 't-nl2', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-nl2' limit 1;
+/
+
+/**
+ * @test Without a header the fixed column order applies
+ * @expect $row/CategoryName = 'Groceries'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,Albert Heijn,boodschappen,61.20,ING,Groceries',
+  Batch = 't-nohead', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-nohead' limit 1;
+/
+
+/**
+ * @test Without a header the first column is the date
+ * @expect $row/TxDateText = '2026-08-20'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,Albert Heijn,boodschappen,61.20,ING,Groceries',
+  Batch = 't-nohead2', Delimiter = '');
+retrieve $row from Ledger.ImportRow where Batch = 't-nohead2' limit 1;
+/
+
+-- ---------------------------------------------------------------------------
+-- Amounts
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test A plain decimal point reads as a decimal point
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,X,y,61.20,ING,Groceries', Batch = 't-amt-dot', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-dot' limit 1;
+/
+
+/**
+ * @test A lone comma with two digits behind it is a decimal comma
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;61,20;ING;Groceries', Batch = 't-amt-comma', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-comma' limit 1;
+/
+
+/**
+ * @test A lone comma with three digits behind it is a thousands separator
+ * @expect $row/Amount = 1234
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;1,234;ING;Groceries', Batch = 't-amt-thou', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-thou' limit 1;
+/
+
+/**
+ * @test Dutch grouping and decimal together
+ * @expect $row/Amount = 1234.56
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;1.234,56;ING;Groceries', Batch = 't-amt-nl', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-nl' limit 1;
+/
+
+/**
+ * @test English grouping and decimal together
+ * @expect $row/Amount = 1234.56
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,X,y,"1,234.56",ING,Groceries', Batch = 't-amt-en', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-en' limit 1;
+/
+
+/**
+ * @test Repeated grouping dots collapse and the last one decides
+ * @expect $row/Amount = 1234.56
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;1.234.56;ING;Groceries', Batch = 't-amt-dots', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-dots' limit 1;
+/
+
+/**
+ * @test A currency symbol and spaces are stripped
+ * @expect $row/Amount = 1234.56
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;€ 1.234,56;ING;Groceries', Batch = 't-amt-cur', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-cur' limit 1;
+/
+
+/**
+ * The sign is deliberately discarded: direction comes from the category
+ * everywhere else in this app, and Amount is documented as always positive.
+ * A statement export writing -24,50 for a payment must land 24.50.
+ *
+ * @test A negative amount lands positive
+ * @expect $row/Amount = 24.50
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;-24,50;ING;Groceries', Batch = 't-amt-neg', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-neg' limit 1;
+/
+
+/**
+ * @test An amount in parentheses lands positive too
+ * @expect $row/Amount = 24.50
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;X;y;(24,50);ING;Groceries', Batch = 't-amt-paren', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-amt-paren' limit 1;
+/
+
+-- ---------------------------------------------------------------------------
+-- Rows that cannot be read still land, flagged
+-- ---------------------------------------------------------------------------
+
+/**
+ * The whole argument for a loader table: the bad row arrives, it does not
+ * abort the good ones, and it carries why.
+ *
+ * @test A bad row does not stop the good row beside it
+ * @expect $c = 2
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Marqt;y;niet-een-bedrag;ING;Groceries
+2026-08-21;Albert Heijn;y;61,20;ING;Groceries',
+  Batch = 't-bad-both', Delimiter = ';');
+retrieve $rows from Ledger.ImportRow where Batch = 't-bad-both';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * @test The good row beside a bad one is not itself flagged
+ * @expect $row/Amount = 61.20
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Marqt;y;niet-een-bedrag;ING;Groceries
+2026-08-21;Albert Heijn;y;61,20;ING;Groceries',
+  Batch = 't-bad-good', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-bad-good' and HasParseError = false limit 1;
+/
+
+/**
+ * @test An unreadable amount is flagged as a parse error
+ * @expect $row/HasParseError = true
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Marqt;y;niet-een-bedrag;ING;Groceries',
+  Batch = 't-bad-flag', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-bad-flag' limit 1;
+/
+
+/**
+ * @test A flagged row is invalid, so validation and promotion skip it
+ * @expect $row/IsValid = false
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Marqt;y;niet-een-bedrag;ING;Groceries',
+  Batch = 't-bad-valid', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-bad-valid' limit 1;
+/
+
+/**
+ * A flagged row still carries the fields that did parse, so the reject list
+ * shows which line it was rather than a blank row with a reason.
+ *
+ * @test A flagged row keeps the fields that did parse
+ * @expect $row/Merchant = 'Marqt'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20;Marqt;y;niet-een-bedrag;ING;Groceries',
+  Batch = 't-bad-keep', Delimiter = ';');
+retrieve $row from Ledger.ImportRow where Batch = 't-bad-keep' limit 1;
+/
+
+/**
+ * @test A line with too few columns lands flagged rather than being dropped
+ * @expect $row/HasParseError = true
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-26', Batch = 't-short', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-short' limit 1;
+/
+
+-- ---------------------------------------------------------------------------
+-- Whitespace and emptiness
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test Blank lines between records are skipped
+ * @expect $c = 2
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,X,y,1.00,ING,Groceries
+
+2026-08-21,Z,y,2.00,ING,Groceries',
+  Batch = 't-blank', Delimiter = ',');
+retrieve $rows from Ledger.ImportRow where Batch = 't-blank';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * @test A trailing newline does not land an empty row
+ * @expect $c = 1
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,X,y,1.00,ING,Groceries
+',
+  Batch = 't-trail', Delimiter = ',');
+retrieve $rows from Ledger.ImportRow where Batch = 't-trail';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * @test Empty text lands nothing
+ * @expect $n = 0
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '', Batch = 't-empty', Delimiter = ',');
+/
+
+/**
+ * @test Whitespace-only text lands nothing
+ * @expect $n = 0
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '
+  ', Batch = 't-ws', Delimiter = ',');
+/
+
+-- ---------------------------------------------------------------------------
+-- Row numbering and batching
+-- ---------------------------------------------------------------------------
+
+/**
+ * RowNo orders the reject list, so it counts data rows from 1 and does not
+ * count the header.
+ *
+ * @test RowNo starts at one on the first data row, not the header
+ * @expect $row/Merchant = 'A'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'date,merchant,description,amount,account,category
+2026-08-20,A,y,1.00,ING,Groceries
+2026-08-21,B,y,2.00,ING,Groceries
+2026-08-22,C,y,3.00,ING,Groceries',
+  Batch = 't-rowno', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-rowno' and RowNo = 1 limit 1;
+/
+
+/**
+ * @test RowNo runs to the last data row
+ * @expect $row/Merchant = 'C'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'date,merchant,description,amount,account,category
+2026-08-20,A,y,1.00,ING,Groceries
+2026-08-21,B,y,2.00,ING,Groceries
+2026-08-22,C,y,3.00,ING,Groceries',
+  Batch = 't-rowno2', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-rowno2' and RowNo = 3 limit 1;
+/
+
+/**
+ * The parser only ever adds. Replacing a batch is the caller's decision, and
+ * ACT_ImportPaste makes it — see the note there on why a paste replaces.
+ *
+ * @test Landing does not touch another batch
+ * @expect $c = 1
+ */
+$first = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,A,y,1.00,ING,Groceries', Batch = 't-iso-a', Delimiter = ',');
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-21,B,y,2.00,ING,Groceries', Batch = 't-iso-b', Delimiter = ',');
+retrieve $rows from Ledger.ImportRow where Batch = 't-iso-a';
+declare $c integer = 0;
+set $c = length($rows);
+/
+
+/**
+ * @test Two batches land side by side without merging
+ * @expect $row/Merchant = 'B'
+ */
+$first = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-20,A,y,1.00,ING,Groceries', Batch = 't-iso-c', Delimiter = ',');
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '2026-08-21,B,y,2.00,ING,Groceries', Batch = 't-iso-d', Delimiter = ',');
+retrieve $row from Ledger.ImportRow where Batch = 't-iso-d' limit 1;
+/
