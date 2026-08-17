@@ -51,7 +51,7 @@ function cleanDatum(datum: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function VegaChart(props: VegaChartContainerProps): ReactElement {
-    const { spec, chartData, datasetName, chartHeight, renderer, showActions, selection, onClick } = props;
+    const { spec, chartData, dataUrl, datasetName, chartHeight, renderer, showActions, selection, onClick } = props;
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EmbedResult | null>(null);
     const [error, setError] = useState<string>();
@@ -63,6 +63,7 @@ export function VegaChart(props: VegaChartContainerProps): ReactElement {
     clickRef.current = { selection, onClick };
 
     const dataValue = chartData?.status === "available" ? chartData.value : undefined;
+    const urlValue = dataUrl?.status === "available" ? dataUrl.value : undefined;
 
     // The spec is static and the data is not, so they are parsed apart. Only the
     // data changes between renders, and re-parsing a spec on every model update
@@ -80,6 +81,19 @@ export function VegaChart(props: VegaChartContainerProps): ReactElement {
         if (!parsedSpec.value) {
             return undefined;
         }
+        // A URL replaces the spec's top-level data and wins over bound values:
+        // the two are alternatives, and a chart handed both would fetch a
+        // payload and then draw the other one.
+        if (urlValue) {
+            const next = { ...(parsedSpec.value as Record<string, unknown>) };
+            const existing = (next.data as Record<string, unknown>) ?? {};
+            // `name` and `url` cannot coexist — a named dataset is inline values
+            // by definition — so the name is dropped rather than left to make an
+            // invalid spec that fails somewhere less obvious.
+            const { name: _named, ...rest } = existing;
+            next.data = { ...rest, url: urlValue };
+            return next as VisualizationSpec;
+        }
         if (!parsedData.value) {
             return parsedSpec.value;
         }
@@ -90,7 +104,7 @@ export function VegaChart(props: VegaChartContainerProps): ReactElement {
             next.data = { values: parsedData.value };
         }
         return next as VisualizationSpec;
-    }, [parsedSpec.value, parsedData.value, datasetName]);
+    }, [parsedSpec.value, parsedData.value, datasetName, urlValue]);
 
     useEffect(() => {
         const message = parsedSpec.error ?? parsedData.error;

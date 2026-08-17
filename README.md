@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 126 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 130 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -174,9 +174,39 @@ axis was visible immediately.
 
 ### Insights
 
-Six charts over one datasource, all Vega-Lite through the project's own widget.
-It opens on the last two years — 2025 in full and 2026 to date — and the From
-date reaches back to 2022, which is as far as the seed goes.
+Six charts, all Vega-Lite through the project's own widget. It opens on the last
+two years — 2025 in full and 2026 to date — and the From date reaches back to
+2022, which is as far as the seed goes.
+
+**Five of the six read a JSON string the model built. The sixth fetches its own
+data**, and the split is not stylistic. The five are aggregates — a month per
+category, a day, a merchant — so their payloads stay small however much history
+exists. The scatter is deliberately *not* aggregated: it draws one dot per
+transaction, which is the whole point of it, so its size is a function of the
+database rather than of the taxonomy. It is the only chart here that would
+eventually break, and the thing that would break is not the drawing.
+
+Building JSON by concatenation in a microflow costs about 0.4 ms a row once the
+string is large — 50,000 rows is roughly twenty seconds before anything is sent,
+against 0.6 s to draw the same 50,000 points on a canvas. So the scatter reads a
+published OData feed instead, and the reader's filter reaches it as `$filter` on
+a URL computed in the model. Measured over five years, three warm samples each
+way:
+
+| | attribute | feed |
+|---|---|---|
+| server microflow | 1,096–1,852 ms | **547–586 ms** |
+| click → drawn | 2,939–3,518 ms | **2,253–2,448 ms** |
+| page payload | 493 KB | **261 KB** |
+| total bytes | **493 KB** | 735 KB |
+| marks rendered | 7,891 | 7,891 |
+
+Total bytes went up, and that is the honest cost: OData is more verbose than the
+compact JSON the builder emitted, and the two charts that share the URL fetch it
+**twice** — Mendix sends no cache headers at all, so the browser has nothing to
+revalidate against (finding 127). `$select` naming only the five encoded fields
+recovered 41% of it. The server-side win is the one that scales; the byte count
+is the one that does not.
 
 ![Insights filter](docs/screenshots/insights-filter.png)
 
@@ -436,7 +466,7 @@ files apply in dependency order:
 | `12`–`16` | Budgets, per-cell overrides, the year stepper |
 | `17`–`19` | Rules engine |
 | `21b`–`22` | Dashboard: the overview table and what is behind a row |
-| `24`–`26` | Insights: aggregate views (including the two-grain year-over-year), payloads, six charts |
+| `24`, `24a`, `25`–`26` | Insights: aggregate views (including the two-grain year-over-year), the published feed the scatter fetches, payloads, six charts |
 | `27` | Navigation — the single owner of the menu, applied last |
 | `28` | OQL statements: bulk insert/update/delete through Java actions |
 | `28a` | The CSV parser behind the paste box on Import |
@@ -585,7 +615,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              126 numbered findings — the main deliverable alongside the app
+FINDINGS.md              130 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

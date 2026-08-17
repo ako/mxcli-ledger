@@ -33,8 +33,19 @@
 create or modify non-persistent entity Ledger.InsightsContext (
   /** Signed monthly totals per category, both years */
   StreamData: string,
-  /** One row per expense transaction — feeds the scatter and the outlier view */
-  TxData: string,
+  /**
+   * The address the scatter and the outlier view fetch for themselves.
+   *
+   * These two charts read row-level data rather than an aggregate, so their
+   * payload grows with the database and nothing about their design will stop
+   * it. They are the only charts here that do not go through a JSON string
+   * built in a microflow — see 24a-insights-feed.mdl for why that mattered.
+   *
+   * It is a computed attribute rather than a URL written into the spec because
+   * the spec is a static string: a filter the reader chose cannot reach a URL
+   * baked into it.
+   */
+  ScatterUrl: string,
   /** Spend per calendar day */
   CalendarData: string,
   /** Recurring merchants with a projected annual cost */
@@ -115,36 +126,56 @@ end;
 /
 
 /**
- * One row per expense transaction.
+ * The address the scatter fetches, with the reader's filter encoded into it.
  *
- * Income is excluded: a salary is an order of magnitude above every expense
- * and would flatten the whole scatter into a band at the bottom. Filtered on
- * GroupTypeName rather than on the group's display name.
+ * This replaced BUILD_TxData, which retrieved every expense row and
+ * concatenated it into JSON. The rows are identical; only the route changed.
+ * Income is still excluded, now by the view behind the feed rather than here.
  *
- * @param $Rows VTransactionLine
- * @returns JSON array
+ * THE FILTER IS BUILT HERE FOR A REASON. The specification is a static string,
+ * so a URL written inside it can only ever be a constant — the period, category
+ * and account a reader chose could never reach it. Building the address in the
+ * model puts the query where the filter already lives, and puts the escaping
+ * somewhere it can be done: a merchant or category containing an apostrophe
+ * would otherwise close the OData string literal early and take the whole
+ * request down with it.
+ *
+ * @param $FromDate Start of the period, inclusive
+ * @param $ToDate End of the period, inclusive
+ * @param $CategoryName Category filter, or empty for all
+ * @param $AccountName Account filter, or empty for all
+ * @returns A relative OData URL
  */
-create or modify microflow Ledger.BUILD_TxData (
-  $Rows: list of Ledger.VTransactionLine
+create or modify microflow Ledger.BUILD_ScatterUrl (
+  $FromDate: datetime,
+  $ToDate: datetime,
+  $CategoryName: string,
+  $AccountName: string
 )
-returns string as $Json
+returns string as $Url
 folder 'Insights'
 begin
-  declare $Json string = '';
-  declare $Sep string = '';
+  declare $Url string = '';
+  declare $Filter string = '';
 
-  loop $R in $Rows
-  begin
-    set $Json = $Json + $Sep
-      + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
-      + ',"cat":"' + $R/CategoryName + '"'
-      + ',"grp":"' + $R/GroupName + '"'
-      + ',"m":"' + $R/Merchant + '"'
-      + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
-    set $Sep = ',';
-  end loop;
+  @annotation 'OData datetime literals are unquoted ISO-8601 with a Z. A quoted one is a string and the service answers 400.'
+  set $Filter = 'd ge ' + formatDateTime($FromDate, 'yyyy-MM-dd') + 'T00:00:00Z'
+    + ' and d le ' + formatDateTime($ToDate, 'yyyy-MM-dd') + 'T23:59:59Z';
 
-  return '[' + $Json + ']';
+  @annotation 'An apostrophe is doubled inside an OData string literal, the same rule SQL uses. Without this a merchant called O''Brien ends the literal early and the service rejects the whole query — the filter is built here rather than in the spec precisely so it can be escaped.'
+  if $CategoryName != '' then
+    set $Filter = $Filter + ' and cat eq ''' + replaceAll($CategoryName, '''', '''''') + '''';
+  end if;
+  if $AccountName != '' then
+    set $Filter = $Filter + ' and AccountName eq ''' + replaceAll($AccountName, '''', '''''') + '''';
+  end if;
+
+  @annotation 'A relative path, so the request is same-origin and carries the session cookie without any token handling.'
+  @annotation '$select names only the five fields the two specs encode. Without it the feed also sends RowKey, Yr and AccountName — the key OData requires and two columns that exist only so the filter can use them — which is 41% of the payload for data nothing draws: 416 KB against 244 KB over the five-year window, measured. It also drops the row key, which is safe here precisely because the charts never read it.'
+  set $Url = '/odata/insights/v1/Expenses?$filter=' + $Filter
+    + '&$select=d,cat,grp,m,v&$orderby=d';
+
+  return $Url;
 end;
 /
 
@@ -364,14 +395,7 @@ begin
       and ($AccName = '' or AccountName = $AccName)]
     sort by CategoryName asc, Yr asc, MonthIndex asc;
 
-  @annotation 'Income is excluded here rather than in the builder: a salary is an order of magnitude above every expense and would flatten the scatter into a band at the bottom.'
-  retrieve $Lines from Ledger.VTransactionLine
-    where [GroupTypeName = 'Expense'
-      and TxDate >= $Context/FromDate and TxDate <= $Context/ToDate
-      and ($CatName = '' or CategoryName = $CatName)
-      and ($AccName = '' or AccountName = $AccName)]
-    sort by TxDate asc;
-
+  @annotation 'The scatter no longer retrieves. It reads a published feed instead, so the rows never enter this microflow, never become a concatenated string, and never travel as page state. This retrieve was the largest on the page — 2,352 rows against 952, 234 and 13 for the aggregates — and it grew with the database while the others grew with the taxonomy. All that is built here now is the address.'
   retrieve $Days from Ledger.VDaySpend
     where [TxDate >= $Context/FromDate and TxDate <= $Context/ToDate
       and ($CatName = '' or CategoryName = $CatName)
@@ -400,7 +424,9 @@ begin
   set $Through = $ThroughCalc;
 
   $Stream = call microflow Ledger.BUILD_StreamData (Rows = $Months);
-  $Tx = call microflow Ledger.BUILD_TxData (Rows = $Lines);
+  $Tx = call microflow Ledger.BUILD_ScatterUrl (
+    FromDate = $Context/FromDate, ToDate = $Context/ToDate,
+    CategoryName = $CatName, AccountName = $AccName);
   $Cal = call microflow Ledger.BUILD_CalendarData (Rows = $Days);
   $Sav = call microflow Ledger.BUILD_SavingsData (Rows = $Merchants);
   $YoY = call microflow Ledger.BUILD_YoYData (Rows = $YoYRows);
@@ -433,7 +459,7 @@ begin
 
   change $Context (
     StreamData = $Stream,
-    TxData = $Tx,
+    ScatterUrl = $Tx,
     CalendarData = $Cal,
     SavingsData = $Sav,
     YoYData = $YoY,
@@ -506,7 +532,7 @@ end;
 
 grant execute on microflow Ledger.BUILD_StreamData to Ledger.User;
 /
-grant execute on microflow Ledger.BUILD_TxData to Ledger.User;
+grant execute on microflow Ledger.BUILD_ScatterUrl to Ledger.User;
 /
 grant execute on microflow Ledger.BUILD_CalendarData to Ledger.User;
 /

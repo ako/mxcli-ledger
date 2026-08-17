@@ -55,7 +55,26 @@ Two rules worth carrying in your head:
 attribute, `chartData` binds to it, and the widget folds it into the spec. Nothing
 is fetched; the payload arrives with the page.
 
-**As a URL.** Leave `chartData` unbound and put the address in the spec:
+**As a URL.** Bind `dataUrl` to a string attribute the model computes. It
+replaces the spec's top-level data, and anything already on that data — notably
+`format` — survives, which is where an OData envelope is unwrapped:
+
+```
+pluggablewidget 'acme.widget.web.vegachart.VegaChart' chartScatter (
+  dataUrl: ScatterUrl,          -- computed by a microflow, filter and all
+  chartHeight: 0, renderer: 'svg', showActions: false,
+  spec: '{ … "data": {"name": "table", "format": {"type": "json", "property": "value"}} … }')
+```
+
+**Bind it; do not write the URL into the spec.** The spec is a static string, so
+a URL inside it is a constant — a period, a category or an account the reader
+chose can never reach it. Computing the address in the model also puts the
+escaping somewhere it can be done: a value containing an apostrophe closes an
+OData string literal and takes the whole request down with a 400, and the chart
+just goes blank.
+
+The older form still works — leave both `chartData` and `dataUrl` unbound and
+put the address in the spec — for a feed that never varies:
 
 ```json
 "data": {
@@ -97,6 +116,12 @@ It costs:
 - **`$apply` is not supported** — server-side aggregation through the OData
   aggregation extension returns 400. The *view* has to do the grouping, so an
   endpoint is one grain and a caller cannot re-group it.
+- **Two charts on one URL fetch it twice.** Mendix sends no `Cache-Control` and
+  no `ETag`, so the browser cannot revalidate and Vega does not deduplicate
+  loads across views. Measured: two identical 237 KB responses on one page load.
+- **Name your fields with `$select`.** Without it the feed also sends the key
+  OData requires and any column that exists only for the filter — 41% of the
+  payload here, 416 KB against 244 KB, for data nothing draws.
 
 Default to the attribute for anything a microflow already computes — it keeps the
 figures checkable against SQL and the chart working with no endpoint to secure.

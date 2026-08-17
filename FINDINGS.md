@@ -5052,3 +5052,152 @@ around this:
 No endpoint was left in the app. The probe was reverted — an unused published
 API is precisely the class of artifact Phase 17 removed — and this entry plus the
 `mendix-vega-charts` skill carry the recipe instead.
+
+---
+
+## Phase 21 — the scatter, moved onto the feed (2026-08-17)
+
+Finding 126 established that a view entity publishes. This is what happened when
+one chart was actually moved onto one.
+
+### 127. A published OData response carries no cache headers, so two charts on one URL fetch it twice
+
+The Insights scatter and the miscategorisation view draw the same rows. On the
+attribute form that payload was built once and bound twice. Moving both to a
+URL was expected to be better still — one request, the second served from cache.
+
+It is not:
+
+```
+200   237 KB  /odata/insights/v1/Expenses?$filter=d ge 2022-01-01T00:00:00Z…
+200   237 KB  /odata/insights/v1/Expenses?$filter=d ge 2022-01-01T00:00:00Z…
+```
+
+Two identical requests on one page load, every time. The reason is upstream of
+Vega:
+
+```
+$ curl -sI '…/odata/insights/v1/Expenses?$top=1' | grep -iE 'cache|etag|expires'
+(no cache headers at all)
+```
+
+No `Cache-Control`, no `ETag`, no `Expires`. The browser has nothing to
+revalidate against, so it refetches; and Vega does not deduplicate loads across
+separate views, because separate views are separate widgets that know nothing
+about each other.
+
+Two ways out, neither free: fold both charts into one spec with one dataset —
+which costs them their separate cards and headings — or put a caching proxy in
+front. It was left as two requests, because the cost that was worth removing
+was the server-side one and that is removed for both charts rather than one.
+
+**The general shape: "the browser will cache it" is an assumption about headers
+you did not write.** It took one `curl -I` to check and would have been an
+invisible doubling otherwise.
+
+### 128. `git checkout` on the .mpr destroys uncommitted model work, and after `mxcli test` that is exactly what you reach for
+
+Finding 125 records that `mxcli test` leaves `Ledger.mpr` modified after
+reporting the project restored. The obvious cleanup is the obvious mistake:
+
+```
+$ git checkout -- Ledger.mpr     # discards the test runner's churn…
+                                 # …and every model change not yet committed
+```
+
+The `.mpr` is a committed binary, so `git checkout` on it is not "undo the test
+run", it is "return the model to the last commit". Everything applied since —
+a view entity, a service, three microflows, two pages — goes with it. Worse, the
+model is split across `mprcontents/*.mxunit`, so restoring only the `.mpr` leaves
+orphaned units and `mx check` fails with `CE1613 … no longer exists` rather than
+anything that names the cause.
+
+I did this twice in one session. The second time was after deciding the first
+was a one-off.
+
+**The rule: after `mxcli test`, re-apply the source. Never git-checkout the
+model.**
+
+```
+for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
+```
+
+Which is the whole argument for `mdlsource/` being the source of truth, arriving
+as a bill rather than as a principle: the model was rebuildable, so twice this
+cost a replay instead of a session.
+
+**Ask:** have `mxcli test` restore the file bytes it changed, or write nothing
+to the project at all — the runner already knows exactly which units it touched.
+
+### 129. Moving the largest payload off the page: measured both ways
+
+Three warm samples each, same harness, five-year window, 2,588 transactions.
+
+| | attribute | feed | |
+|---|---|---|---|
+| server microflow | 1,096–1,852 ms | **547–586 ms** | −61% |
+| click → drawn | 2,939–3,518 ms | **2,253–2,448 ms** | −28% |
+| page payload | 493 KB | **261 KB** | −47% |
+| total bytes | **493 KB** | 735 KB | +49% |
+| marks rendered | 7,891 | 7,891 | identical |
+
+The server-side win is the real one and it is the one that scales: the scatter's
+rows no longer pass through a microflow that concatenates them at ~0.4 ms per
+row (finding 121's measurement). The database serialises the same rows in 44–49
+ms.
+
+Total bytes went **up**, and honestly so: OData's representation is more verbose
+than the compact JSON the builder emitted, and it is fetched twice (127).
+`$select=d,cat,grp,m,v` recovered 41% of that — 416 KB against 244 KB over the
+five-year window — by dropping the row key and the two columns that exist only
+for the filter to use. Without it the trade would have been much worse.
+
+**The first measurement said this was a wash.** It compared a warm run of the
+new path against a cooler run of the old one, and a single cold sample of the
+new path read 5,330 ms where the warm figure is 567. Three samples each way, on
+a thoroughly warm app, is what turned "no difference" into "28% faster". A
+one-shot benchmark of a JIT-compiled runtime is a coin toss with extra steps.
+
+### 130. `mxcli exec` rewrites a Java action wrapper with a return type that will not compile
+
+A Java action declared `returns integer` in MDL is generated by mxbuild as
+`UserAction<java.lang.Long>` — Mendix maps its Integer/Long domain type onto
+Java's `Long`. `mxcli exec` regenerates the same file and writes:
+
+```java
+public class CSV_LandImportRows extends UserAction<java.lang.Integer>
+    public java.lang.Integer executeAction() throws Exception
+        …
+        return 0L;                       // ← a long, in a method returning Integer
+        return Long.valueOf(landed.size());
+```
+
+The body still returns `Long`, because the body is the code the MDL carries and
+mxcli copies it through unchanged. Only the wrapper it generates around that body
+disagrees. As Java it is a plain type error.
+
+It has never broken a build here, and the reason is worth understanding rather
+than relying on: **mxbuild regenerates `javasource/` before compiling**, so the
+correct `Long` version overwrites the broken `Integer` one on the way past.
+Verified by timestamp — mxcli wrote the file, mxbuild rewrote it seven seconds
+later, and the compiled class is `UserAction<Long>`:
+
+```
+$ javap -classpath deployment/run/bin ledger.actions.CSV_LandImportRows
+public class ledger.actions.CSV_LandImportRows extends UserAction<java.lang.Long>
+```
+
+Where it bites is version control. `javasource/` is committed, so anyone who runs
+`mxcli exec` and commits without building in between commits Java that does not
+compile — and the diff looks like noise, because mxcli also rewrites CRLF to LF
+and drops the doc comment, so the whole file appears changed and the one line
+that matters is buried in it. That is what nearly happened here: the staged diff
+was 567 insertions across four files, of which the only substantive change was
+`Long` becoming `Integer` in each.
+
+**The rule: `javasource/` is mxbuild's output, not mxcli's.** If nothing about a
+Java action changed, restore it rather than committing it.
+
+**Ask:** either match mxbuild's generation exactly — the type, the line endings
+and the doc comment — or do not write `javasource/` at all and leave it to the
+build.
