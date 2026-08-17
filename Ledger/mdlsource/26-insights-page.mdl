@@ -153,8 +153,12 @@ create or replace page Ledger.Insights (
             dynamictext lblScatter (content: 'Every expense, over time', rendermode: H6)
             dynamictext subScatter (content: 'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Drag across the dates to brush a range — the bars below re-total instantly, without asking the server anything.', rendermode: paragraph, class: 'text-muted')
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartScatter (
-              chartData: TxData,
-              datasetName: 'table',
+              -- dataUrl, not chartData: these rows are not aggregated, so the
+              -- payload grows with the database. It fetches the feed itself.
+              -- datasetName is dropped with it — a URL replaces the spec's
+              -- top-level data, and a named dataset is inline values by
+              -- definition, so the two cannot both apply.
+              dataUrl: ScatterUrl,
               -- Zero: sized by what it renders at. The plot has a fixed height
               -- but the legend under it takes an entry per category, so the
               -- whole grows when a category is added — at fifteen it was
@@ -168,7 +172,8 @@ create or replace page Ledger.Insights (
               showActions: false,
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "table"},
+  "dataNote": "The name is dropped by the widget when dataUrl is bound; the format survives, and that is where the OData envelope {\"value\": [...]} is unwrapped. Left declared as a named dataset so this spec still renders from a bound attribute if the feed is ever withdrawn.",
+  "data": {"name": "table", "format": {"type": "json", "property": "value"}},
   "background": null,
   "config": {
     "view": {"stroke": null},
@@ -494,14 +499,26 @@ create or replace page Ledger.Insights (
             dynamictext lblOutliers (content: 'Transactions unlike the rest of their category', rendermode: H6)
             dynamictext subOutliers (content: 'Each row is one category, each dot a transaction. The red ones sit more than two and a half standard deviations above their own category mean — not proof of a wrong category, but the shortest list worth checking.', rendermode: paragraph, class: 'text-muted')
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOutliers (
-              chartData: TxData,
-              datasetName: 'table',
+              -- The same URL as the scatter above, and it IS fetched twice —
+              -- measured, two identical 403 KB responses on one page load. The
+              -- Mendix OData response carries no cache headers at all (no
+              -- Cache-Control, no ETag), so the browser has nothing to revalidate
+              -- against and Vega does not deduplicate loads across views. Two
+              -- separate widgets means two requests.
+              --
+              -- Kept anyway: the cost that was worth removing is the server-side
+              -- string build, and that is gone for both charts rather than one.
+              -- Folding these into a single spec with one dataset would fetch
+              -- once, but they are deliberately two cards with their own
+              -- headings and their own place on the page.
+              dataUrl: ScatterUrl,
               chartHeight: 440,
               renderer: 'svg',
               showActions: false,
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "table"},
+  "dataNote": "The name is dropped by the widget when dataUrl is bound; the format survives, and that is where the OData envelope {\"value\": [...]} is unwrapped. Left declared as a named dataset so this spec still renders from a bound attribute if the feed is ever withdrawn.",
+  "data": {"name": "table", "format": {"type": "json", "property": "value"}},
   "width": 840,
   "height": 380,
   "description-padding": "Explicit left padding. The theme pulls IBM Plex from a CDN that is not always reachable, so Vega measures the axis labels in the fallback face and lays out for metrics the browser then does not use - the longest category name loses its first letter off the left edge. Reserving the space is cheaper than depending on when a font arrives.",

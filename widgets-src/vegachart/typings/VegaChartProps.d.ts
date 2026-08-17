@@ -16,6 +16,7 @@ export interface VegaChartContainerProps {
     spec: string;
     chartData?: EditableValue<string>;
     datasetName: string;
+    dataUrl?: EditableValue<string>;
     selection?: EditableValue<string>;
     onClick?: ActionValue;
     chartHeight: number;
@@ -37,6 +38,7 @@ export interface VegaChartPreviewProps {
     spec: string;
     chartData: string;
     datasetName: string;
+    dataUrl: string;
     selection: string;
     onClick: {} | null;
     chartHeight: number | null;

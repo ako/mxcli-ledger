@@ -24,6 +24,13 @@
                 <caption>Dataset name</caption>
                 <description>The name the spec uses to refer to the data (Vega-Lite: {"data": {"name": "table"}}). Leave empty to replace the spec's top-level data instead.</description>
             </property>
+            <property key="dataUrl" type="attribute" required="false">
+                <caption>Data URL</caption>
+                <description>An address the chart fetches for itself, replacing the spec's top-level data. Bound rather than written into the spec so a filter can reach it: the specification is a static string, so a URL inside it can never carry a query the user chose. Takes precedence over Data — the two are alternatives, and a chart given both would fetch and then discard. Any "format" already on the spec's data is kept, which is where an OData envelope is unwrapped: {"format": {"type": "json", "property": "value"}}.</description>
+                <attributeTypes>
+                    <attributeType name="String" />
+                </attributeTypes>
+            </property>
         </propertyGroup>
         <propertyGroup caption="Interaction">
             <property key="selection" type="attribute" required="false">

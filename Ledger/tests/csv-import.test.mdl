@@ -500,3 +500,63 @@ $n = call java action Ledger.CSV_LandImportRows (
   Csv = '2026-08-21,B,y,2.00,ING,Groceries', Batch = 't-iso-d', Delimiter = ',');
 retrieve $row from Ledger.ImportRow where Batch = 't-iso-d' limit 1;
 /
+
+-- ---------------------------------------------------------------------------
+-- BUILD_ScatterUrl — the address the Insights scatter fetches
+-- ---------------------------------------------------------------------------
+-- Not CSV, but here for the same reason: it takes values and returns a value.
+-- It is also the only place in the app that builds a query for an external
+-- protocol, so the escaping matters and is invisible until it breaks.
+--
+-- Apostrophes are normalised to ~ before the assertion. An OData string literal
+-- needs them, and the @expect parser ends its own string on the first one it
+-- meets — `unexpected trailing input at column 111 ("'Groceries'")`. Inside the
+-- body it is ordinary MDL, where '''' is one apostrophe, so the value can be
+-- rewritten into something the annotation can hold.
+
+/**
+ * @test The period becomes an unquoted OData datetime range
+ * @expect $u = '/odata/insights/v1/Expenses?$filter=d ge 2026-01-01T00:00:00Z and d le 2026-08-17T23:59:59Z&$select=d,cat,grp,m,v&$orderby=d'
+ */
+$u = call microflow Ledger.BUILD_ScatterUrl (
+  FromDate = dateTime(2026, 1, 1), ToDate = dateTime(2026, 8, 17),
+  CategoryName = '', AccountName = '');
+/
+
+/**
+ * @test A category is appended as a quoted string literal
+ * @expect $norm = '/odata/insights/v1/Expenses?$filter=d ge 2026-01-01T00:00:00Z and d le 2026-08-17T23:59:59Z and cat eq ~Groceries~&$select=d,cat,grp,m,v&$orderby=d'
+ */
+$u = call microflow Ledger.BUILD_ScatterUrl (
+  FromDate = dateTime(2026, 1, 1), ToDate = dateTime(2026, 8, 17),
+  CategoryName = 'Groceries', AccountName = '');
+declare $norm string = '';
+set $norm = replaceAll($u, '''', '~');
+/
+
+/**
+ * @test Category and account both narrow the same filter
+ * @expect $norm = '/odata/insights/v1/Expenses?$filter=d ge 2026-01-01T00:00:00Z and d le 2026-08-17T23:59:59Z and cat eq ~Groceries~ and AccountName eq ~ING Betaalrekening~&$select=d,cat,grp,m,v&$orderby=d'
+ */
+$u = call microflow Ledger.BUILD_ScatterUrl (
+  FromDate = dateTime(2026, 1, 1), ToDate = dateTime(2026, 8, 17),
+  CategoryName = 'Groceries', AccountName = 'ING Betaalrekening');
+declare $norm string = '';
+set $norm = replaceAll($u, '''', '~');
+/
+
+/**
+ * The one that breaks silently. An apostrophe closes an OData string literal,
+ * so an unescaped category takes the whole request down with a 400 and the
+ * chart goes blank — no error on the page, just no marks. The value below is a
+ * category literally called O'Brien, and the filter must carry it doubled.
+ *
+ * @test An apostrophe in a filter value is doubled, not passed through
+ * @expect $norm = '/odata/insights/v1/Expenses?$filter=d ge 2026-01-01T00:00:00Z and d le 2026-08-17T23:59:59Z and cat eq ~O~~Brien~&$select=d,cat,grp,m,v&$orderby=d'
+ */
+$u = call microflow Ledger.BUILD_ScatterUrl (
+  FromDate = dateTime(2026, 1, 1), ToDate = dateTime(2026, 8, 17),
+  CategoryName = 'O''Brien', AccountName = '');
+declare $norm string = '';
+set $norm = replaceAll($u, '''', '~');
+/
