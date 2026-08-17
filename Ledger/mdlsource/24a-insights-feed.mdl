@@ -85,17 +85,21 @@ grant Ledger.User on Ledger.VScatterFeed (read *);
  * no associations at all — the mistake FINDINGS 113 recorded and 126 corrects.
  * Omitting it takes the default, "as a link".
  *
- * THIS IS API SURFACE, not a private channel. Anything that can reach the app
- * and satisfy `authentication session` can read every expense transaction in
- * the database, filtered or not. That is a larger promise than an attribute on
- * a page makes, and it is why exactly one chart uses this route: the scatter,
- * whose payload grows without bound. The aggregates stay on attributes, where
- * they cost nothing to secure.
+ * WHY ONLY ONE CHART USES THIS. Payload growth, and nothing else. The scatter
+ * is the only chart whose size follows the database rather than the taxonomy,
+ * so it is the only one where the concatenation cost was worth removing. The
+ * aggregates are small and stay small; moving them would buy nothing and cost a
+ * round trip each.
  *
- * Note for whoever moves this off a development machine: this project runs at
- * security level Off, so `authentication session` is inert here and an
- * anonymous request succeeds. It takes effect at Prototype or Production.
- * Testing this endpoint's access control at Off proves nothing about it.
+ * On access: Ledger is a single-user demo, so `authentication session` is all
+ * this needs and the endpoint being readable by anything holding a session is
+ * not a concern here. Two things to know if the pattern is reused somewhere it
+ * would be. The feed returns every expense row the filter allows, which is a
+ * wider promise than an attribute on a page makes — an attribute exposes one
+ * computed payload, an endpoint exposes a queryable table. And this project
+ * runs at security level Off, so `authentication session` is inert and an
+ * anonymous request succeeds: whatever is true about access control here, it
+ * was not established by testing it here.
  */
 create or modify odata service Ledger.InsightsFeed (
   path: 'odata/insights/v1/',
