@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 125 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 126 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -585,7 +585,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              125 numbered findings — the main deliverable alongside the app
+FINDINGS.md              126 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
