@@ -14,12 +14,17 @@
 -- resolves nothing and decides nothing about meaning — text in, ImportRow out —
 -- so every assertion below is about the code and none of it is about the data.
 --
--- HOW THE ASSERTIONS WORK. `@verify <oql>` is documented in the project's own
--- skills but the runner rejects it as unimplemented, so post-conditions are
--- written by retrieving the landed rows in the test body and asserting on them
--- with `@expect`. Each test lands under its own batch and every retrieve
--- constrains on it, so the tests are independent of each other and of anything
--- else in the database.
+-- HOW THE ASSERTIONS WORK. Post-conditions are written by retrieving the landed
+-- rows in the test body and asserting on them with `@expect`. Each test lands
+-- under its own batch and every retrieve constrains on it, so the tests are
+-- independent of each other and of anything else in the database.
+--
+-- `@verify <oql>` was rejected as unimplemented when these were written and now
+-- runs (FINDINGS 133), but `@expect` is still the right tool here: `@verify`
+-- queries the database after the test, so it requires `@cleanup none` and the
+-- rows it asserts on outlive the run. These tests roll back, which is what keeps
+-- them independent. Aggregates also need an alias — `count(*) as N`, not
+-- `count(*)` — which the documented example omits.
 --
 -- The amount cases are the ones worth having. A statement export can write
 -- 61.20, 61,20, EUR 1.234,56 or 1,234.56 for the same kind of number, and the

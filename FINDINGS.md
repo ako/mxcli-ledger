@@ -5201,3 +5201,245 @@ Java action changed, restore it rather than committing it.
 **Ask:** either match mxbuild's generation exactly — the type, the line endings
 and the doc comment — or do not write `javasource/` at all and leave it to the
 build.
+
+---
+
+## Phase 22 — re-testing against mxcli `a44c735c` (2026-08-24)
+
+The container recycled and rebuilt mxcli from `main`, moving it from `6485db62`
+to `a44c735c`. Two things that were open here are now fixed upstream, one is
+partly fixed, and one file that had been building cleanly since Phase 3 started
+failing. The whole set was re-run: `mx check`, the 42 unit tests, and a browser
+pass over all eight pages.
+
+### 131. `mxcli check` rejects Mendix's own apostrophe escape
+
+`exprcheck` reports every string literal containing an escaped apostrophe as a
+malformed expression. Minimal repro — one microflow, one assignment:
+
+```
+$ cat apos.mdl
+create or modify microflow Ledger.ProbeApos ()
+returns string as $R
+folder 'Insights'
+begin
+  declare $R string = '';
+  set $R = 'a''b';
+  return $R;
+end;
+/
+
+$ mxcli check apos.mdl
+✓ Syntax OK (1 statements)
+✓ All references valid
+
+(no module)
+-----------
+  ✗ Unexpected token after expression — the expression appears incomplete or
+    malformed (possible missing space between keywords). []
+      at
+      → Check for glued keywords such as 'emptyor' (should be 'empty or') or
+        'andtrue' (should be 'and true').
+
+1 issues: 1 errors, 0 warnings, 0 info
+```
+
+`''` is how the Mendix expression language escapes an apostrophe inside a string
+literal, so this is correct MDL and correct Mendix. Everything except `check`
+agrees:
+
+| check | verdict |
+|---|---|
+| `mxcli check` | **✗ 1 error** |
+| `mxcli exec` + `DESCRIBE MICROFLOW` | round-trips as `set $R = 'a''b';` |
+| `mx check Ledger.mpr` | `The app contains: 0 errors.` |
+| the unit suite | `An apostrophe in a filter value is doubled, not passed through` — **PASS** |
+
+That last row is the one that settles it. The suite already has a test asserting
+that `BUILD_ScatterUrl` doubles an apostrophe in a filter value, it runs the very
+expression `check` rejects, and it passes.
+
+**Cause.** The expression lexer scans to the next `'` and stops, with no notion
+of an escape — `mdl/exprcheck/lexer.go:66`:
+
+```go
+case c == '\'':
+    j := i + 1
+    for j < len(src) && src[j] != '\'' {
+        j++
+    }
+```
+
+So `'a''b'` lexes as two string tokens, `'a'` and `'b'`. `parseOr` consumes the
+first, the second is left unconsumed, and `Parse` reports the leftover
+(`parser.go:34`). The message is a red herring: nothing is glued and no keyword
+is involved.
+
+**Blast radius here.** Three findings across two files, and they correlate
+exactly with the three escaped-apostrophe expressions in microflows:
+
+```
+mdlsource/25-insights-data.mdl:167   ' and cat eq ''' + replaceAll($CategoryName, '''', '''''') + ''''
+mdlsource/25-insights-data.mdl:170   ' and AccountName eq ''' + replaceAll($AccountName, ...) + ''''
+mdlsource/28-oql-dml.mdl             the OQL_RulePredicate LIKE pattern
+```
+
+Page expressions with the same escape (`11-cashflow-page.mdl`,
+`29-oql-screens.mdl`) are not flagged, so `exprcheck` appears not to run over
+widget properties. That is luck, not immunity.
+
+**Also: the finding carries no location.** No rule id, no file, no line — in the
+text output and in SARIF:
+
+```json
+{ "level": "error", "ruleId": "",
+  "locations": [{"physicalLocation": {"artifactLocation": {"uri": ""}}}],
+  "message": {"text": "Unexpected token after expression …"} }
+```
+
+Which is why finding it meant bisecting a 600-line file by hand. `parser.go`
+sets `Line` and `Column` from the offending token, so the position exists and is
+lost somewhere between there and the reporter. MDL-ORDER01 prints an empty `at`
+too, so this is the reporter, not this rule.
+
+Worth noting that `qualified_call_test.go` documents this exact symptom — an
+unconsumed-token error with an empty location — as a previously-fixed
+false-positive class (upstream #939). This is the same check firing on a
+different input.
+
+**Ask:** teach the lexer the `''` escape (consume the pair and continue), and
+give the reporter the file and line the parser already computed.
+
+### 132. MDL-ORDER01 lands, and finding 118 is a different bug than it addresses
+
+The new rule works exactly as described:
+
+```
+$ mxcli check order.mdl
+  ✗ microflow Ledger.ProbeCaller references microflow Ledger.ProbeLater before
+    it is created — the executor resolves this in statement order, so it fails
+    partway through `exec` with earlier statements already written [MDL-ORDER01]
+      → Move the CREATE statement for Ledger.ProbeLater above this one.
+```
+
+That is a real improvement: the diagnosis used to arrive only after `exec` had
+half-applied the model, and now it arrives before anything is written.
+
+It does not cover finding 118, which is worth being precise about rather than
+crossing off. MDL-ORDER01 is **within one script**. Finding 118 is **across the
+file set**: `16-budgets-page.mdl` references microflows that `29-oql-screens.mdl`
+creates, and each file is individually valid. There is still no `--ordered` flag
+(`mxcli check --help` lists only `--format`), so checking `mdlsource/*.mdl` as a
+sequence — each file against the state the previous ones would leave — remains
+the thing that would catch it. **118 stays open.**
+
+### 133. `@verify` is implemented now — and the documented example does not run
+
+Finding 123 recorded `@verify` as documented-but-rejected. It executes now. It
+also bites, which is the part worth demonstrating: one true post-condition, one
+false one, same run.
+
+```
+$ mxcli test verify.test.mdl -p Ledger.mpr --local
+  PASS  A verify post-condition counts the landed rows (16ms, 2 assertions)
+  FAIL  A verify post-condition that is wrong fails the test (5ms, 2 assertions)
+        expected select count(*) as N from Ledger.ImportRow
+                 where Batch = 'v-fresh2' = 99, actual: 1
+```
+
+Two assertions per test — the `@expect` and the `@verify` — and the failure
+reports the actual value. **123 is closed.**
+
+Two rough edges found on the way in, both of which cost a run each:
+
+**The rollback guard is excellent.** A `@verify` on a test using the default
+cleanup is refused, with the reason and the fix:
+
+```
+ERROR  @verify select count(*) from Ledger.ImportRow where Batch = 'v-probe' = 2:
+       this test uses @cleanup rollback (the default), so its writes are undone
+       before the query runs and it would assert against the pre-test state.
+       Add @cleanup none to the test
+```
+
+That is the class of error that would otherwise be a green test asserting
+nothing. Recording it as a good example.
+
+**The documented form is not valid Mendix OQL.** The example in mxcli's own
+tests is `@verify select count(*) from Mod.E = 1`. Run against a real runtime:
+
+```
+ERROR  @verify select count(*) from Ledger.ImportRow where Batch = 'v-probe' = 2:
+       OQL error: All OQL select columns must have a name
+```
+
+Mendix OQL requires an alias on an aggregate. `select count(*) as N from …`
+works. **Ask:** alias the aggregate in the examples, since `count(*)` is the
+obvious first thing anyone writes.
+
+A `@verify` is also a serviceable way to *do* something and assert it happened —
+this is what cleaned up after the experiment above:
+
+```
+/**
+ * @test Remove the probe batches the verify experiment left behind
+ * @cleanup none
+ * @verify select count(*) as N from Ledger.ImportRow where Batch like 'v-%' = 0
+ */
+$n = call java action Ledger.OQL_Execute (
+  Statement = 'delete from Ledger.ImportRow where Batch like ''v-%'''
+);
+```
+
+### 134. A wrong Java action parameter in a test file prints mxbuild's raw JSON
+
+Calling a Java action with a parameter that does not exist — `HasHeader`, on an
+action whose signature is `(Csv, Batch, Delimiter)` — ends the run with ~40 lines
+of mxbuild JSON and no summary:
+
+```
+Error: local runtime: build failed: The project cannot be deployed, because it contains errors.
+{
+  "problems": { "errors": [ … ], "problems": [
+      { "severity": "Error",
+        "message": "The selected Java action parameter 'Ledger.CSV_LandImportRows.HasHeader' no longer exists.",
+        "locations": [{ "document": "Microflow 'Test_test_2'", "module": "MxTest" … }],
+        "errorCode": "CE1613" … },
+      …same again for Test_test_1… ] },
+  "status": "Failure" }
+```
+
+The diagnosis is in there and it is accurate. The problem is that it is buried,
+it names generated documents (`MxTest.Test_test_2`) rather than the test that
+produced them, and it repeats per test — so the reader has to know that
+`Test_test_2` is the second `@test` in their file. Compare the parser's own
+errors in the same tool, which are excellent:
+
+```
+Error: parsing test files: verify.test.mdl: test "A verify post-condition counts
+the landed rows" is followed by another @test doc comment ("A verify post-condition
+that is wrong fails the test") with no '/' separator between them, so only one of
+the two could run: add a line containing just '/' after the first test's statements
+```
+
+**Ask:** surface `problems[].message` with the originating test's name, and keep
+the JSON behind a flag.
+
+### Everything else still passes on `a44c735c`
+
+Re-run in full after resetting to the merged baseline:
+
+| check | result |
+|---|---|
+| `mx check Ledger.mpr` | 0 errors |
+| `mxcli check` over all 30 `mdlsource/*.mdl` + tests | 3 findings, all finding 131 |
+| `mxcli test tests/csv-import.test.mdl --local` | **42 passed, 0 failed** (618ms) |
+| browser pass, all 8 pages | 0 chart errors, 0 page JS errors |
+| data | 2,588 transactions over 5 years, unchanged |
+
+The browser pass counted rendered marks per page — Dashboard 2, Cashflow 19,
+Insights 7 — and the Insights scatter still draws from the published OData feed
+rather than an attribute, so the Phase 21 change survives the toolchain move.
+
+The test runner restored the project cleanly: `git status` was empty afterwards,
+which is worth checking every time given finding 130.
