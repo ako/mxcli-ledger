@@ -5471,3 +5471,242 @@ rather than an attribute, so the Phase 21 change survives the toolchain move.
 
 The test runner restored the project cleanly: `git status` was empty afterwards,
 which is worth checking every time given finding 130.
+
+---
+
+## Phase 23 — three themes, seven languages, two bank formats (2026-08-25)
+
+`mxcli theme` and `alter settings LANGUAGE` are both new. Testing them meant
+actually using them: an ING and a Rabobank theme beside the app's own, the seven
+languages the UI is now translated into, and — separately — the two Dutch bank
+CSV formats the importer had never seen.
+
+Both features work. One of them ships a defect that makes half of it unusable
+until it is patched, and neither can reach the place a user would expect the
+controls to be.
+
+### 135. Both parameterised theme-switcher actions throw on first call
+
+`mxcli theme switcher install` writes six JavaScript actions. The four that take
+no parameter work. **Both** that take one are dead on arrival:
+
+```
+Client: An error occurred while executing an action of
+Ledger.SNIPPET_ThemeBar.btnSkinIng: Skin is not defined
+
+Nanoflow stack:
+ "Call JavaScript Action" in nanoflow "Ledger.ACT_SkinIng"
+```
+
+Mendix generates the JS wrapper with the parameter's **first letter lowered**.
+mxcli writes a body that uses the modelled capitalisation. They never meet:
+
+```javascript
+// javascriptsource/ledger/actions/SetAppSkin.js  — regenerated every build
+export async function SetAppSkin(skin) {
+	// BEGIN USER CODE
+	var chosen = skins.indexOf(Skin) === -1 ? "ledgerpaper" : Skin;   // ← ReferenceError
+```
+
+Both parameterised actions have it, so it is the rule and not a typo:
+
+| action | wrapper emits | body uses | works |
+|---|---|---|---|
+| `SetAppSkin` | `skin` | `Skin` | **no** |
+| `SetAppTheme` | `theme` | `Theme` | **no** |
+| `ToggleAppTheme` | — | — | yes |
+| `CycleAppSkin` | — | — | yes |
+| `ApplyStoredSkin` | — | — | yes |
+| `ApplyStoredTheme` | — | — | yes |
+
+**Nothing catches it before a user clicks.** `mx check` reports 0 errors — the
+action is well-formed and the body is opaque user code as far as Mendix is
+concerned — and `mxcli check` has nothing to say about JavaScript either. The
+first evidence is a modal reading "An error occurred, please contact your system
+administrator."
+
+It is also **unpatchable in place**: the generated file carries
+`WARNING: Only the following code will be retained when actions are regenerated`
+and is rewritten on every build. The fix has to go back through MDL, which means
+re-authoring an action mxcli generated — and re-running `theme switcher install`
+puts the defect back. `mdlsource/32-theme-bar.mdl` carries the repaired bodies
+and says so at the top.
+
+Worth noting *which* half this kills. The documented example is
+`actionbutton btnTheme (caption: 'Theme', action: nanoflow ...ACT_ToggleTheme)` —
+a no-parameter action, so the path the help walks you down works. Everything the
+multi-theme feature was built for, "select a theme by name", does not.
+
+**Ask:** lower the first letter of the parameter when generating the body, the
+same transformation Mendix applies to the wrapper. A generated action that calls
+itself once in a test would have caught both.
+
+### 136. Layouts are the one document MDL cannot author, so the topbar is out of reach
+
+The brief was two dropdowns in the topbar. The topbar belongs to the layout, and
+mxcli is explicit:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE LAYOUT Atlas_Core.Atlas_Default"
+-- Layout Type: Responsive
+-- This is a layout document. Layouts define the structure that pages are built upon.
+-- Layouts cannot be created via MDL; they must be created in Studio Pro.
+```
+
+`SHOW LAYOUTS` lists 22 of them and `DESCRIBE` prints that notice. There is no
+`alter layout`, and `mxcli syntax` has no layout entry at all.
+
+So an app built entirely through MDL cannot put anything in its own topbar. The
+language selector is up there only because **Atlas ships one** —
+`Atlas_Core.LanguageSelectorWidget`, visible in the client log fetching its own
+data source. Enabling languages populates it; nothing else can join it.
+
+The closest MDL can get is a snippet on every page, which is what
+`32-theme-bar.mdl` does: one definition, nine call sites, same place on every
+screen. It is under the page title rather than above it, which is the honest
+position for something the layout does not own.
+
+**Ask:** the notice is good and the limitation is probably deliberate. What
+would help is saying it in `mxcli syntax` too — the limitation is only
+discoverable by describing a layout and reading a comment.
+
+### 137. `IN <Module>` silently misses the navigation, and the symptom is half a translation
+
+Translations were written scoped, which reads as the careful thing to do:
+
+```
+create or modify translations in Ledger for nl_NL ( … );
+→ Set 212 nl_NL translation(s) across 20 document(s)
+```
+
+In the browser the page text switched to Dutch and **the menu did not** — the
+sidebar still read Dashboard / Cashflow / Budgets while the chart caption above
+it read "56 maanden, 13 categorieën".
+
+The navigation is a project-level document, not a module one, so `in Ledger`
+never reaches it. Dropping the scope finds 3.6× as much:
+
+```
+describe translations in Ledger for nl_NL   → 151 strings
+describe translations for nl_NL             → 546 strings
+```
+
+and re-running the same table unscoped lands the rest:
+
+```
+create or modify translations for nl_NL ( … );
+→ Set 65 nl_NL translation(s) across 34 document(s)     (20 documents → 42)
+```
+
+Nothing warned. The scoped run reported success and a document count, and the
+count is the only thing that would have given it away — if you knew what number
+to expect. `or modify` makes the correction cheap, but the first run has to be
+noticed to be corrected.
+
+**Ask:** either mention the project-level documents in the `IN <Module>`
+help — it currently says only "IN <Module> scopes both directions" — or report
+what a scoped run did *not* consider.
+
+### 138. The reference checker does not exempt a nanoflow a snippet calls
+
+The documented exemption is "References to objects created within the script are
+skipped", and it prints that line immediately above failing on exactly that:
+
+```
+$ mxcli check mdlsource/32-theme-bar.mdl -p Ledger.mpr
+✓ Syntax OK (4 statements)
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 4: snippet 'Ledger.SNIPPET_ThemeBar' has reference errors:
+  - nanoflow not found: Ledger.ACT_SkinLedgerPaper
+  - nanoflow not found: Ledger.ACT_SkinIng
+  - nanoflow not found: Ledger.ACT_SkinRabobank
+✗ 1 reference error(s) found
+```
+
+All three are created by statements 1–3 of the same file, in the right order.
+`exec` applies it without complaint and `mx check` reports 0 errors, so the
+finding is false in both directions that matter.
+
+The interesting part is that this is the **inverse** of MDL-ORDER01 (finding
+132): that rule exists to catch a reference to something created *later* in the
+script, and correctly did. This is a reference to something created *earlier*
+being reported as missing. The exemption appears not to cover the
+snippet → nanoflow edge.
+
+**Ask:** widen the same-script exemption to snippet widget actions.
+
+### 139. `theme create` reports paths that look like it just overwrote your app
+
+Scaffolding a theme prints:
+
+```
+$ mxcli theme create ing --from signal -p Ledger.mpr
+  created   theme/web/custom-variables.scss
+  created   theme/web/main.scss
+  created   theme/web/_mxcli-recipes.scss
+  …
+```
+
+This project has 738 hand-written lines in `theme/web/custom-variables.scss` and
+its own `theme/web/main.scss`. Reading that output, both had just been reported
+as *created*.
+
+Nothing was touched. The paths are relative to the scaffold —
+`theme/mxcli-themes/ing/files/` + each path — and the real files were byte-identical
+afterwards. But the command that says this is the one whose whole purpose is to
+write into `theme/`, and the paths it prints are exactly the paths it does not
+mean.
+
+**Ask:** print the scaffold-relative path with its root, or the full path. One
+prefix removes the ambiguity entirely.
+
+### The parts that worked, and are worth recording as working
+
+**A theme set is a class swap, exactly as advertised.** Three themes compile into
+one stylesheet, the default is scoped by negation rather than a bare `:root`:
+
+```css
+:root:not(.mxt-ing):not(.mxt-rabobank), :root.mxt-ledgerpaper { … }
+:root.mxt-ing { … }
+:root.mxt-rabobank { … }
+```
+
+which is the detail that makes it order-independent — a bare `:root` default
+would keep matching under every other theme and the winner would come down to
+specificity.
+
+**`theme apply` adds a block, it does not take the file over.** The dry run says
+`added theme/web/custom-variables.scss`, and it means added: the app's own 738
+lines survive above a fenced `// mxcli:theme:begin` block. That is what made it
+safe to install a theme set into an app that already had a hand-built one.
+
+**One alias layer re-brands hand-written CSS.** This app's components read 17
+`--ledger-*` tokens in 72 places, all literal hex, so themes moved the Atlas
+widgets and left the app's own styling fixed — half a re-brand. Redefining those
+tokens as `var(--mxt-…)` makes one class swap move everything, because custom
+properties resolve at use time and pick up whichever theme is scoped on `:root`.
+It also surfaced `--ledger-hover`, used in two rules and never declared: it
+worked on a `rgba(0,0,0,0.03)` fallback that is invisible on a dark palette.
+
+**Languages need no user object.** With security Off there is no current user —
+verified, not assumed:
+
+```
+$ mxcli test cu.test.mdl -p Ledger.mpr --local
+  FAIL  With security off, does a microflow see a current user?
+        expected $r = true, actual: false
+```
+
+so the usual `$currentUser/System.User_Language` route does not exist. Atlas's
+own selector switches the language anyway, and `alter settings LANGUAGE add`
+populates it: seven languages enabled, seven offered, `System.Language` holding
+exactly seven rows at runtime.
+
+**Mendix OQL has `REPLACE`.** Not in the project's OQL skill and worth knowing —
+it is what lets the importer resolve an account from a bank export's IBAN
+against one stored grouped for reading:
+
+```sql
+REPLACE(UPPER(a.IBAN), ' ', '') = REPLACE(UPPER(Ledger.ImportRow/AccountName), ' ', '')
+```

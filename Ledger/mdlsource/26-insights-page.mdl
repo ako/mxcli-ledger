@@ -21,6 +21,7 @@ create or replace page Ledger.Insights (
       column colInsHead (desktopwidth: 12) {
         dataview dvIns (datasource: microflow Ledger.DS_InsightsContext) {
           dynamictext txtInsHeading (content: 'Insights', rendermode: H2)
+          snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
           dynamictext txtInsWindow (attribute: WindowText, rendermode: paragraph, class: 'text-muted')
 
           -- ------------------------------------------------------------------

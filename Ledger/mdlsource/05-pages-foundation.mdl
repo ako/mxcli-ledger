@@ -36,6 +36,7 @@ create or replace page Ledger.Account_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Accounts', rendermode: H2)
+        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (content: 'Balances as of the last import.', class: 'text-muted')
 
         gallery galAccounts (
@@ -88,6 +89,7 @@ create or replace page Ledger.Category_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Categories & rules', rendermode: H2)
+        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (
           content: 'Two-level taxonomy plus the rules that assign categories on import. First match wins.',
           class: 'text-muted')
@@ -291,6 +293,7 @@ create or replace page Ledger.Transaction_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Transactions', rendermode: H2)
+        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (
           content: 'Transactions with no category stay out of the cashflow report until assigned. Click any row to edit it.',
           class: 'text-muted')

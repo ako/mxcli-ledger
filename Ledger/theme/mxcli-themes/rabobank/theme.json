@@ -1,0 +1,56 @@
+{
+  "name": "rabobank",
+  "title": "Rabobank",
+  "version": "1",
+  "summary": "Rabobank blue rail with an orange active mark, 3px radius",
+  "description": "Rabobank brand palette for the Ledger demo, scaffolded from Signal by `mxcli theme create`. Colours approximate the public brand; this is a demonstration theme, not an official Rabobank asset.",
+  "colorway": [
+    "#000099",
+    "#0066B3",
+    "#2E7D32",
+    "#ED8B00",
+    "#C8102E",
+    "#55566E"
+  ],
+  "defaultVariant": "light",
+  "files": [
+    {
+      "path": "theme/web/custom-variables.scss",
+      "mode": "block",
+      "purpose": "Layer 1 — the Rabobank palette (light): brand, surfaces, ink, density"
+    },
+    {
+      "path": "theme/web/_mxcli-atlas-map.scss",
+      "mode": "block",
+      "purpose": "the Atlas wiring — shared by every mxcli theme, identical in each",
+      "shared": true
+    },
+    {
+      "path": "theme/web/_mxcli-rabobank.scss",
+      "mode": "block",
+      "purpose": "the other palette, the variant blocks, @font-face, and this theme's own skin rules"
+    },
+    {
+      "path": "theme/web/_mxcli-recipes.scss",
+      "mode": "block",
+      "purpose": "the recipe layer — num / pill / stat / focus / density, shared by every theme",
+      "shared": true
+    },
+    {
+      "path": "theme/web/_mxcli-widgets.scss",
+      "mode": "block",
+      "purpose": "the widget-module layer — rules for colours Sass bakes before any token exists",
+      "shared": true
+    },
+    {
+      "path": "theme/web/main.scss",
+      "mode": "block",
+      "purpose": "variant switch + imports — this file compiles last, so the partials win"
+    },
+    {
+      "path": "theme/web/mxcli-fonts/",
+      "mode": "verbatim",
+      "purpose": "vendored IBM Plex Sans + Mono (SIL OFL 1.1, OFL-signal.txt) — no CDN at runtime"
+    }
+  ]
+}

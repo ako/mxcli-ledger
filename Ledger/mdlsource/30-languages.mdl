@@ -1,0 +1,42 @@
+-- ============================================================================
+-- 30 - The seven languages
+-- ============================================================================
+-- Enabling a language is what makes a build emit anything for it. A translation
+-- written against a language that is not in this list is stored, passes
+-- `mx check`, and is silently discarded at build time — no
+-- translations_<code>.properties is produced at all. So this file has to run
+-- before 31-translations-*.mdl, and the numbering says so.
+--
+-- CheckCompleteness is deliberately left at its default (false) on every
+-- language added here. Turning it on reports an error for every string with no
+-- translation in that language, and this app has roughly 400 of them across
+-- seven languages — the pane would be unreadable and `mx check` would fail on
+-- work that is deliberately partial (see 31-translations-*.mdl on what is
+-- translated and what is not). It is the right setting for an app that intends
+-- to ship every language complete; it is the wrong setting for a demonstration.
+--
+-- en_US stays the default. Mendix always checks the default language for
+-- completeness regardless of this flag, which is another reason to leave the
+-- rest off: the language whose strings are actually all present is the one
+-- being checked.
+-- ============================================================================
+
+alter settings LANGUAGE add or modify 'nl_NL';
+/
+alter settings LANGUAGE add or modify 'de_DE';
+/
+alter settings LANGUAGE add or modify 'fr_FR';
+/
+alter settings LANGUAGE add or modify 'cs_CZ';
+/
+alter settings LANGUAGE add or modify 'es_ES';
+/
+alter settings LANGUAGE add or modify 'it_IT';
+/
+
+-- Re-stated rather than assumed: `add or modify` on a language that is already
+-- present leaves the default alone, but the default is what every untranslated
+-- string falls back to, so it is worth being explicit about which one it is.
+alter settings LANGUAGE
+  DefaultLanguageCode = 'en_US';
+/

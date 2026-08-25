@@ -1,0 +1,75 @@
+// Layer 1 — the Ledgerpaper palette. This is the file to edit.
+//
+// These are the theme's own semantic tokens. _mxcli-atlas-map.scss maps them
+// onto the ~60 Atlas variables that Atlas components, form controls and the
+// brand-aware pluggable widgets (Switch, Slider, ProgressBar, BadgeButton)
+// actually read — so changing --mxt-brand here re-brands the entire app, with
+// no per-widget CSS.
+//
+// The values below are the LIGHT palette, which is Ledgerpaper's default. The dark palette lives in _mxcli-ledgerpaper.scss.
+//
+// Mendix 11 Atlas is CSS-custom-property-first, so these are `:root`
+// declarations rather than SCSS `!default` variables. This file is imported
+// once per module, so it must hold declarations only — never rules.
+
+{{PALETTE_SCOPE}} {
+  /* ---- the one colour that defines the app --------------------------- */
+  --mxt-brand: #1b4d4b;
+  --mxt-brand-hover: #164240;
+  --mxt-brand-ink: #ffffff;
+  --mxt-accent: #b4531f;
+
+  /* ---- semantic status ----------------------------------------------- */
+  --mxt-success: #2c6e4a;
+  --mxt-warning: #cd8501;
+  --mxt-danger: #a8321e;
+  --mxt-info: #1f5fa8;
+
+  /* ---- surfaces and ink ----------------------------------------------- */
+  --mxt-ground: #f6f4f0;
+  --mxt-surface: #ffffff;
+  --mxt-surface-alt: #fbfaf8;
+  --mxt-surface-hover: #f0eee9;
+  --mxt-surface-selected: #e4e1da;
+  --mxt-ink: #17181a;
+  --mxt-ink-muted: #6e7078;
+  --mxt-ink-faint: #93969b;
+  --mxt-line: #e0ddd6;
+
+  /* ---- the navigation rail --------------------------------------------
+     Warm near-black rather than paper: several Atlas widgets in the topbar
+     (the language selector among them) hardcode --color-base for their text,
+     which is the light surface colour. A light rail makes them invisible, so
+     every mxcli theme keeps the rail dark in both variants. */
+  --mxt-rail: #1c1e1f;
+  --mxt-rail-line: #2e3132;
+  --mxt-rail-ink: #b9bcbd;
+  --mxt-rail-ink-active: #8fd0a8;
+
+  /* ---- status pill tones ---------------------------------------------- */
+  --mxt-tint-ok: rgba(44, 110, 74, 0.12);
+  --mxt-tone-ok: #2c6e4a;
+  --mxt-tint-warn: rgba(205, 133, 1, 0.14);
+  --mxt-tone-warn: #8f5d01;
+  --mxt-tint-risk: rgba(168, 50, 30, 0.12);
+  --mxt-tone-risk: #a8321e;
+  --mxt-tint-info: rgba(27, 77, 75, 0.10);
+  --mxt-tone-info: #1b4d4b;
+  --mxt-tint-neutral: #eeece7;
+
+  /* ---- shape, density, elevation --------------------------------------- */
+  /* No elevation anywhere: 1px rules carry the structure instead. */
+  --mxt-radius: 2px;
+  --mxt-radius-lg: 2px;
+  --mxt-row-height: 30px;
+  --mxt-control-height: 30px;
+  --mxt-shadow: none;
+  --mxt-focus-halo: 0 0 0 3px rgba(31, 58, 95, 0.18);
+
+  /* ---- type ------------------------------------------------------------ */
+  --mxt-font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mxt-font-heading: 'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+  --mxt-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --mxt-font-size: 14px;
+  --mxt-line-height: 1.5;
+}

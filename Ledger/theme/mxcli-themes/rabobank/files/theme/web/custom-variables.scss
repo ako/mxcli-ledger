@@ -1,0 +1,70 @@
+// Layer 1 — the Rabobank palette. This is the file to edit.
+//
+// These are the theme's own semantic tokens. The next file down
+// (_mxcli-rabobank.scss) maps them onto the ~60 Atlas variables that Atlas
+// components, form controls and the brand-aware pluggable widgets (Switch,
+// Slider, ProgressBar, BadgeButton) actually read — so changing --mxt-brand
+// here re-brands the entire app, with no per-widget CSS.
+//
+// The values below are the LIGHT palette, which is Rabobank's default. The dark
+// palette lives beside the light-to-Atlas mapping in _mxcli-rabobank.scss.
+//
+// Mendix 11 Atlas is CSS-custom-property-first, so these are `:root`
+// declarations rather than SCSS `!default` variables. This file is imported
+// once per module, so it must hold declarations only — never rules.
+
+{{PALETTE_SCOPE}} {
+  /* ---- the one colour that defines the app --------------------------- */
+  --mxt-brand: #000099;
+  --mxt-brand-hover: #00007a;
+  --mxt-brand-ink: #ffffff; /* text on a brand-filled surface */
+
+  /* ---- semantic status ----------------------------------------------- */
+  --mxt-success: #2e7d32;
+  --mxt-warning: #ed8b00;
+  --mxt-danger: #c8102e;
+  --mxt-info: #0066b3;
+
+  /* ---- surfaces and ink ----------------------------------------------- */
+  --mxt-ground: #f5f6f9; /* the app background */
+  --mxt-surface: #ffffff; /* cards, modals, panels */
+  --mxt-surface-alt: #fafbfd; /* striped rows, subtle fills */
+  --mxt-surface-hover: #eef0f9;
+  --mxt-surface-selected: #e1e5f5;
+  --mxt-ink: #14142b;
+  --mxt-ink-muted: #55566e;
+  --mxt-ink-faint: #8a8ca0;
+  --mxt-line: #dddfe8;
+
+  /* ---- the navigation rail -------------------------------------------- */
+  --mxt-rail: #000099;
+  --mxt-rail-line: #2626b0;
+  --mxt-rail-ink: #c9cbef;
+  --mxt-rail-ink-active: #ff6600;
+
+  /* ---- status pill tones ---------------------------------------------- */
+  --mxt-tint-ok: rgba(46, 125, 50, 0.12);
+  --mxt-tone-ok: #256428;
+  --mxt-tint-warn: rgba(237, 139, 0, 0.14);
+  --mxt-tone-warn: #a86200;
+  --mxt-tint-risk: rgba(200, 16, 46, 0.12);
+  --mxt-tone-risk: #9c0c24;
+  --mxt-tint-info: rgba(0, 0, 153, 0.10);
+  --mxt-tone-info: #000099;
+  --mxt-tint-neutral: #eceef4;
+
+  /* ---- shape, density, elevation --------------------------------------- */
+  --mxt-radius: 3px;
+  --mxt-radius-lg: 5px;
+  --mxt-row-height: 32px;
+  --mxt-control-height: 32px;
+  --mxt-shadow: 0 1px 2px 0 rgba(20, 20, 43, 0.10);
+  --mxt-focus-halo: 0 0 0 3px rgba(255, 102, 0, 0.28);
+
+  /* ---- type ------------------------------------------------------------ */
+  --mxt-font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mxt-font-heading: var(--mxt-font);
+  --mxt-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mxt-font-size: 14px;
+  --mxt-line-height: 1.45;
+}

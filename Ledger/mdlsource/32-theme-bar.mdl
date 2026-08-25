@@ -1,0 +1,163 @@
+-- ============================================================================
+-- 32 - The theme switcher, on every page
+-- ============================================================================
+-- WHY THIS IS NOT IN THE TOPBAR, WHICH IS WHERE IT BELONGS. The topbar is part
+-- of the layout, and mxcli says plainly what that means:
+--
+--   $ mxcli -p Ledger.mpr -c "DESCRIBE LAYOUT Atlas_Core.Atlas_Default"
+--   -- Layouts cannot be created via MDL; they must be created in Studio Pro.
+--
+-- So nothing can be added beside the language selector without leaving the
+-- toolchain this project is built with. The language selector is up there
+-- because Atlas ships it, not because we put it there.
+--
+-- A snippet placed on every page is the closest thing MDL can author: one
+-- definition, eight call sites, and a control that is in the same place on
+-- every screen. It sits under the page title rather than above it, which is
+-- the honest position for something the layout does not own.
+--
+-- THREE BUTTONS RATHER THAN A COMBO BOX. A combo box binds to an attribute,
+-- an attribute needs a context object, and a context object on eight pages
+-- that do not otherwise need one means a non-persistent entity, a data-source
+-- microflow and a data view per page — machinery whose only purpose is to give
+-- a dropdown something to bind to. Three buttons need none of it and read as a
+-- segmented control. The trade is real and it is a trade: the set is fixed at
+-- three, and adding a fourth theme means editing this file rather than only
+-- re-running `theme apply`.
+--
+-- The nanoflows below are one per skin because a button passes no arguments.
+-- SetAppSkin itself takes the name, and mxcli generated it against the set that
+-- is actually installed — so a button here can never select a theme whose CSS
+-- is not in the page.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Repair: the two generated actions that take a parameter cannot run
+-- ----------------------------------------------------------------------------
+-- `mxcli theme switcher install` writes six JavaScript actions. The four with
+-- no parameters work. The two that take one throw a ReferenceError the first
+-- time a button calls them:
+--
+--   Client: An error occurred while executing an action of
+--   Ledger.SNIPPET_ThemeBar.btnSkinIng: Skin is not defined
+--
+-- Mendix generates the JS wrapper with the parameter's first letter LOWERED —
+-- `export async function SetAppSkin(skin)` for a parameter modelled as `Skin` —
+-- and mxcli writes a body that refers to it as `Skin`. The two never meet, in a
+-- file that is regenerated on every build so it cannot be patched in place.
+--
+-- Nothing catches it before runtime: `mx check` reports 0 errors, because as
+-- far as Mendix is concerned the action is well-formed and the body is opaque
+-- user code.
+--
+-- The bodies below are mxcli's own, with the parameter references lowercased
+-- and nothing else touched. RE-RUNNING `mxcli theme switcher install` PUTS THE
+-- DEFECT BACK — this file must be replayed after it.
+-- ----------------------------------------------------------------------------
+
+create or modify javascript action Ledger.SetAppSkin(Skin: String)
+  returns String
+  exposed as 'Set app theme skin' in 'Theme'
+  platform Web
+as $$
+	var skins = ["ledgerpaper", "ing", "rabobank"];
+	var root = document.documentElement;
+	skins.forEach(function (s) { root.classList.remove("mxt-" + s); });
+
+	var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
+	root.classList.add("mxt-" + chosen);
+	try {
+	    window.localStorage.setItem("mxcli-skin", chosen);
+	} catch (e) {
+	    // No storage available: the choice still applies for this page view.
+	}
+	return Promise.resolve(chosen);
+$$;
+/
+
+create or modify javascript action Ledger.SetAppTheme(Theme: String not null)
+  returns Boolean
+  exposed as 'Set app theme' in 'Theme'
+  platform Web
+as $$
+	var root = document.documentElement;
+	root.classList.remove("theme-light", "theme-dark");
+	try {
+	    if (theme === "light" || theme === "dark") {
+	        root.classList.add("theme-" + theme);
+	        window.localStorage.setItem("mxcli-theme", theme);
+	    } else {
+	        window.localStorage.removeItem("mxcli-theme");
+	    }
+	} catch (e) {
+	    if (theme === "light" || theme === "dark") {
+	        root.classList.add("theme-" + theme);
+	    }
+	}
+	return Promise.resolve(true);
+$$;
+/
+
+create or modify nanoflow Ledger.ACT_SkinLedgerPaper ()
+returns String
+begin
+  @position(360, 200)
+  $Skin = call javascript action Ledger.SetAppSkin(Skin = 'ledgerpaper');
+  @position(520, 200)
+  return $Skin;
+end;
+/
+
+create or modify nanoflow Ledger.ACT_SkinIng ()
+returns String
+begin
+  @position(360, 200)
+  $Skin = call javascript action Ledger.SetAppSkin(Skin = 'ing');
+  @position(520, 200)
+  return $Skin;
+end;
+/
+
+create or modify nanoflow Ledger.ACT_SkinRabobank ()
+returns String
+begin
+  @position(360, 200)
+  $Skin = call javascript action Ledger.SetAppSkin(Skin = 'rabobank');
+  @position(520, 200)
+  return $Skin;
+end;
+/
+
+/**
+ * The theme bar.
+ *
+ * No parameters and no data source: every button calls a nanoflow that runs
+ * entirely in the client, so this snippet can go on any page regardless of
+ * what that page's data view holds.
+ */
+create or replace snippet Ledger.SNIPPET_ThemeBar
+{
+  container ctnThemeBar (Class: 'ledger-themebar') {
+    dynamictext txtThemeLabel (
+      Content: 'Theme',
+      RenderMode: paragraph,
+      Class: 'ledger-themebar-label'
+    )
+    actionbutton btnSkinPaper (
+      Caption: 'Ledger Paper',
+      Action: nanoflow Ledger.ACT_SkinLedgerPaper,
+      Class: 'ledger-themebar-btn'
+    )
+    actionbutton btnSkinIng (
+      Caption: 'ING',
+      Action: nanoflow Ledger.ACT_SkinIng,
+      Class: 'ledger-themebar-btn'
+    )
+    actionbutton btnSkinRabo (
+      Caption: 'Rabobank',
+      Action: nanoflow Ledger.ACT_SkinRabobank,
+      Class: 'ledger-themebar-btn'
+    )
+  }
+}
+/

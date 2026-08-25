@@ -1,0 +1,167 @@
+-- ============================================================================
+-- 31 - Czech (cs_CZ)
+-- ============================================================================
+-- Generated from one table keyed on the English source, so every language says
+-- the same thing and a wording change to the source is a one-line edit in one
+-- place rather than seven.
+--
+-- NO `IN Ledger` SCOPE, deliberately. The navigation menu is a project-level
+-- document, not a module one, so `in Ledger` silently misses every menu
+-- caption: the chart text switched language and the sidebar did not. Unscoped
+-- plus `or modify` sets each source string wherever it occurs and leaves the
+-- rest alone.
+--
+-- `create or modify` rather than `create or replace`: it MERGES. Mendix already
+-- ships translations for the Atlas and System strings this app inherits — grid
+-- pagination, combo-box accessibility text, the selection announcements — and
+-- `or replace` would treat this file as authoritative and delete every one of
+-- them. What this file names, it sets; what it does not name, it leaves.
+--
+-- WHAT IS DELIBERATELY NOT TRANSLATED. Pure placeholders and symbols ('{1}',
+-- '€ {1}', the sort arrows), the seeded merchant names, and 'CSV'. A
+-- translation table that maps 'Albert Heijn' to something is not localisation,
+-- it is corrupting the demo data through the caption layer.
+--
+-- Placeholders survive verbatim. Mendix substitutes on {1} and {2}
+-- positionally, so the tokens are carried through untouched even where the
+-- surrounding word order changes — which it does: French and Spanish put the
+-- euro sign after the number, and the table reflects that rather than
+-- transliterating the English.
+--
+-- This covers Ledger's own UI. It is not a complete localisation of every
+-- string the app can render: CheckCompleteness is left off in
+-- 30-languages.mdl for exactly that reason, and anything untranslated falls
+-- back to en_US.
+-- ============================================================================
+
+create or modify translations for cs_CZ (
+    'A row per year, a column per week, a cell per day. Dark cells are heavy days; the empty ones are days nothing was spent at all.' as 'Řádek na rok, sloupec na týden, buňka na den. Tmavé buňky jsou náročné dny; prázdné jsou dny bez jediného výdaje.',
+    'Account' as 'Účet',
+    'Account name is required' as 'Název účtu je povinný',
+    'Accounts' as 'Účty',
+    'Actions' as 'Akce',
+    'Actual' as 'Skutečnost',
+    'All transactions' as 'Všechny transakce',
+    'Amount' as 'Částka',
+    'Apply' as 'Použít',
+    'Apr' as 'dub',
+    'Assign category' as 'Přiřadit kategorii',
+    'Assigns' as 'Přiřazuje',
+    'Aug' as 'srp',
+    'Balances as of the last import.' as 'Zůstatky k poslednímu importu.',
+    'Baseline budget / mo' as 'Základní rozpočet / měs.',
+    'Budget' as 'Rozpočet',
+    'Budget for this month' as 'Rozpočet na tento měsíc',
+    'Budgets' as 'Rozpočty',
+    'Cancel' as 'Zrušit',
+    'Cancel data export' as 'Zrušit export dat',
+    'Cancel selection' as 'Zrušit výběr',
+    'Cashflow' as 'Peněžní tok',
+    'Categories' as 'Kategorie',
+    'Categories & rules' as 'Kategorie a pravidla',
+    'Categorised' as 'Zařazeno',
+    'Category' as 'Kategorie',
+    'Category baseline is € {1} per month.' as 'Základní částka kategorie je € {1} měsíčně.',
+    'Category name is required' as 'Název kategorie je povinný',
+    'Checking' as 'Kontrola',
+    'Clear' as 'Vymazat',
+    'Clear selection' as 'Zrušit výběr',
+    'Close' as 'Zavřít',
+    'Comma, semicolon or tab separated, quoted fields allowed. With a header row the columns can be in any order (date, merchant, description, amount, account, category — Dutch names work too); without one, that is the order assumed. Amounts are taken as written and the sign is ignored: direction comes from the category. Lines that cannot be read still land, in the list below, with the reason.' as 'Odděleno čárkou, středníkem nebo tabulátorem, pole v uvozovkách jsou povolena. S hlavičkovým řádkem mohou být sloupce v libovolném pořadí (datum, obchodník, popis, částka, účet, kategorie — nizozemské názvy fungují také); bez hlavičky se předpokládá právě toto pořadí. Částky se berou tak, jak jsou zapsány, a znaménko se ignoruje: směr určuje kategorie. Řádky, které nelze přečíst, přesto přistanou v seznamu níže, i s důvodem.',
+    'Copy a year' as 'Zkopírovat rok',
+    'Copy overrides' as 'Zkopírovat výjimky',
+    'Credit' as 'Kredit',
+    'Dashboard' as 'Přehled',
+    'Date' as 'Datum',
+    'Dec' as 'pro',
+    'Delete' as 'Smazat',
+    'Delimiter' as 'Oddělovač',
+    'Description' as 'Popis',
+    'Discard batch' as 'Zahodit dávku',
+    'Each row is one category, each dot a transaction. The red ones sit more than two and a half standard deviations above their own category mean — not proof of a wrong category, but the shortest list worth checking.' as 'Každý řádek je jedna kategorie, každá tečka transakce. Červené leží více než dvě a půl směrodatné odchylky nad průměrem své vlastní kategorie — není to důkaz špatné kategorie, ale nejkratší seznam, který stojí za kontrolu.',
+    'Edit' as 'Upravit',
+    'Edit budget' as 'Upravit rozpočet',
+    'Every expense, over time' as 'Každý výdaj v čase',
+    'Expense' as 'Výdaj',
+    'Feb' as 'úno',
+    'Field' as 'Pole',
+    'For "is one of", separate the alternatives with commas: Spotify,Netflix,iCloud' as 'U „je jedním z“ oddělte alternativy čárkami: Spotify,Netflix,iCloud',
+    'From' as 'Od',
+    'Give the rule something to match on.' as 'Zadejte pravidlu, podle čeho se má shodovat.',
+    'Group' as 'Skupina',
+    'Group name is required' as 'Název skupiny je povinný',
+    'Import' as 'Import',
+    'Income' as 'Příjmy',
+    'Income against spend, by month' as 'Příjmy proti výdajům, po měsících',
+    'Income stacks above the axis, spend below. The dark line is the net — where it sits above zero, the month paid for itself.' as 'Příjmy se vrší nad osou, výdaje pod ní. Tmavá čára je netto — kde je nad nulou, měsíc se zaplatil sám.',
+    'Insights' as 'Analýzy',
+    'Jan' as 'led',
+    'Jul' as 'čvc',
+    'Jun' as 'čvn',
+    'Land pasted rows' as 'Načíst vložené řádky',
+    'Later →' as 'Později →',
+    'Mar' as 'bře',
+    'May' as 'kvě',
+    'Merchant' as 'Obchodník',
+    'Merchant name is required' as 'Jméno obchodníka je povinné',
+    'Merchants billing in four months or more, ranked by monthly average projected over a year. These are the ones where cancelling saves twelve times, which is what makes them worth the attention.' as 'Obchodníci účtující ve čtyřech a více měsících, seřazení podle měsíčního průměru přepočteného na rok. Právě zde zrušení ušetří dvanáctkrát, a proto si zaslouží pozornost.',
+    'Month is required' as 'Měsíc je povinný',
+    'Needs review' as 'K prověření',
+    'Net' as 'Netto',
+    'New rule' as 'Nové pravidlo',
+    'Nov' as 'lis',
+    'Oct' as 'říj',
+    'One amount per category per month. Click a cell to change it. Months that override the category baseline are marked.' as 'Jedna částka na kategorii a měsíc. Kliknutím na buňku ji změníte. Měsíce, které se liší od základní částky, jsou označeny.',
+    'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Drag across the dates to brush a range — the bars below re-total instantly, without asking the server anything.' as 'Jedna tečka na transakci v logaritmické škále, aby káva za 5 EUR a nájem za 1 500 EUR sdílely jednu osu. Tažením přes data vyberte rozsah — sloupce níže se okamžitě přepočítají, bez dotazu na server.',
+    'Operator' as 'Operátor',
+    'Order' as 'Pořadí',
+    'Over budget' as 'Nad rozpočet',
+    'Paste transactions' as 'Vložit transakce',
+    'Problem' as 'Problém',
+    'Promote valid rows' as 'Převzít platné řádky',
+    'Reference' as 'Reference',
+    'Reset' as 'Obnovit',
+    'Reset to baseline' as 'Zpět na základní částku',
+    'Rows land here first. They are checked where they landed, and only the ones that pass are written into Transactions — each check is one statement over the whole batch.' as 'Řádky nejprve přistanou zde. Kontrolují se na místě a do Transakcí se zapíší jen ty, které projdou — každá kontrola je jeden příkaz nad celou dávkou.',
+    'Rule' as 'Pravidlo',
+    'Rules' as 'Pravidla',
+    'Rules run in order and the first match wins, so a narrow rule belongs above a broad one. A rule only ever fills in a category that is still empty.' as 'Pravidla se vyhodnocují po pořadí a vyhrává první shoda, takže úzké pravidlo patří nad široké. Pravidlo doplní pouze kategorii, která je dosud prázdná.',
+    'Run rules' as 'Spustit pravidla',
+    'Run rules (statements)' as 'Spustit pravidla (příkazy)',
+    'Save' as 'Uložit',
+    'Savings' as 'Úspory',
+    'Selected' as 'Vybráno',
+    'Sep' as 'zář',
+    'Spend' as 'Výdaje',
+    'Spend by day' as 'Výdaje po dnech',
+    'Standing costs, and what a year of each is worth' as 'Stálé náklady a kolik stojí rok',
+    'The amount is what the bank reported and is not edited here. Its sign follows the category.' as 'Částka je ta, kterou nahlásila banka, a zde se neupravuje. Její znaménko se řídí kategorií.',
+    'The matrix scrolls sideways. Click any cell to inspect its transactions.' as 'Matice se posouvá do stran. Kliknutím na buňku zobrazíte její transakce.',
+    'The same months of both years, so a partial year is not compared against a whole one. Grey is last year, the filled dot is this year, and the colour says whether the move was in your favour — which is not the same direction for income as for spend.' as 'Stejné měsíce obou let, aby se neúplný rok neporovnával s celým. Šedá je loňsko, plná tečka letošek a barva říká, zda byl pohyb ve váš prospěch — což u příjmů není stejný směr jako u výdajů.',
+    'Theme' as 'Motiv',
+    'This month: € {1}  ·  Last import: {2}' as 'Tento měsíc: € {1}  ·  Poslední import: {2}',
+    'This year against last' as 'Letos proti loňsku',
+    'To' as 'Do',
+    'Total' as 'Celkem',
+    'Transaction' as 'Transakce',
+    'Transaction date is required' as 'Datum transakce je povinné',
+    'Transactions' as 'Transakce',
+    'Transactions unlike the rest of their category' as 'Transakce vymykající se své kategorii',
+    'Transactions with no category stay out of the cashflow report until assigned. Click any row to edit it.' as 'Transakce bez kategorie zůstávají mimo přehled peněžních toků, dokud nejsou přiřazeny. Kliknutím na řádek jej upravíte.',
+    'Trend' as 'Trend',
+    'Two-level taxonomy plus the rules that assign categories. Rules run in order and the first match wins.' as 'Dvouúrovňová taxonomie plus pravidla, která přiřazují kategorie. Pravidla běží po pořadí a vyhrává první shoda.',
+    'Under budget' as 'Pod rozpočet',
+    'Undo rule assignments' as 'Vrátit přiřazení pravidel',
+    'Use a sample instead' as 'Použít místo toho ukázku',
+    'Validate' as 'Ověřit',
+    'Value' as 'Hodnota',
+    'Variance' as 'Odchylka',
+    'Year' as 'Rok',
+    'contains' as 'obsahuje',
+    'equals' as 'rovná se',
+    'is one of' as 'je jedním z',
+    'starts with' as 'začíná na',
+    '{1} months, {2} categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.' as '{1} měsíců, {2} kategorií. Čára je měsíc, pásmo je rozsah, v němž se kategorie obvykle pohybuje, červená je měsíc mimo něj. Kliknutím na řádek zobrazíte, co za ním stojí.',
+    '{1} row(s) landed · {2} rejected' as '{1} řádk(ů) načteno · {2} odmítnuto',
+    '← Earlier' as '← Dříve'
+);
