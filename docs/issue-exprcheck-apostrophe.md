@@ -1,7 +1,7 @@
 # `mxcli check` rejects the `''` apostrophe escape in string literals
 
-**Version:** `mxcli version 39c7d946 (2026-08-25T06:32:44Z)`
-Also reproduced on `a44c735c`, `e26f1b74` and `1d0b82ce`.
+**Version:** `mxcli version 0bf0f0ea (2026-08-25T07:55:24Z)`
+Also reproduced on `a44c735c`, `e26f1b74`, `1d0b82ce` and `39c7d946`.
 
 ## Summary
 

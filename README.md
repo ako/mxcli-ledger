@@ -540,7 +540,7 @@ Three rules learned the hard way and worth stating up front:
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
   couple pass both and only show up at runtime. It also runs the other way: as of
-  mxcli `a44c735c`, `mxcli check` reports three "Unexpected token after
+  mxcli `0bf0f0ea`, `mxcli check` reports three "Unexpected token after
   expression" errors — two in `25-insights-data.mdl`, one in `28-oql-dml.mdl` —
   that are false. Its expression lexer does not know the `''` apostrophe escape
   (`FINDINGS` 131); `mx check` reports 0 errors and the unit suite covers the

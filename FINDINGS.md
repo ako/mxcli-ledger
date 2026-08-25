@@ -5260,7 +5260,7 @@ that `BUILD_ScatterUrl` doubles an apostrophe in a filter value, it runs the ver
 expression `check` rejects, and it passes.
 
 **Cause.** The expression lexer scans to the next `'` and stops, with no notion
-of an escape — `mdl/exprcheck/lexer.go:66`:
+of an escape — `mdl/exprcheck/lexer.go:68`:
 
 ```go
 case c == '\'':
@@ -5307,8 +5307,36 @@ unconsumed-token error with an empty location — as a previously-fixed
 false-positive class (upstream #939). This is the same check firing on a
 different input.
 
+**Which forms trip it.** Any literal carrying the escape, not just the two-sided
+case:
+
+| intended value | source | result |
+|---|---|---|
+| `x` | `'x'` | clean |
+| `a'b` | `'a''b'` | **error** |
+| `x'` | `'x'''` | **error** |
+| `'x` | `'''x'` | **error** |
+
 **Ask:** teach the lexer the `''` escape (consume the pair and continue), and
 give the reporter the file and line the parser already computed.
+
+**Still open across five builds.** The container rebuilt mxcli from `main` four
+more times while this was being written up, and the repro was re-run on each:
+`a44c735c`, `e26f1b74`, `1d0b82ce`, `39c7d946`, `0bf0f0ea`. Same error every
+time, and the project-wide sweep is still exactly the same three findings in the
+same two files. The counter-evidence was re-run on `1d0b82ce` back to back with
+the failing check — `exec` round-trip, `mx check` 0 errors, 42/42 unit tests —
+so the disagreement is not an artifact of one build's state.
+
+The write-up for the mxcli tracker is `docs/issue-exprcheck-apostrophe.md`.
+**It has not been filed.** This session's GitHub scope covers only
+`ako/mxcli-ledger`, and attaching `ako/mxcli` was declined, so the file is a
+stand-in rather than a link to a real issue. One thing that cost time and is
+worth knowing: with a repo out of scope, issue *search* against it returns
+`total_count: 0` rather than an error. Three searches came back empty and looked
+like "no duplicate" until a control search for issue #238 — which is named in a
+merge commit and certainly exists — came back empty too. No duplicate check was
+actually performed.
 
 ### 132. MDL-ORDER01 lands, and finding 118 is a different bug than it addresses
 
