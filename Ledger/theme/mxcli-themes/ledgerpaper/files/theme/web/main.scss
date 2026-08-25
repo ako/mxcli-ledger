@@ -1,0 +1,5 @@
+// This file compiles after Atlas Core and after every module theme source, so
+// the partials imported here can override any Atlas rule without !important —
+// including Mendix's own _theme-dark.scss above.
+{{SHARED_HEAD}}@import "mxcli-ledgerpaper";
+{{SHARED_TAIL}}

@@ -297,6 +297,7 @@ create or replace page Ledger.Import_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Import', rendermode: H2)
+        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (
           content: 'Rows land here first. They are checked where they landed, and only the ones that pass are written into Transactions — each check is one statement over the whole batch.',
           rendermode: paragraph,

@@ -517,10 +517,13 @@ begin
     Name3 = '', Value3 = '', Type3 = '',
     Name4 = '', Value4 = '', Type4 = '');
 
-  @annotation 'Resolve the account by name. A correlated subquery in SET is what the docs call a long path; the correlation is written with the fully qualified entity path.'
+  @annotation 'Resolve the account by name OR by IBAN, because a bank export names the account with its number and a pasted spreadsheet names it with its name. Spaces are stripped on both sides: Account.IBAN is stored grouped for reading (NL21 INGB 0004 5567 21) and no export writes it that way. The IBAN arm is guarded on a non-empty IBAN — without it an empty AccountName would match every account whose IBAN is blank, and silently attach the first one. A correlated subquery in SET is what the docs call a long path; the correlation is written with the fully qualified entity path.'
   $Acct = call java action Ledger.OQL_ExecuteWith (
     Statement = 'update Ledger.ImportRow set Ledger.ImportRow_Account = '
-      + '(select a.id from Ledger.Account as a where UPPER(a.Name) = UPPER(Ledger.ImportRow/AccountName)) '
+      + '(select a.id from Ledger.Account as a where '
+      + 'UPPER(a.Name) = UPPER(Ledger.ImportRow/AccountName) '
+      + 'or (a.IBAN != '''' and REPLACE(UPPER(a.IBAN), '' '', '''') '
+      + '= REPLACE(UPPER(Ledger.ImportRow/AccountName), '' '', ''''))) '
       + 'where Batch = $b',
     Name1 = 'b', Value1 = $Batch, Type1 = 'string',
     Name2 = '', Value2 = '', Type2 = '',

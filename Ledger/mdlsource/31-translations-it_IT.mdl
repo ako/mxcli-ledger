@@ -1,0 +1,167 @@
+-- ============================================================================
+-- 31 - Italian (it_IT)
+-- ============================================================================
+-- Generated from one table keyed on the English source, so every language says
+-- the same thing and a wording change to the source is a one-line edit in one
+-- place rather than seven.
+--
+-- NO `IN Ledger` SCOPE, deliberately. The navigation menu is a project-level
+-- document, not a module one, so `in Ledger` silently misses every menu
+-- caption: the chart text switched language and the sidebar did not. Unscoped
+-- plus `or modify` sets each source string wherever it occurs and leaves the
+-- rest alone.
+--
+-- `create or modify` rather than `create or replace`: it MERGES. Mendix already
+-- ships translations for the Atlas and System strings this app inherits — grid
+-- pagination, combo-box accessibility text, the selection announcements — and
+-- `or replace` would treat this file as authoritative and delete every one of
+-- them. What this file names, it sets; what it does not name, it leaves.
+--
+-- WHAT IS DELIBERATELY NOT TRANSLATED. Pure placeholders and symbols ('{1}',
+-- '€ {1}', the sort arrows), the seeded merchant names, and 'CSV'. A
+-- translation table that maps 'Albert Heijn' to something is not localisation,
+-- it is corrupting the demo data through the caption layer.
+--
+-- Placeholders survive verbatim. Mendix substitutes on {1} and {2}
+-- positionally, so the tokens are carried through untouched even where the
+-- surrounding word order changes — which it does: French and Spanish put the
+-- euro sign after the number, and the table reflects that rather than
+-- transliterating the English.
+--
+-- This covers Ledger's own UI. It is not a complete localisation of every
+-- string the app can render: CheckCompleteness is left off in
+-- 30-languages.mdl for exactly that reason, and anything untranslated falls
+-- back to en_US.
+-- ============================================================================
+
+create or modify translations for it_IT (
+    'A row per year, a column per week, a cell per day. Dark cells are heavy days; the empty ones are days nothing was spent at all.' as 'Una riga per anno, una colonna per settimana, una cella per giorno. Le celle scure sono giornate pesanti; quelle vuote sono giorni senza alcuna spesa.',
+    'Account' as 'Conto',
+    'Account name is required' as 'Il nome del conto è obbligatorio',
+    'Accounts' as 'Conti',
+    'Actions' as 'Azioni',
+    'Actual' as 'Effettivo',
+    'All transactions' as 'Tutte le transazioni',
+    'Amount' as 'Importo',
+    'Apply' as 'Applica',
+    'Apr' as 'apr',
+    'Assign category' as 'Assegna categoria',
+    'Assigns' as 'Assegna',
+    'Aug' as 'ago',
+    'Balances as of the last import.' as 'Saldi all''ultima importazione.',
+    'Baseline budget / mo' as 'Budget base / mese',
+    'Budget' as 'Budget',
+    'Budget for this month' as 'Budget di questo mese',
+    'Budgets' as 'Budget',
+    'Cancel' as 'Annulla',
+    'Cancel data export' as 'Annulla esportazione',
+    'Cancel selection' as 'Annulla selezione',
+    'Cashflow' as 'Flusso di cassa',
+    'Categories' as 'Categorie',
+    'Categories & rules' as 'Categorie e regole',
+    'Categorised' as 'Categorizzato',
+    'Category' as 'Categoria',
+    'Category baseline is € {1} per month.' as 'L''importo base della categoria è di € {1} al mese.',
+    'Category name is required' as 'Il nome della categoria è obbligatorio',
+    'Checking' as 'Verifica',
+    'Clear' as 'Cancella',
+    'Clear selection' as 'Cancella selezione',
+    'Close' as 'Chiudi',
+    'Comma, semicolon or tab separated, quoted fields allowed. With a header row the columns can be in any order (date, merchant, description, amount, account, category — Dutch names work too); without one, that is the order assumed. Amounts are taken as written and the sign is ignored: direction comes from the category. Lines that cannot be read still land, in the list below, with the reason.' as 'Separato da virgola, punto e virgola o tabulazione, campi tra virgolette ammessi. Con una riga di intestazione le colonne possono stare in qualsiasi ordine (data, esercente, descrizione, importo, conto, categoria — funzionano anche i nomi olandesi); senza intestazione si assume quell''ordine. Gli importi sono presi come scritti e il segno viene ignorato: la direzione viene dalla categoria. Le righe illeggibili atterrano comunque, nell''elenco sottostante, con il motivo.',
+    'Copy a year' as 'Copia un anno',
+    'Copy overrides' as 'Copia le eccezioni',
+    'Credit' as 'Credito',
+    'Dashboard' as 'Cruscotto',
+    'Date' as 'Data',
+    'Dec' as 'dic',
+    'Delete' as 'Elimina',
+    'Delimiter' as 'Separatore',
+    'Description' as 'Descrizione',
+    'Discard batch' as 'Scarta lotto',
+    'Each row is one category, each dot a transaction. The red ones sit more than two and a half standard deviations above their own category mean — not proof of a wrong category, but the shortest list worth checking.' as 'Ogni riga è una categoria, ogni punto una transazione. Quelli rossi stanno oltre due deviazioni standard e mezzo sopra la media della loro categoria — non provano una categoria sbagliata, ma sono l''elenco più breve da controllare.',
+    'Edit' as 'Modifica',
+    'Edit budget' as 'Modifica budget',
+    'Every expense, over time' as 'Ogni spesa nel tempo',
+    'Expense' as 'Spesa',
+    'Feb' as 'feb',
+    'Field' as 'Campo',
+    'For "is one of", separate the alternatives with commas: Spotify,Netflix,iCloud' as 'Per "è uno di", separa le alternative con virgole: Spotify,Netflix,iCloud',
+    'From' as 'Da',
+    'Give the rule something to match on.' as 'Fornisci alla regola un criterio.',
+    'Group' as 'Gruppo',
+    'Group name is required' as 'Il nome del gruppo è obbligatorio',
+    'Import' as 'Importa',
+    'Income' as 'Entrate',
+    'Income against spend, by month' as 'Entrate contro spese, per mese',
+    'Income stacks above the axis, spend below. The dark line is the net — where it sits above zero, the month paid for itself.' as 'Le entrate si impilano sopra l''asse, le spese sotto. La linea scura è il netto — dove sta sopra lo zero, il mese si è ripagato.',
+    'Insights' as 'Analisi',
+    'Jan' as 'gen',
+    'Jul' as 'lug',
+    'Jun' as 'giu',
+    'Land pasted rows' as 'Carica righe incollate',
+    'Later →' as 'Successivo →',
+    'Mar' as 'mar',
+    'May' as 'mag',
+    'Merchant' as 'Esercente',
+    'Merchant name is required' as 'Il nome dell''esercente è obbligatorio',
+    'Merchants billing in four months or more, ranked by monthly average projected over a year. These are the ones where cancelling saves twelve times, which is what makes them worth the attention.' as 'Esercenti che fatturano in quattro o più mesi, ordinati per media mensile proiettata su un anno. Sono quelli in cui disdire fa risparmiare dodici volte, ed è ciò che li rende degni di attenzione.',
+    'Month is required' as 'Il mese è obbligatorio',
+    'Needs review' as 'Da rivedere',
+    'Net' as 'Netto',
+    'New rule' as 'Nuova regola',
+    'Nov' as 'nov',
+    'Oct' as 'ott',
+    'One amount per category per month. Click a cell to change it. Months that override the category baseline are marked.' as 'Un importo per categoria al mese. Fai clic su una cella per modificarlo. I mesi che derogano all''importo base sono contrassegnati.',
+    'One dot per transaction on a log scale, so a EUR 5 coffee and a EUR 1,500 rent can share an axis. Drag across the dates to brush a range — the bars below re-total instantly, without asking the server anything.' as 'Un punto per transazione su scala logaritmica, così un caffè da 5 EUR e un affitto da 1.500 EUR condividono un asse. Trascina sulle date per selezionare un intervallo — le barre sotto si ricalcolano all''istante, senza interrogare il server.',
+    'Operator' as 'Operatore',
+    'Order' as 'Ordine',
+    'Over budget' as 'Oltre il budget',
+    'Paste transactions' as 'Incolla transazioni',
+    'Problem' as 'Problema',
+    'Promote valid rows' as 'Promuovi righe valide',
+    'Reference' as 'Riferimento',
+    'Reset' as 'Reimposta',
+    'Reset to baseline' as 'Torna all''importo base',
+    'Rows land here first. They are checked where they landed, and only the ones that pass are written into Transactions — each check is one statement over the whole batch.' as 'Le righe atterrano prima qui. Vengono controllate sul posto e solo quelle che passano vengono scritte in Transazioni — ogni controllo è un''istruzione sull''intero lotto.',
+    'Rule' as 'Regola',
+    'Rules' as 'Regole',
+    'Rules run in order and the first match wins, so a narrow rule belongs above a broad one. A rule only ever fills in a category that is still empty.' as 'Le regole vengono eseguite in ordine e vince la prima corrispondenza, quindi una regola stretta va sopra una ampia. Una regola riempie solo una categoria ancora vuota.',
+    'Run rules' as 'Esegui regole',
+    'Run rules (statements)' as 'Esegui regole (istruzioni)',
+    'Save' as 'Salva',
+    'Savings' as 'Risparmio',
+    'Selected' as 'Selezionato',
+    'Sep' as 'set',
+    'Spend' as 'Spese',
+    'Spend by day' as 'Spese per giorno',
+    'Standing costs, and what a year of each is worth' as 'Costi fissi e quanto vale un anno',
+    'The amount is what the bank reported and is not edited here. Its sign follows the category.' as 'L''importo è quello comunicato dalla banca e non si modifica qui. Il suo segno segue la categoria.',
+    'The matrix scrolls sideways. Click any cell to inspect its transactions.' as 'La matrice scorre lateralmente. Fai clic su una cella per esaminarne le transazioni.',
+    'The same months of both years, so a partial year is not compared against a whole one. Grey is last year, the filled dot is this year, and the colour says whether the move was in your favour — which is not the same direction for income as for spend.' as 'Gli stessi mesi di entrambi gli anni, così un anno parziale non viene confrontato con uno intero. Il grigio è l''anno scorso, il punto pieno quest''anno, e il colore dice se il movimento è stato a tuo favore — che non è la stessa direzione per le entrate e per le spese.',
+    'Theme' as 'Tema',
+    'This month: € {1}  ·  Last import: {2}' as 'Questo mese: € {1}  ·  Ultima importazione: {2}',
+    'This year against last' as 'Quest''anno contro lo scorso',
+    'To' as 'A',
+    'Total' as 'Totale',
+    'Transaction' as 'Transazione',
+    'Transaction date is required' as 'La data della transazione è obbligatoria',
+    'Transactions' as 'Transazioni',
+    'Transactions unlike the rest of their category' as 'Transazioni anomale nella loro categoria',
+    'Transactions with no category stay out of the cashflow report until assigned. Click any row to edit it.' as 'Le transazioni senza categoria restano fuori dal rapporto di flusso di cassa finché non vengono assegnate. Fai clic su una riga per modificarla.',
+    'Trend' as 'Andamento',
+    'Two-level taxonomy plus the rules that assign categories. Rules run in order and the first match wins.' as 'Tassonomia a due livelli più le regole che assegnano le categorie. Le regole vengono eseguite in ordine e vince la prima corrispondenza.',
+    'Under budget' as 'Sotto il budget',
+    'Undo rule assignments' as 'Annulla assegnazioni',
+    'Use a sample instead' as 'Usa invece un campione',
+    'Validate' as 'Convalida',
+    'Value' as 'Valore',
+    'Variance' as 'Scostamento',
+    'Year' as 'Anno',
+    'contains' as 'contiene',
+    'equals' as 'è uguale a',
+    'is one of' as 'è uno di',
+    'starts with' as 'inizia con',
+    '{1} months, {2} categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.' as '{1} mesi, {2} categorie. La linea è il mese, la banda l''intervallo in cui quella categoria si colloca di solito, il rosso un mese fuori da esso. Fai clic su una riga per vedere cosa c''è dietro.',
+    '{1} row(s) landed · {2} rejected' as '{1} riga/righe caricate · {2} rifiutate',
+    '← Earlier' as '← Precedente'
+);

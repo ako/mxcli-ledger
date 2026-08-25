@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 130 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 140 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -539,7 +539,13 @@ Three rules learned the hard way and worth stating up front:
 
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
-  couple pass both and only show up at runtime.
+  couple pass both and only show up at runtime. It also runs the other way: as of
+  mxcli `0bf0f0ea`, `mxcli check` reports three "Unexpected token after
+  expression" errors — two in `25-insights-data.mdl`, one in `28-oql-dml.mdl` —
+  that are false. Its expression lexer does not know the `''` apostrophe escape
+  (`FINDINGS` 131); `mx check` reports 0 errors and the unit suite covers the
+  expressions in question. The findings carry no file or line, so they are easy
+  to mistake for something real.
 - **`DESCRIBE` is how you find out what was actually serialized.** More than one
   finding came from comparing authored MDL against what came back.
 - **`mxcli widget init` is a build step, not a setup step.** mxcli writes a
@@ -582,6 +588,59 @@ menu had no icons, and once icons arrived Atlas' own rule — which gives the
 glyph `flex-basis: var(--closed-sidebar-width)` — turned that into a 224px icon
 slot that pushed every caption out of view. Finding 95 has the measurements.
 
+### Three themes, switched at runtime
+
+`mxcli theme` installs a switchable set: **Ledger Paper** (the palette above),
+**ING** and **Rabobank**. All three compile into one stylesheet and selecting
+one is a class swap on `<html>` — no rebuild, no reload, no server round trip.
+
+| Ledger Paper | ING | Rabobank |
+|---|---|---|
+| teal `#1B4D4B`, warm paper, charcoal rail | orange `#FF6200`, charcoal rail | blue `#000099`, **blue** rail, orange active mark |
+
+ING and Rabobank are `mxcli theme create` scaffolds living in
+`Ledger/theme/mxcli-themes/`, committed with the project. The colours
+approximate each bank's public brand; they are demonstration themes, not
+official assets.
+
+**The interesting part is what made the app's own CSS follow.** The 29KB of
+hand-written component styling reads 17 `--ledger-*` tokens in 72 places, all
+literal hex — so a theme swap moved the Atlas widgets and left the cashflow
+matrix, the sidebar and the import table exactly as they were. Half a re-brand.
+Redefining those tokens as `var(--mxt-…)` fixes it in nineteen lines, because
+custom properties resolve at *use* time and pick up whichever theme is scoped on
+`:root`. One alias layer, and one class swap moves everything.
+
+The three buttons sit under each page title rather than in the topbar, and that
+is a toolchain limit rather than a choice: **layouts are the one document MDL
+cannot author** (`mxcli` says so outright when you describe one), so nothing can
+be added beside the language selector. Finding 136.
+
+Note that the charts do not re-theme. Their palettes are baked into the Vega
+specifications as literal hex, which is the right call for a chart — a spec that
+resolved its colours from CSS would render differently depending on where it was
+embedded — but it does mean the largest area of colour on the Dashboard is the
+one thing a theme does not touch.
+
+### Seven languages
+
+English, Dutch, German, French, Czech, Spanish and Italian, enabled with
+`alter settings LANGUAGE add` and switched from the selector Atlas puts in the
+topbar. 129 source strings are translated from a single table keyed on the
+English text, so every language says the same thing and a wording change is one
+edit rather than seven — `Ledger/mdlsource/31-translations-*.mdl` are generated
+from it.
+
+This is Ledger's own UI, not a complete localisation: placeholders, symbols,
+seeded merchant names and the Atlas strings Mendix already ships are left alone,
+and anything untranslated falls back to en_US. `CheckCompleteness` is off for
+that reason.
+
+One trap worth repeating from finding 137: scoping the translations `IN Ledger`
+looks careful and silently misses the navigation menu, because navigation is a
+project-level document. The symptom is a page whose text is German above a
+sidebar that is still English.
+
 ---
 
 ## Known gaps
@@ -615,7 +674,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              130 numbered findings — the main deliverable alongside the app
+FINDINGS.md              140 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

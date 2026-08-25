@@ -963,3 +963,75 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
         overflow-x: auto;
     }
 }
+
+// ===========================================================================
+// The theme bar
+// ===========================================================================
+// Three buttons and a label, sitting under each page title. It reads as a
+// segmented control rather than three separate buttons because the set is a
+// single choice — the pieces are joined, and only the borders between them are
+// collapsed so the group has one outline rather than three.
+//
+// It is here rather than in the topbar because the topbar belongs to the
+// layout, and layouts are the one document MDL cannot author (mxcli says so
+// outright: "Layouts cannot be created via MDL"). See mdlsource/32-theme-bar.mdl.
+//
+// Every colour below is a --mxt-* token, so the bar is themed by whichever
+// theme it is currently selecting.
+// ===========================================================================
+
+.ledger-themebar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 0 0 12px 0;
+
+    .ledger-themebar-label {
+        font-family: var(--ledger-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ledger-label);
+        margin: 0 10px 0 0;
+    }
+
+    .btn.ledger-themebar-btn {
+        font-size: 11px;
+        line-height: 1;
+        padding: 6px 10px;
+        border: 1px solid var(--mxt-line);
+        background: var(--mxt-surface);
+        color: var(--mxt-ink-muted);
+        border-radius: 0;
+        margin: 0;
+        box-shadow: none;
+
+        // Collapse the seam between adjacent buttons so the three read as one
+        // control. Only the outer corners are rounded.
+        + .btn.ledger-themebar-btn {
+            margin-left: -1px;
+        }
+        &:first-of-type {
+            border-radius: var(--mxt-radius) 0 0 var(--mxt-radius);
+        }
+        &:last-of-type {
+            border-radius: 0 var(--mxt-radius) var(--mxt-radius) 0;
+        }
+
+        &:hover {
+            background: var(--mxt-surface-hover);
+            color: var(--mxt-ink);
+            // Lift the hovered button over its neighbour's border, or the
+            // shared 1px seam hides half the hover outline.
+            position: relative;
+            z-index: 1;
+        }
+
+        &:focus-visible {
+            outline: none;
+            box-shadow: var(--mxt-focus-halo);
+            position: relative;
+            z-index: 2;
+        }
+    }
+}

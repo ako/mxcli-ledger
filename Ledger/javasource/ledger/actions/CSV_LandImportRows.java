@@ -155,9 +155,35 @@ public class CSV_LandImportRows extends UserAction<java.lang.Long>
 		    v == null ? "" : v.trim().toLowerCase().replaceAll("[^a-z0-9]", "");
 		
 		int iDate = 0, iMerchant = 1, iDesc = 2, iAmount = 3, iAccount = 4, iCategory = 5;
+		int iMerchant2 = -1, iDesc2 = -1, iDesc3 = -1;
 		int firstDataRow = 0;
 		
 		java.util.List<String> head = data.get(0);
+		
+		// --- bank format -----------------------------------------------------
+		// A statement export is not a generic CSV with different column names. The
+		// date format, the decimal convention, and where the counterparty's NAME
+		// lives as opposed to its ACCOUNT NUMBER all change together, so the format
+		// is recognised once and drives all of them.
+		//
+		// Detection is on a pair of columns rather than one, because single names
+		// are not distinctive: 'Datum' and 'Bedrag' appear in every Dutch export
+		// there is. What is distinctive is ING's Af/Bij direction column and
+		// Rabobank's separate counterparty-name column.
+		//
+		// Falling through to 'generic' is always safe: it is the header-name mapping
+		// that already worked, and a file that matches neither signature is read
+		// exactly as it was before this existed.
+		java.util.Set<String> hset = new java.util.HashSet<String>();
+		for (String v : head) hset.add(norm.apply(v));
+		
+		String bank = "generic";
+		if (hset.contains("afbij") && (hset.contains("naamomschrijving") || hset.contains("bedrageur"))) {
+		    bank = "ing";
+		} else if (hset.contains("naamtegenpartij") && (hset.contains("ibanbban") || hset.contains("volgnummer"))) {
+		    bank = "rabobank";
+		}
+		
 		boolean looksLikeHeader = false;
 		for (String v : head) {
 		    String n = norm.apply(v);
@@ -173,7 +199,35 @@ public class CSV_LandImportRows extends UserAction<java.lang.Long>
 		    }
 		}
 		
-		if (looksLikeHeader) {
+		if (!bank.equals("generic")) {
+		    // Named formats map by exact column, not by the alias list. Two of the
+		    // aliases would actively mislead here: 'tegenrekening' is in the merchant
+		    // list, and in an ING export that column is the counterparty's IBAN while
+		    // the name sits in 'Naam / Omschrijving' — the generic map would file an
+		    // account number as the merchant on every row and nothing would flag it.
+		    iDate = -1; iMerchant = -1; iDesc = -1; iAmount = -1; iAccount = -1; iCategory = -1;
+		    for (int i = 0; i < head.size(); i++) {
+		        String n = norm.apply(head.get(i));
+		        if (bank.equals("ing")) {
+		            if (n.equals("datum")) iDate = i;
+		            else if (n.equals("naamomschrijving")) iMerchant = i;
+		            else if (n.equals("mededelingen")) iDesc = i;
+		            else if (n.equals("mutatiesoort")) iDesc2 = i;
+		            else if (n.equals("bedrageur") || n.equals("bedrag")) iAmount = i;
+		            else if (n.equals("rekening")) iAccount = i;
+		        } else {
+		            if (n.equals("datum")) iDate = i;              // not 'rentedatum'
+		            else if (n.equals("naamtegenpartij")) iMerchant = i;
+		            else if (n.equals("naamtegenpartijtoevoeging")) iMerchant2 = i;
+		            else if (n.equals("omschrijving1")) iDesc = i;
+		            else if (n.equals("omschrijving2")) iDesc2 = i;
+		            else if (n.equals("omschrijving3")) iDesc3 = i;
+		            else if (n.equals("bedrag")) iAmount = i;       // not 'saldonamutatie'
+		            else if (n.equals("ibanbban")) iAccount = i;
+		        }
+		    }
+		    firstDataRow = 1;
+		} else if (looksLikeHeader) {
 		    iDate = -1; iMerchant = -1; iDesc = -1; iAmount = -1; iAccount = -1; iCategory = -1;
 		    for (int i = 0; i < head.size(); i++) {
 		        String n = norm.apply(head.get(i));
@@ -207,6 +261,46 @@ public class CSV_LandImportRows extends UserAction<java.lang.Long>
 		
 		java.util.function.BiFunction<String, Integer, String> clip = (v, n) ->
 		    v == null ? "" : (v.length() <= n ? v : v.substring(0, n));
+		
+		// Dates are normalised HERE, not in the promote step. The row lands as text
+		// and PROMOTE_ImportBatch reads it with DATEPARSE(TxDateText, 'yyyy-MM-dd'),
+		// one format for every source — so the place that knows which format arrived
+		// is the place that has to convert it. ING writes 20260824; teaching the OQL
+		// a second pattern would mean a second statement over the whole batch and a
+		// rule for deciding which one applies.
+		//
+		// Anything not recognised is passed through UNCHANGED rather than rejected:
+		// the row still lands, DATEPARSE returns null, and the existing empty-date
+		// check flags it with a message about the date. Guessing here would turn a
+		// visible bad date into an invisible wrong one.
+		java.util.function.Function<String, String> isoDate = raw -> {
+		    if (raw == null) return "";
+		    String v = raw.trim();
+		    if (v.length() == 8 && v.chars().allMatch(Character::isDigit)) {
+		        return v.substring(0, 4) + "-" + v.substring(4, 6) + "-" + v.substring(6, 8);
+		    }
+		    // dd-MM-yyyy and dd/MM/yyyy — day first is the Dutch convention, and no
+		    // export in scope here writes month first.
+		    if (v.length() == 10 && (v.charAt(2) == '-' || v.charAt(2) == '/')
+		        && (v.charAt(5) == '-' || v.charAt(5) == '/')) {
+		        return v.substring(6, 10) + "-" + v.substring(3, 5) + "-" + v.substring(0, 2);
+		    }
+		    return v;
+		};
+		
+		// Join the parts a bank splits across columns, dropping the empty ones so a
+		// description never comes back as ' ·  · ' when only the first part is filled.
+		java.util.function.Function<java.util.List<String>, String> joinParts = parts -> {
+		    StringBuilder sb = new StringBuilder();
+		    for (String s : parts) {
+		        if (s == null) continue;
+		        String t = s.trim();
+		        if (t.isEmpty()) continue;
+		        if (sb.length() > 0) sb.append(" · ");
+		        sb.append(t);
+		    }
+		    return sb.toString();
+		};
 		
 		// Both decimal conventions, and neither is guessed from a locale: whichever
 		// separator appears last is the decimal one, because that is true in both.
@@ -266,9 +360,19 @@ public class CSV_LandImportRows extends UserAction<java.lang.Long>
 		        com.mendix.core.Core.instantiate(ctx, "Ledger.ImportRow");
 		    o.setValue(ctx, "Batch", Batch);
 		    o.setValue(ctx, "RowNo", Long.valueOf(rowNo));
-		    o.setValue(ctx, "TxDateText", clip.apply(at.apply(rec, iDate), 30));
-		    o.setValue(ctx, "Merchant", clip.apply(at.apply(rec, iMerchant), 200));
-		    o.setValue(ctx, "Description", clip.apply(at.apply(rec, iDesc), 500));
+		    String mMerchant = at.apply(rec, iMerchant);
+		    if (iMerchant2 >= 0) {
+		        mMerchant = joinParts.apply(java.util.Arrays.asList(mMerchant, at.apply(rec, iMerchant2)));
+		    }
+		    String mDesc = at.apply(rec, iDesc);
+		    if (iDesc2 >= 0 || iDesc3 >= 0) {
+		        mDesc = joinParts.apply(java.util.Arrays.asList(
+		            mDesc, at.apply(rec, iDesc2), at.apply(rec, iDesc3)));
+		    }
+		
+		    o.setValue(ctx, "TxDateText", clip.apply(isoDate.apply(at.apply(rec, iDate)), 30));
+		    o.setValue(ctx, "Merchant", clip.apply(mMerchant, 200));
+		    o.setValue(ctx, "Description", clip.apply(mDesc, 500));
 		    o.setValue(ctx, "AccountName", clip.apply(at.apply(rec, iAccount), 100));
 		    o.setValue(ctx, "CategoryName", clip.apply(at.apply(rec, iCategory), 100));
 		

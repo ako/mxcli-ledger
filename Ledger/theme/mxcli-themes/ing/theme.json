@@ -1,0 +1,56 @@
+{
+  "name": "ing",
+  "title": "ING",
+  "version": "1",
+  "summary": "ING orange on white, charcoal rail, 4px radius",
+  "description": "ING brand palette for the Ledger demo, scaffolded from Signal by `mxcli theme create`. Colours approximate the public brand; this is a demonstration theme, not an official ING asset.",
+  "colorway": [
+    "#FF6200",
+    "#0A5DA8",
+    "#128A4E",
+    "#B45309",
+    "#C8102E",
+    "#5C5C5C"
+  ],
+  "defaultVariant": "light",
+  "files": [
+    {
+      "path": "theme/web/custom-variables.scss",
+      "mode": "block",
+      "purpose": "Layer 1 — the Ing palette (light): brand, surfaces, ink, density"
+    },
+    {
+      "path": "theme/web/_mxcli-atlas-map.scss",
+      "mode": "block",
+      "purpose": "the Atlas wiring — shared by every mxcli theme, identical in each",
+      "shared": true
+    },
+    {
+      "path": "theme/web/_mxcli-ing.scss",
+      "mode": "block",
+      "purpose": "the other palette, the variant blocks, @font-face, and this theme's own skin rules"
+    },
+    {
+      "path": "theme/web/_mxcli-recipes.scss",
+      "mode": "block",
+      "purpose": "the recipe layer — num / pill / stat / focus / density, shared by every theme",
+      "shared": true
+    },
+    {
+      "path": "theme/web/_mxcli-widgets.scss",
+      "mode": "block",
+      "purpose": "the widget-module layer — rules for colours Sass bakes before any token exists",
+      "shared": true
+    },
+    {
+      "path": "theme/web/main.scss",
+      "mode": "block",
+      "purpose": "variant switch + imports — this file compiles last, so the partials win"
+    },
+    {
+      "path": "theme/web/mxcli-fonts/",
+      "mode": "verbatim",
+      "purpose": "vendored IBM Plex Sans + Mono (SIL OFL 1.1, OFL-signal.txt) — no CDN at runtime"
+    }
+  ]
+}

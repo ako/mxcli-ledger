@@ -1,0 +1,255 @@
+-- ============================================================================
+-- CSV_LandImportRows — the ING and Rabobank statement formats
+-- ============================================================================
+-- Run with:  mxcli test tests/bank-formats.test.mdl -p Ledger.mpr --local
+--
+-- NOT while `mxcli run` is live (FINDINGS 93).
+--
+-- WHY THESE ARE SEPARATE FROM csv-import.test.mdl. That file tests the generic
+-- parser: delimiters, quoting, decimal conventions, the flagging of bad lines.
+-- These test the two named formats, and what makes a named format worth having
+-- is precisely the things the generic path gets WRONG on it — the counterparty
+-- IBAN filed as the merchant, an 8-digit date that DATEPARSE cannot read, an
+-- amount column called 'Bedrag (EUR)' that the alias list does not match. Each
+-- of those is a test below.
+--
+-- The rows are the user's own sample exports, unedited apart from the IBAN in
+-- the account column, which is set to a seeded account so the account-resolution
+-- assertions have something to resolve against.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- ING — semicolon separated, yyyyMMdd dates, comma decimals, Af/Bij direction
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test ING: the date is normalised from yyyyMMdd to the form promote parses
+ * @expect $row/TxDateText = '2026-08-24'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"',
+  Batch = 't-ing-date',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-date' limit 1;
+/
+
+/**
+ * @test ING: the merchant is the name, not the counterparty IBAN
+ * @expect $row/Merchant = 'Albert Heijn'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"',
+  Batch = 't-ing-merch',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-merch' limit 1;
+/
+
+/**
+ * @test ING: Bedrag (EUR) is found and read as a comma decimal
+ * @expect $row/Amount = 24.50
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"',
+  Batch = 't-ing-amt',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-amt' limit 1;
+/
+
+/**
+ * @test ING: a Bij row lands positive, same as an Af row
+ * @expect $row/Amount = 15.00
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260823";"J. Doe";"NL21 INGB 0004 5567 21";"NL22RABO0987654321";"GT";"Bij";"15,00";"Overboeking";"Terugbetaling lunch"',
+  Batch = 't-ing-bij',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-bij' limit 1;
+/
+
+/**
+ * @test ING: Mededelingen and MutatieSoort are joined into the description
+ * @expect $row/Description = 'Maandabonnement · Automatische incasso'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260820";"Netflix B.V.";"NL21 INGB 0004 5567 21";"";"AI";"Af";"13,99";"Automatische incasso";"Maandabonnement"',
+  Batch = 't-ing-desc',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-desc' limit 1;
+/
+
+/**
+ * @test ING: the account column is the own IBAN, carried through for resolution
+ * @expect $row/AccountName = 'NL21 INGB 0004 5567 21'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"',
+  Batch = 't-ing-acct',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-acct' limit 1;
+/
+
+/**
+ * @test ING: a comma inside a quoted Mededelingen does not split the row
+ * @expect $row/Description = 'Pas 001, Winkel 1234 · Betaalautomaat'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"',
+  Batch = 't-ing-quote',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-ing-quote' limit 1;
+/
+
+/**
+ * @test ING: all three sample rows land
+ * @expect $n = 3
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"MutatieSoort";"Mededelingen"
+"20260824";"Albert Heijn";"NL21 INGB 0004 5567 21";"NL11ABNA0432109876";"BA";"Af";"24,50";"Betaalautomaat";"Pas 001, Winkel 1234"
+"20260823";"J. Doe";"NL21 INGB 0004 5567 21";"NL22RABO0987654321";"GT";"Bij";"15,00";"Overboeking";"Terugbetaling lunch"
+"20260820";"Netflix B.V.";"NL21 INGB 0004 5567 21";"";"AI";"Af";"13,99";"Automatische incasso";"Maandabonnement"',
+  Batch = 't-ing-all',
+  Delimiter = ''
+);
+/
+
+-- ---------------------------------------------------------------------------
+-- Rabobank — comma separated, ISO dates, UNQUOTED signed amounts, split
+-- description across three columns
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test Rabobank: Bedrag is read, not Saldo na mutatie beside it
+ * @expect $row/Amount = 24.50
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00001","2026-08-24","2026-08-24",-24.50,1520.30,"NL11ABNA0432109876","Albert Heijn","","Betaalautomaat","Pas 001","Winkel 1234"',
+  Batch = 't-rabo-amt',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-amt' limit 1;
+/
+
+/**
+ * @test Rabobank: a negative amount lands positive, as everywhere else
+ * @expect $row/IsValid = true
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00003","2026-08-20","2026-08-20",-13.99,1529.80,"","Netflix B.V.","","Automatische incasso","Maandabonnement",""',
+  Batch = 't-rabo-neg',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-neg' limit 1;
+/
+
+/**
+ * @test Rabobank: Datum is read, not Rentedatum
+ * @expect $row/TxDateText = '2026-08-24'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00001","2026-08-24","2026-08-24",-24.50,1520.30,"NL11ABNA0432109876","Albert Heijn","","Betaalautomaat","Pas 001","Winkel 1234"',
+  Batch = 't-rabo-date',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-date' limit 1;
+/
+
+/**
+ * @test Rabobank: the merchant is Naam tegenpartij
+ * @expect $row/Merchant = 'Albert Heijn'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00001","2026-08-24","2026-08-24",-24.50,1520.30,"NL11ABNA0432109876","Albert Heijn","","Betaalautomaat","Pas 001","Winkel 1234"',
+  Batch = 't-rabo-merch',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-merch' limit 1;
+/
+
+/**
+ * @test Rabobank: the three Omschrijving columns are joined
+ * @expect $row/Description = 'Betaalautomaat · Pas 001 · Winkel 1234'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00001","2026-08-24","2026-08-24",-24.50,1520.30,"NL11ABNA0432109876","Albert Heijn","","Betaalautomaat","Pas 001","Winkel 1234"',
+  Batch = 't-rabo-desc',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-desc' limit 1;
+/
+
+/**
+ * @test Rabobank: empty Omschrijving columns are dropped, not left as separators
+ * @expect $row/Description = 'Overboeking · Terugbetaling lunch'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00002","2026-08-23","2026-08-23",15.00,1544.80,"NL22INGB0987654321","J. Doe","","Overboeking","Terugbetaling lunch",""',
+  Batch = 't-rabo-empty',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-rabo-empty' limit 1;
+/
+
+/**
+ * @test Rabobank: all three sample rows land
+ * @expect $n = 3
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = '"IBAN/BBAN","Valuta","BIC","Volgnummer","Datum","Rentedatum","Bedrag","Saldo na mutatie","Tegenrekening IBAN/BBAN","Naam tegenpartij","Naam tegenpartij toevoeging","Omschrijving-1","Omschrijving-2","Omschrijving-3"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00001","2026-08-24","2026-08-24",-24.50,1520.30,"NL11ABNA0432109876","Albert Heijn","","Betaalautomaat","Pas 001","Winkel 1234"
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00002","2026-08-23","2026-08-23",15.00,1544.80,"NL22INGB0987654321","J. Doe","","Overboeking","Terugbetaling lunch",""
+"NL21 INGB 0004 5567 21","EUR","RABONL2U","00003","2026-08-20","2026-08-20",-13.99,1529.80,"","Netflix B.V.","","Automatische incasso","Maandabonnement",""',
+  Batch = 't-rabo-all',
+  Delimiter = ''
+);
+/
+
+-- ---------------------------------------------------------------------------
+-- The generic path is not disturbed by either signature
+-- ---------------------------------------------------------------------------
+
+/**
+ * @test A generic Dutch header still maps by alias, not by bank format
+ * @expect $row/Merchant = 'Jumbo'
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'datum;naam;omschrijving;bedrag;rekening;categorie
+2026-08-19;Jumbo;boodschappen;12,30;ING Betaalrekening;Groceries',
+  Batch = 't-generic-still',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-generic-still' limit 1;
+/
+
+/**
+ * @test A header with Datum and Bedrag alone is generic, not a bank format
+ * @expect $row/Amount = 12.30
+ */
+$n = call java action Ledger.CSV_LandImportRows (
+  Csv = 'Datum;Naam;Bedrag
+2026-08-19;Jumbo;12,30',
+  Batch = 't-generic-min',
+  Delimiter = ''
+);
+retrieve $row from Ledger.ImportRow where Batch = 't-generic-min' limit 1;
+/

@@ -5201,3 +5201,557 @@ Java action changed, restore it rather than committing it.
 **Ask:** either match mxbuild's generation exactly — the type, the line endings
 and the doc comment — or do not write `javasource/` at all and leave it to the
 build.
+
+---
+
+## Phase 22 — re-testing against mxcli `a44c735c` (2026-08-24)
+
+The container recycled and rebuilt mxcli from `main`, moving it from `6485db62`
+to `a44c735c`. Two things that were open here are now fixed upstream, one is
+partly fixed, and one file that had been building cleanly since Phase 3 started
+failing. The whole set was re-run: `mx check`, the 42 unit tests, and a browser
+pass over all eight pages.
+
+### 131. `mxcli check` rejects Mendix's own apostrophe escape
+
+`exprcheck` reports every string literal containing an escaped apostrophe as a
+malformed expression. Minimal repro — one microflow, one assignment:
+
+```
+$ cat apos.mdl
+create or modify microflow Ledger.ProbeApos ()
+returns string as $R
+folder 'Insights'
+begin
+  declare $R string = '';
+  set $R = 'a''b';
+  return $R;
+end;
+/
+
+$ mxcli check apos.mdl
+✓ Syntax OK (1 statements)
+✓ All references valid
+
+(no module)
+-----------
+  ✗ Unexpected token after expression — the expression appears incomplete or
+    malformed (possible missing space between keywords). []
+      at
+      → Check for glued keywords such as 'emptyor' (should be 'empty or') or
+        'andtrue' (should be 'and true').
+
+1 issues: 1 errors, 0 warnings, 0 info
+```
+
+`''` is how the Mendix expression language escapes an apostrophe inside a string
+literal, so this is correct MDL and correct Mendix. Everything except `check`
+agrees:
+
+| check | verdict |
+|---|---|
+| `mxcli check` | **✗ 1 error** |
+| `mxcli exec` + `DESCRIBE MICROFLOW` | round-trips as `set $R = 'a''b';` |
+| `mx check Ledger.mpr` | `The app contains: 0 errors.` |
+| the unit suite | `An apostrophe in a filter value is doubled, not passed through` — **PASS** |
+
+That last row is the one that settles it. The suite already has a test asserting
+that `BUILD_ScatterUrl` doubles an apostrophe in a filter value, it runs the very
+expression `check` rejects, and it passes.
+
+**Cause.** The expression lexer scans to the next `'` and stops, with no notion
+of an escape — `mdl/exprcheck/lexer.go:68`:
+
+```go
+case c == '\'':
+    j := i + 1
+    for j < len(src) && src[j] != '\'' {
+        j++
+    }
+```
+
+So `'a''b'` lexes as two string tokens, `'a'` and `'b'`. `parseOr` consumes the
+first, the second is left unconsumed, and `Parse` reports the leftover
+(`parser.go:34`). The message is a red herring: nothing is glued and no keyword
+is involved.
+
+**Blast radius here.** Three findings across two files, and they correlate
+exactly with the three escaped-apostrophe expressions in microflows:
+
+```
+mdlsource/25-insights-data.mdl:167   ' and cat eq ''' + replaceAll($CategoryName, '''', '''''') + ''''
+mdlsource/25-insights-data.mdl:170   ' and AccountName eq ''' + replaceAll($AccountName, ...) + ''''
+mdlsource/28-oql-dml.mdl             the OQL_RulePredicate LIKE pattern
+```
+
+Page expressions with the same escape (`11-cashflow-page.mdl`,
+`29-oql-screens.mdl`) are not flagged, so `exprcheck` appears not to run over
+widget properties. That is luck, not immunity.
+
+**Also: the finding carries no location.** No rule id, no file, no line — in the
+text output and in SARIF:
+
+```json
+{ "level": "error", "ruleId": "",
+  "locations": [{"physicalLocation": {"artifactLocation": {"uri": ""}}}],
+  "message": {"text": "Unexpected token after expression …"} }
+```
+
+Which is why finding it meant bisecting a 600-line file by hand. `parser.go`
+sets `Line` and `Column` from the offending token, so the position exists and is
+lost somewhere between there and the reporter. MDL-ORDER01 prints an empty `at`
+too, so this is the reporter, not this rule.
+
+Worth noting that `qualified_call_test.go` documents this exact symptom — an
+unconsumed-token error with an empty location — as a previously-fixed
+false-positive class (upstream #939). This is the same check firing on a
+different input.
+
+**Which forms trip it.** Any literal carrying the escape, not just the two-sided
+case:
+
+| intended value | source | result |
+|---|---|---|
+| `x` | `'x'` | clean |
+| `a'b` | `'a''b'` | **error** |
+| `x'` | `'x'''` | **error** |
+| `'x` | `'''x'` | **error** |
+
+**Ask:** teach the lexer the `''` escape (consume the pair and continue), and
+give the reporter the file and line the parser already computed.
+
+**Still open across five builds.** The container rebuilt mxcli from `main` four
+more times while this was being written up, and the repro was re-run on each:
+`a44c735c`, `e26f1b74`, `1d0b82ce`, `39c7d946`, `0bf0f0ea`. Same error every
+time, and the project-wide sweep is still exactly the same three findings in the
+same two files. The counter-evidence was re-run on `1d0b82ce` back to back with
+the failing check — `exec` round-trip, `mx check` 0 errors, 42/42 unit tests —
+so the disagreement is not an artifact of one build's state.
+
+The write-up for the mxcli tracker is `docs/issue-exprcheck-apostrophe.md`.
+**It has not been filed.** This session's GitHub scope covers only
+`ako/mxcli-ledger`, and attaching `ako/mxcli` was declined, so the file is a
+stand-in rather than a link to a real issue. One thing that cost time and is
+worth knowing: with a repo out of scope, issue *search* against it returns
+`total_count: 0` rather than an error. Three searches came back empty and looked
+like "no duplicate" until a control search for issue #238 — which is named in a
+merge commit and certainly exists — came back empty too. No duplicate check was
+actually performed.
+
+### 132. MDL-ORDER01 lands, and finding 118 is a different bug than it addresses
+
+The new rule works exactly as described:
+
+```
+$ mxcli check order.mdl
+  ✗ microflow Ledger.ProbeCaller references microflow Ledger.ProbeLater before
+    it is created — the executor resolves this in statement order, so it fails
+    partway through `exec` with earlier statements already written [MDL-ORDER01]
+      → Move the CREATE statement for Ledger.ProbeLater above this one.
+```
+
+That is a real improvement: the diagnosis used to arrive only after `exec` had
+half-applied the model, and now it arrives before anything is written.
+
+It does not cover finding 118, which is worth being precise about rather than
+crossing off. MDL-ORDER01 is **within one script**. Finding 118 is **across the
+file set**: `16-budgets-page.mdl` references microflows that `29-oql-screens.mdl`
+creates, and each file is individually valid. There is still no `--ordered` flag
+(`mxcli check --help` lists only `--format`), so checking `mdlsource/*.mdl` as a
+sequence — each file against the state the previous ones would leave — remains
+the thing that would catch it. **118 stays open.**
+
+### 133. `@verify` is implemented now — and the documented example does not run
+
+Finding 123 recorded `@verify` as documented-but-rejected. It executes now. It
+also bites, which is the part worth demonstrating: one true post-condition, one
+false one, same run.
+
+```
+$ mxcli test verify.test.mdl -p Ledger.mpr --local
+  PASS  A verify post-condition counts the landed rows (16ms, 2 assertions)
+  FAIL  A verify post-condition that is wrong fails the test (5ms, 2 assertions)
+        expected select count(*) as N from Ledger.ImportRow
+                 where Batch = 'v-fresh2' = 99, actual: 1
+```
+
+Two assertions per test — the `@expect` and the `@verify` — and the failure
+reports the actual value. **123 is closed.**
+
+Two rough edges found on the way in, both of which cost a run each:
+
+**The rollback guard is excellent.** A `@verify` on a test using the default
+cleanup is refused, with the reason and the fix:
+
+```
+ERROR  @verify select count(*) from Ledger.ImportRow where Batch = 'v-probe' = 2:
+       this test uses @cleanup rollback (the default), so its writes are undone
+       before the query runs and it would assert against the pre-test state.
+       Add @cleanup none to the test
+```
+
+That is the class of error that would otherwise be a green test asserting
+nothing. Recording it as a good example.
+
+**The documented form is not valid Mendix OQL.** The example in mxcli's own
+tests is `@verify select count(*) from Mod.E = 1`. Run against a real runtime:
+
+```
+ERROR  @verify select count(*) from Ledger.ImportRow where Batch = 'v-probe' = 2:
+       OQL error: All OQL select columns must have a name
+```
+
+Mendix OQL requires an alias on an aggregate. `select count(*) as N from …`
+works. **Ask:** alias the aggregate in the examples, since `count(*)` is the
+obvious first thing anyone writes.
+
+A `@verify` is also a serviceable way to *do* something and assert it happened —
+this is what cleaned up after the experiment above:
+
+```
+/**
+ * @test Remove the probe batches the verify experiment left behind
+ * @cleanup none
+ * @verify select count(*) as N from Ledger.ImportRow where Batch like 'v-%' = 0
+ */
+$n = call java action Ledger.OQL_Execute (
+  Statement = 'delete from Ledger.ImportRow where Batch like ''v-%'''
+);
+```
+
+### 134. A wrong Java action parameter in a test file prints mxbuild's raw JSON
+
+Calling a Java action with a parameter that does not exist — `HasHeader`, on an
+action whose signature is `(Csv, Batch, Delimiter)` — ends the run with ~40 lines
+of mxbuild JSON and no summary:
+
+```
+Error: local runtime: build failed: The project cannot be deployed, because it contains errors.
+{
+  "problems": { "errors": [ … ], "problems": [
+      { "severity": "Error",
+        "message": "The selected Java action parameter 'Ledger.CSV_LandImportRows.HasHeader' no longer exists.",
+        "locations": [{ "document": "Microflow 'Test_test_2'", "module": "MxTest" … }],
+        "errorCode": "CE1613" … },
+      …same again for Test_test_1… ] },
+  "status": "Failure" }
+```
+
+The diagnosis is in there and it is accurate. The problem is that it is buried,
+it names generated documents (`MxTest.Test_test_2`) rather than the test that
+produced them, and it repeats per test — so the reader has to know that
+`Test_test_2` is the second `@test` in their file. Compare the parser's own
+errors in the same tool, which are excellent:
+
+```
+Error: parsing test files: verify.test.mdl: test "A verify post-condition counts
+the landed rows" is followed by another @test doc comment ("A verify post-condition
+that is wrong fails the test") with no '/' separator between them, so only one of
+the two could run: add a line containing just '/' after the first test's statements
+```
+
+**Ask:** surface `problems[].message` with the originating test's name, and keep
+the JSON behind a flag.
+
+### Everything else still passes on `a44c735c`
+
+Re-run in full after resetting to the merged baseline:
+
+| check | result |
+|---|---|
+| `mx check Ledger.mpr` | 0 errors |
+| `mxcli check` over all 30 `mdlsource/*.mdl` + tests | 3 findings, all finding 131 |
+| `mxcli test tests/csv-import.test.mdl --local` | **42 passed, 0 failed** (618ms) |
+| browser pass, all 8 pages | 0 chart errors, 0 page JS errors |
+| data | 2,588 transactions over 5 years, unchanged |
+
+The browser pass counted rendered marks per page — Dashboard 2, Cashflow 19,
+Insights 7 — and the Insights scatter still draws from the published OData feed
+rather than an attribute, so the Phase 21 change survives the toolchain move.
+
+The test runner restored the project cleanly: `git status` was empty afterwards,
+which is worth checking every time given finding 130.
+
+---
+
+## Phase 23 — three themes, seven languages, two bank formats (2026-08-25)
+
+`mxcli theme` and `alter settings LANGUAGE` are both new. Testing them meant
+actually using them: an ING and a Rabobank theme beside the app's own, the seven
+languages the UI is now translated into, and — separately — the two Dutch bank
+CSV formats the importer had never seen.
+
+Both features work. One of them ships a defect that makes half of it unusable
+until it is patched, and neither can reach the place a user would expect the
+controls to be.
+
+### 135. Both parameterised theme-switcher actions throw on first call
+
+`mxcli theme switcher install` writes six JavaScript actions. The four that take
+no parameter work. **Both** that take one are dead on arrival:
+
+```
+Client: An error occurred while executing an action of
+Ledger.SNIPPET_ThemeBar.btnSkinIng: Skin is not defined
+
+Nanoflow stack:
+ "Call JavaScript Action" in nanoflow "Ledger.ACT_SkinIng"
+```
+
+Mendix generates the JS wrapper with the parameter's **first letter lowered**.
+mxcli writes a body that uses the modelled capitalisation. They never meet:
+
+```javascript
+// javascriptsource/ledger/actions/SetAppSkin.js  — regenerated every build
+export async function SetAppSkin(skin) {
+	// BEGIN USER CODE
+	var chosen = skins.indexOf(Skin) === -1 ? "ledgerpaper" : Skin;   // ← ReferenceError
+```
+
+Both parameterised actions have it, so it is the rule and not a typo:
+
+| action | wrapper emits | body uses | works |
+|---|---|---|---|
+| `SetAppSkin` | `skin` | `Skin` | **no** |
+| `SetAppTheme` | `theme` | `Theme` | **no** |
+| `ToggleAppTheme` | — | — | yes |
+| `CycleAppSkin` | — | — | yes |
+| `ApplyStoredSkin` | — | — | yes |
+| `ApplyStoredTheme` | — | — | yes |
+
+**Nothing catches it before a user clicks.** `mx check` reports 0 errors — the
+action is well-formed and the body is opaque user code as far as Mendix is
+concerned — and `mxcli check` has nothing to say about JavaScript either. The
+first evidence is a modal reading "An error occurred, please contact your system
+administrator."
+
+It is also **unpatchable in place**: the generated file carries
+`WARNING: Only the following code will be retained when actions are regenerated`
+and is rewritten on every build. The fix has to go back through MDL, which means
+re-authoring an action mxcli generated — and re-running `theme switcher install`
+puts the defect back. `mdlsource/32-theme-bar.mdl` carries the repaired bodies
+and says so at the top.
+
+Worth noting *which* half this kills. The documented example is
+`actionbutton btnTheme (caption: 'Theme', action: nanoflow ...ACT_ToggleTheme)` —
+a no-parameter action, so the path the help walks you down works. Everything the
+multi-theme feature was built for, "select a theme by name", does not.
+
+**Ask:** lower the first letter of the parameter when generating the body, the
+same transformation Mendix applies to the wrapper. A generated action that calls
+itself once in a test would have caught both.
+
+### 136. Layouts are the one document MDL cannot author, so the topbar is out of reach
+
+The brief was two dropdowns in the topbar. The topbar belongs to the layout, and
+mxcli is explicit:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE LAYOUT Atlas_Core.Atlas_Default"
+-- Layout Type: Responsive
+-- This is a layout document. Layouts define the structure that pages are built upon.
+-- Layouts cannot be created via MDL; they must be created in Studio Pro.
+```
+
+`SHOW LAYOUTS` lists 22 of them and `DESCRIBE` prints that notice. There is no
+`alter layout`, and `mxcli syntax` has no layout entry at all.
+
+So an app built entirely through MDL cannot put anything in its own topbar. The
+language selector is up there only because **Atlas ships one** —
+`Atlas_Core.LanguageSelectorWidget`, visible in the client log fetching its own
+data source. Enabling languages populates it; nothing else can join it.
+
+The closest MDL can get is a snippet on every page, which is what
+`32-theme-bar.mdl` does: one definition, nine call sites, same place on every
+screen. It is under the page title rather than above it, which is the honest
+position for something the layout does not own.
+
+**Ask:** the notice is good and the limitation is probably deliberate. What
+would help is saying it in `mxcli syntax` too — the limitation is only
+discoverable by describing a layout and reading a comment.
+
+### 137. `IN <Module>` silently misses the navigation, and the symptom is half a translation
+
+Translations were written scoped, which reads as the careful thing to do:
+
+```
+create or modify translations in Ledger for nl_NL ( … );
+→ Set 212 nl_NL translation(s) across 20 document(s)
+```
+
+In the browser the page text switched to Dutch and **the menu did not** — the
+sidebar still read Dashboard / Cashflow / Budgets while the chart caption above
+it read "56 maanden, 13 categorieën".
+
+The navigation is a project-level document, not a module one, so `in Ledger`
+never reaches it. Dropping the scope finds 3.6× as much:
+
+```
+describe translations in Ledger for nl_NL   → 151 strings
+describe translations for nl_NL             → 546 strings
+```
+
+and re-running the same table unscoped lands the rest:
+
+```
+create or modify translations for nl_NL ( … );
+→ Set 65 nl_NL translation(s) across 34 document(s)     (20 documents → 42)
+```
+
+Nothing warned. The scoped run reported success and a document count, and the
+count is the only thing that would have given it away — if you knew what number
+to expect. `or modify` makes the correction cheap, but the first run has to be
+noticed to be corrected.
+
+**Ask:** either mention the project-level documents in the `IN <Module>`
+help — it currently says only "IN <Module> scopes both directions" — or report
+what a scoped run did *not* consider.
+
+### 138. The reference checker does not exempt a nanoflow a snippet calls
+
+The documented exemption is "References to objects created within the script are
+skipped", and it prints that line immediately above failing on exactly that:
+
+```
+$ mxcli check mdlsource/32-theme-bar.mdl -p Ledger.mpr
+✓ Syntax OK (4 statements)
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 4: snippet 'Ledger.SNIPPET_ThemeBar' has reference errors:
+  - nanoflow not found: Ledger.ACT_SkinLedgerPaper
+  - nanoflow not found: Ledger.ACT_SkinIng
+  - nanoflow not found: Ledger.ACT_SkinRabobank
+✗ 1 reference error(s) found
+```
+
+All three are created by statements 1–3 of the same file, in the right order.
+`exec` applies it without complaint and `mx check` reports 0 errors, so the
+finding is false in both directions that matter.
+
+The interesting part is that this is the **inverse** of MDL-ORDER01 (finding
+132): that rule exists to catch a reference to something created *later* in the
+script, and correctly did. This is a reference to something created *earlier*
+being reported as missing. The exemption appears not to cover the
+snippet → nanoflow edge.
+
+**Ask:** widen the same-script exemption to snippet widget actions.
+
+### 139. `theme create` reports paths that look like it just overwrote your app
+
+Scaffolding a theme prints:
+
+```
+$ mxcli theme create ing --from signal -p Ledger.mpr
+  created   theme/web/custom-variables.scss
+  created   theme/web/main.scss
+  created   theme/web/_mxcli-recipes.scss
+  …
+```
+
+This project has 738 hand-written lines in `theme/web/custom-variables.scss` and
+its own `theme/web/main.scss`. Reading that output, both had just been reported
+as *created*.
+
+Nothing was touched. The paths are relative to the scaffold —
+`theme/mxcli-themes/ing/files/` + each path — and the real files were byte-identical
+afterwards. But the command that says this is the one whose whole purpose is to
+write into `theme/`, and the paths it prints are exactly the paths it does not
+mean.
+
+**Ask:** print the scaffold-relative path with its root, or the full path. One
+prefix removes the ambiguity entirely.
+
+### The parts that worked, and are worth recording as working
+
+**A theme set is a class swap, exactly as advertised.** Three themes compile into
+one stylesheet, the default is scoped by negation rather than a bare `:root`:
+
+```css
+:root:not(.mxt-ing):not(.mxt-rabobank), :root.mxt-ledgerpaper { … }
+:root.mxt-ing { … }
+:root.mxt-rabobank { … }
+```
+
+which is the detail that makes it order-independent — a bare `:root` default
+would keep matching under every other theme and the winner would come down to
+specificity.
+
+**`theme apply` adds a block, it does not take the file over.** The dry run says
+`added theme/web/custom-variables.scss`, and it means added: the app's own 738
+lines survive above a fenced `// mxcli:theme:begin` block. That is what made it
+safe to install a theme set into an app that already had a hand-built one.
+
+**One alias layer re-brands hand-written CSS.** This app's components read 17
+`--ledger-*` tokens in 72 places, all literal hex, so themes moved the Atlas
+widgets and left the app's own styling fixed — half a re-brand. Redefining those
+tokens as `var(--mxt-…)` makes one class swap move everything, because custom
+properties resolve at use time and pick up whichever theme is scoped on `:root`.
+It also surfaced `--ledger-hover`, used in two rules and never declared: it
+worked on a `rgba(0,0,0,0.03)` fallback that is invisible on a dark palette.
+
+**Languages need no user object.** With security Off there is no current user —
+verified, not assumed:
+
+```
+$ mxcli test cu.test.mdl -p Ledger.mpr --local
+  FAIL  With security off, does a microflow see a current user?
+        expected $r = true, actual: false
+```
+
+so the usual `$currentUser/System.User_Language` route does not exist. Atlas's
+own selector switches the language anyway, and `alter settings LANGUAGE add`
+populates it: seven languages enabled, seven offered, `System.Language` holding
+exactly seven rows at runtime.
+
+**Mendix OQL has `REPLACE`.** Not in the project's OQL skill and worth knowing —
+it is what lets the importer resolve an account from a bank export's IBAN
+against one stored grouped for reading:
+
+```sql
+REPLACE(UPPER(a.IBAN), ' ', '') = REPLACE(UPPER(Ledger.ImportRow/AccountName), ' ', '')
+```
+
+### 140. A scaffolded theme keeps its base theme's font licence filename
+
+Finding: `theme create` renames the identifiers built from the theme name — the
+changelog is explicit that it renames `@mixin mxcli-<name>-<alt>` and the
+`@import`, because two themes sharing a mixin name collide. It does not rename
+the vendored licence file.
+
+Two themes created from `signal` both carry `signal`'s:
+
+```
+$ for t in ing rabobank ledgerpaper; do ls theme/mxcli-themes/$t/files/theme/web/mxcli-fonts/ | grep OFL; done
+OFL-signal.txt      ← ing
+OFL-signal.txt      ← rabobank
+OFL-ledger.txt      ← ledgerpaper
+```
+
+and `theme show` repeats it, describing ING's fonts under signal's licence name:
+
+```
+$ mxcli theme show ing -p Ledger.mpr
+  theme/web/mxcli-fonts/   verbatim   vendored IBM Plex Sans + Mono (SIL OFL 1.1, OFL-signal.txt)
+```
+
+Three installed themes leave **two** licence files, both named after base themes
+and neither named after a theme anyone created.
+
+This does not break the guard that finding was about. That test fails when two
+themes write *different content* to one verbatim path, and here the content is
+identical — `ing` and `signal` genuinely do ship the same IBM Plex fonts, so
+one file legitimately covers both. Nothing collides today.
+
+Where it bites is the edit the scaffold exists to invite. `theme create` copies a
+theme so the palette is yours to change, and a brand theme that changes its
+fonts to match the brand — which is the obvious next step after changing its
+colours — then ships IBM Plex's licence for fonts that are not IBM Plex. The
+naming is what would have caught that, and it is the base theme's.
+
+Smaller, same cause: the generated `theme.json` builds its prose from the name
+before anyone can correct it, so a theme named `ing` is titled `Ing` and its file
+purposes read "Layer 1 — the Ing palette". `title` is editable and stays edited;
+the `purpose` strings are regenerated and do not.
+
+**Ask:** rename the licence to the created theme's name at scaffold time, the
+same treatment the mixin and the import already get.

@@ -1,0 +1,70 @@
+// Layer 1 — the Ing palette. This is the file to edit.
+//
+// These are the theme's own semantic tokens. The next file down
+// (_mxcli-ing.scss) maps them onto the ~60 Atlas variables that Atlas
+// components, form controls and the brand-aware pluggable widgets (Switch,
+// Slider, ProgressBar, BadgeButton) actually read — so changing --mxt-brand
+// here re-brands the entire app, with no per-widget CSS.
+//
+// The values below are the LIGHT palette, which is Ing's default. The dark
+// palette lives beside the light-to-Atlas mapping in _mxcli-ing.scss.
+//
+// Mendix 11 Atlas is CSS-custom-property-first, so these are `:root`
+// declarations rather than SCSS `!default` variables. This file is imported
+// once per module, so it must hold declarations only — never rules.
+
+{{PALETTE_SCOPE}} {
+  /* ---- the one colour that defines the app --------------------------- */
+  --mxt-brand: #ff6200;
+  --mxt-brand-hover: #e05600;
+  --mxt-brand-ink: #ffffff; /* text on a brand-filled surface */
+
+  /* ---- semantic status ----------------------------------------------- */
+  --mxt-success: #128a4e;
+  --mxt-warning: #b45309;
+  --mxt-danger: #c8102e;
+  --mxt-info: #0a5da8;
+
+  /* ---- surfaces and ink ----------------------------------------------- */
+  --mxt-ground: #f7f7f8; /* the app background */
+  --mxt-surface: #ffffff; /* cards, modals, panels */
+  --mxt-surface-alt: #fbfbfc; /* striped rows, subtle fills */
+  --mxt-surface-hover: #fff3eb;
+  --mxt-surface-selected: #ffe7d6;
+  --mxt-ink: #1a1a1a;
+  --mxt-ink-muted: #5c5c5c;
+  --mxt-ink-faint: #8e8e8e;
+  --mxt-line: #e0e0e0;
+
+  /* ---- the navigation rail -------------------------------------------- */
+  --mxt-rail: #1f1f1f;
+  --mxt-rail-line: #333333;
+  --mxt-rail-ink: #d6d6d6;
+  --mxt-rail-ink-active: #ff6200;
+
+  /* ---- status pill tones ---------------------------------------------- */
+  --mxt-tint-ok: rgba(18, 138, 78, 0.12);
+  --mxt-tone-ok: #0e6b3d;
+  --mxt-tint-warn: rgba(180, 83, 9, 0.12);
+  --mxt-tone-warn: #8f4207;
+  --mxt-tint-risk: rgba(200, 16, 46, 0.12);
+  --mxt-tone-risk: #9c0c24;
+  --mxt-tint-info: rgba(255, 98, 0, 0.12);
+  --mxt-tone-info: #c44e00;
+  --mxt-tint-neutral: #f0f0f1;
+
+  /* ---- shape, density, elevation --------------------------------------- */
+  --mxt-radius: 4px;
+  --mxt-radius-lg: 8px;
+  --mxt-row-height: 32px;
+  --mxt-control-height: 32px;
+  --mxt-shadow: 0 1px 2px 0 rgba(26, 26, 26, 0.08);
+  --mxt-focus-halo: 0 0 0 3px rgba(255, 98, 0, 0.24);
+
+  /* ---- type ------------------------------------------------------------ */
+  --mxt-font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mxt-font-heading: var(--mxt-font);
+  --mxt-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mxt-font-size: 14px;
+  --mxt-line-height: 1.45;
+}
