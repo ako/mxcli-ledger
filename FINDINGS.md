@@ -5710,3 +5710,48 @@ against one stored grouped for reading:
 ```sql
 REPLACE(UPPER(a.IBAN), ' ', '') = REPLACE(UPPER(Ledger.ImportRow/AccountName), ' ', '')
 ```
+
+### 140. A scaffolded theme keeps its base theme's font licence filename
+
+Finding: `theme create` renames the identifiers built from the theme name — the
+changelog is explicit that it renames `@mixin mxcli-<name>-<alt>` and the
+`@import`, because two themes sharing a mixin name collide. It does not rename
+the vendored licence file.
+
+Two themes created from `signal` both carry `signal`'s:
+
+```
+$ for t in ing rabobank ledgerpaper; do ls theme/mxcli-themes/$t/files/theme/web/mxcli-fonts/ | grep OFL; done
+OFL-signal.txt      ← ing
+OFL-signal.txt      ← rabobank
+OFL-ledger.txt      ← ledgerpaper
+```
+
+and `theme show` repeats it, describing ING's fonts under signal's licence name:
+
+```
+$ mxcli theme show ing -p Ledger.mpr
+  theme/web/mxcli-fonts/   verbatim   vendored IBM Plex Sans + Mono (SIL OFL 1.1, OFL-signal.txt)
+```
+
+Three installed themes leave **two** licence files, both named after base themes
+and neither named after a theme anyone created.
+
+This does not break the guard that finding was about. That test fails when two
+themes write *different content* to one verbatim path, and here the content is
+identical — `ing` and `signal` genuinely do ship the same IBM Plex fonts, so
+one file legitimately covers both. Nothing collides today.
+
+Where it bites is the edit the scaffold exists to invite. `theme create` copies a
+theme so the palette is yours to change, and a brand theme that changes its
+fonts to match the brand — which is the obvious next step after changing its
+colours — then ships IBM Plex's licence for fonts that are not IBM Plex. The
+naming is what would have caught that, and it is the base theme's.
+
+Smaller, same cause: the generated `theme.json` builds its prose from the name
+before anyone can correct it, so a theme named `ing` is titled `Ing` and its file
+purposes read "Layer 1 — the Ing palette". `title` is editable and stays edited;
+the `purpose` strings are regenerated and do not.
+
+**Ask:** rename the licence to the created theme's name at scaffold time, the
+same treatment the mixin and the import already get.
