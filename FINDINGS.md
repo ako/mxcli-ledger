@@ -5755,3 +5755,337 @@ the `purpose` strings are regenerated and do not.
 
 **Ask:** rename the licence to the created theme's name at scaffold time, the
 same treatment the mixin and the import already get.
+
+---
+
+## Phase 24 — re-tested against mxcli `55a44a77` (2026-08-26)
+
+Three of Phase 23's findings are fixed and credited in the changelog. The other
+four are untouched, and 131 now stands across six builds. Everything was
+re-verified by hand rather than read off the changelog.
+
+| finding | status on `55a44a77` |
+|---|---|
+| 131 apostrophe escape rejected | **open** — 6th build |
+| 135 parameterised switcher actions throw | **FIXED** |
+| 136 layouts not authorable | **open** |
+| 137 `IN <Module>` misses navigation | **open** |
+| 138 snippet → nanoflow reference false positive | **open** |
+| 139 `theme create` path reporting | **FIXED** |
+| 140 scaffolded theme's licence filename | **FIXED** (main half) |
+
+### 135 is fixed, verified through the click that used to fail
+
+The generated body now uses the lowercase name and explains itself:
+
+```
+$ mxcli theme switcher install --module Ledger --print -p Ledger.mpr
+// Modelled as Skin, reaches the body as lowercase skin — mxbuild lowers the
+// first letter when it generates the wrapper.
+var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
+```
+
+and after a build the wrapper agrees:
+
+```
+export async function SetAppSkin(skin) {
+export async function SetAppTheme(theme) {
+```
+
+Re-installed over the project's own repaired copies and driven in a browser —
+the three buttons that produced `ReferenceError: Skin is not defined` now switch
+the palette:
+
+```
+DEFAULT        cls=(none)          brand=#1b4d4b  ground=#f6f4f0
+ING            cls=mxt-ing         brand=#ff6200  ground=#f7f7f8
+Rabobank       cls=mxt-rabobank    brand=#000099  ground=#f5f6f9
+Ledger Paper   cls=mxt-ledgerpaper brand=#1b4d4b  ground=#f6f4f0
+JS errors: none
+```
+
+`mdlsource/32-theme-bar.mdl` no longer carries the repaired bodies. A workaround
+that outlives its defect is a second definition nobody diffs, and this one would
+have silently drifted from the original the moment upstream changed it again.
+
+### 141. A JavaScript action's body is not in the model, and that is worth knowing
+
+Not a defect — a piece of the model that behaves unlike everything else here,
+and it cost half an hour to work out.
+
+After re-installing the switcher, `DESCRIBE` returned a body containing mxcli's
+new comment while **git reported nothing changed**:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE JAVASCRIPT ACTION Ledger.SetAppSkin"
+	// Modelled as Skin, reaches the body as lowercase skin …
+
+$ git status --short          # only the .js files
+ M Ledger/javascriptsource/ledger/actions/SetAppSkin.js
+ …
+$ grep -c "Modelled" Ledger.mpr ; grep -rl "Modelled" mprcontents/
+0
+(nothing)
+```
+
+The `.mpr` mtime was a day old and the string appeared nowhere under
+`mprcontents/`. The install had reported `Modified javascript action:
+Ledger.SetAppSkin` and left no trace in the model.
+
+Both are true. **Mendix stores a JavaScript action's code in
+`javascriptsource/<module>/actions/<Name>.js`, not in the model** — the model
+carries only the signature. `DESCRIBE` reads the body back out of the file, and
+`create or modify javascript action … as $$ … $$` writes it there. The
+signature was already right, so the model genuinely did not change.
+
+Two consequences worth stating:
+
+- **`javascriptsource/` is not optional to commit.** For a Java action the body
+  travels in the `.mpr`; for a JavaScript action it does not exist anywhere else.
+  A commit of the model without the `.js` files is a commit of empty actions.
+- **It has finding 130's shape.** mxcli writes the whole file including the
+  wrapper, and its wrapper uses the *modelled* capitalisation —
+  `export async function SetAppSkin(Skin)` — which mxbuild then rewrites to
+  `(skin)` on the next build. Measured before and after a build on the same
+  file. Harmless in a build-then-commit order, and a broken commit in the other
+  order, which is exactly what 130 says about `javasource/`.
+
+**Ask:** nothing to fix. It belongs in the `java-actions` skill beside its Java
+sibling, because the difference between the two is invisible until it bites.
+
+### The three that are unchanged, re-measured
+
+**131** — same false error, same missing location, on the sixth consecutive
+build (`a44c735c` → `55a44a77`). Project sweep is still exactly the same three
+findings in the same two files.
+
+**136** — `DESCRIBE LAYOUT` still prints `Layouts cannot be created via MDL;
+they must be created in Studio Pro`, and `mxcli syntax` still has no layout
+entry at all, so the limitation is still only discoverable by describing a
+layout and reading a comment.
+
+**137** — `mxcli syntax translations` still says only "IN <Module> scopes both
+directions", with no mention that navigation is a project-level document and
+therefore outside every module scope.
+
+**138** — unchanged, and the note above the failure still contradicts it:
+
+```
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 2: snippet 'Ledger.SNIPPET_Probe138' has reference errors:
+  - nanoflow not found: Ledger.ProbeSkinNano
+```
+
+### 140's smaller half is still there
+
+The licence is renamed with the theme, which was the substance:
+
+```
+$ mxcli theme create probe139 --from signal -p Ledger.mpr
+  created   theme/mxcli-themes/probe139/files/theme/web/mxcli-fonts/OFL-probe139.txt
+  created   theme/mxcli-themes/probe139/theme.json
+```
+
+That output also closes 139 — every path is now printed under the scaffold root,
+and `theme.json` is no longer mislabelled as living under `files/`.
+
+The name-derived prose is unchanged, which is what 140 recorded as its aside:
+a theme named `probe139` is still titled `Probe139`, its summary still describes
+the base theme, and its file purposes still read "Layer 1 — the Probe139
+palette". `title` is editable and stays edited; `purpose` is regenerated.
+
+### Not tested: the caption-language fix
+
+`#970` — captions landing under the project's `DefaultLanguageCode` rather than
+a hardcoded `en_US` — cannot be exercised here. Ledger's default **is** `en_US`,
+so the fix is a no-op for it by construction.
+
+What this project can offer is the regression control the changelog claims, and
+it holds: with seven languages enabled and en_US the default, the app still
+renders English before any selection and the six translation files still apply
+cleanly — navigation and the theme bar both switch in de / fr / cs.
+
+### Everything else still passes
+
+| check | result |
+|---|---|
+| `mx check Ledger.mpr` | 0 errors |
+| `tests/csv-import.test.mdl` | 42 passed |
+| `tests/bank-formats.test.mdl` | 17 passed |
+| browser pass, all 8 pages | theme bar on each, 0 chart errors, 0 JS errors |
+| theme switch | all three, both directions, no JS errors |
+| language switch | navigation + theme label in de / fr / cs |
+| data | 2,588 transactions over 5 years |
+
+One environment note: Postgres does not start with the container. `mxcli run`
+says so precisely — `database not reachable at 127.0.0.1:5432 … Pass --ensure-db
+to provision it` — which is the right error in the right place. The data
+survived; only the server needed starting.
+
+---
+
+## Phase 25 — layouts become authorable, and the copy recipe is tested (2026-08-26)
+
+`00443a90` (PR #304) makes layouts a first-class MDL document. That closes
+finding 136 and, with it, the one thing this app was asked for and could not
+have: the theme selector in the topbar, beside the language selector.
+
+Using it turned up three things the documented copy recipe does not carry.
+
+### 136 is fixed — layouts describe, and ALTER LAYOUT exists
+
+What used to be a refusal is now re-executable MDL:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE LAYOUT Atlas_Core.Atlas_Default"
+create layout Atlas_Core.Atlas_Default (
+  layouttype: 'Responsive',
+  class: 'layout-atlas layout-atlas-responsive-default'
+) {
+  scrollcontainer layoutContainer {
+    region top (Class: 'region-topbar') { … }
+```
+
+`mxcli syntax` now carries `layout`, `layout.alter` and `layout.show`, and
+`ALTER LAYOUT` takes the same operations as `ALTER PAGE` plus
+`INSERT INTO <container>.<region>`. The help's own example is this app's exact
+use case — a topbar snippet added without rewriting the document.
+
+**The marketplace guard is right and its error is the best kind.** Atlas is a
+marketplace module, so an edit is refused with the recipe attached:
+
+```
+Error: layout Atlas_Core.Atlas_Default is in a marketplace module — an edit
+there is overwritten by the next module update. Copy it into a module of your
+own first: `describe layout Atlas_Core.Atlas_Default`, rename it, run it, then
+repoint pages with `alter pages set layout = <yours> where layout = …`
+```
+
+`alter pages … where layout = …` then moved all eight pages in one statement.
+
+### 142. The copy recipe loses three things, and flags one of them
+
+`describe → rename → run` is what both the error above and `mxcli syntax
+layout.show` recommend. Run against Atlas_Default it produces a layout that is
+missing three things. Only the first announces itself.
+
+**1. The sidebar toggle — flagged, in the describe output itself:**
+
+```
+-- Forms$SidebarToggleButton (sidebarToggle3)  -- NOT re-executable: mxcli
+-- cannot author this widget, so re-running this script would drop it
+```
+
+That is exactly the right thing to print, and it is the only reason the other
+two were looked for.
+
+**2. The brand image — silent, and it fails the build.** `describe` emits
+
+```
+image staticImage1 (Responsive: false)
+```
+
+but Atlas' widget is the pluggable `com.mendix.widget.web.image.Image`, whose
+`datasource` is required. Re-running the describe produces a widget whose
+definition does not match, and `mx check` — which reported **0 errors** on the
+original — fails on the copy:
+
+```
+[error] [CE0463] "The definition of this widget has changed. Update this widget…"
+  at Image 'staticImage1'
+```
+
+`mxcli widget init` does not help: the cached definition is current, the emitted
+shape is wrong.
+
+**3. The scroll container's shrink mode — silent, and it removes a feature.**
+This is the interesting one, because it is not a describe gap at all. The copy
+renders
+
+```
+mx-scrollcontainer mx-scrollcontainer-vertical mx-scrollcontainer-fixed
+```
+
+where Atlas' renders `-shrink`, and the app's 52px collapsed rail is written
+against `.mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open)`. So the
+sidebar became permanently 232px — the collapse the README documents with two
+screenshots, gone, with `mx check` reporting 0 errors.
+
+The cause is not in the model. Every `Forms$ScrollContainer` in the project —
+Atlas' and the copy's alike — stores `ScrollBehavior: PerRegion`; there is no
+shrink property to lose. **The marketplace toggle widget adds the class at
+runtime.** Drop the widget and the mode goes with it, which no amount of
+round-tripping the layout could have preserved.
+
+**What this costs to work around.** A JavaScript action doing what the widget
+does — add `mx-scrollcontainer-shrink`, toggle `mx-scrollcontainer-open` — plus
+a nanoflow and a button. It is not the marketplace widget and the first attempt
+was worse than useless: it toggled `sidebar-open` on the layout root, a class
+nothing in the app reads. The DOM changed, the sidebar did not, and the button
+looked wired. **A class toggle always succeeds** — there is no error to catch,
+only a screenshot identical before and after, which is why the probe now
+measures the rendered sidebar width rather than asserting on the class.
+
+**Ask:** the describe already knows how to say "NOT re-executable" for a widget
+it cannot author. Two more cases deserve the same line — a pluggable widget
+emitted as a built-in shorthand, and a layout whose behaviour depends on a
+widget being dropped. The recipe is recommended in two places; what it silently
+costs should be printed where it is recommended.
+
+### Everything else is unchanged on `00443a90`
+
+131, 137 and 138 all still reproduce, re-tested on this build rather than
+carried over: the apostrophe false positive (seventh build), the `IN <Module>`
+help with no mention of project-level documents, and the reference checker
+contradicting its own "objects created within the script are skipped" note one
+line above the failure.
+
+### A smaller one: widget docs are now written twice
+
+`mxcli widget init` reports both, and the trees are byte-identical:
+
+```
+Generated 43 widget docs in .ai-context/skills/widgets
+Generated 43 widget docs in .claude/skills/widgets
+$ diff -q .claude/skills/widgets/image.md .ai-context/skills/widgets/image.md
+(no output)
+```
+
+Harmless, and the docs themselves improved — the MDL example now shows the
+`content { }` block a pluggable widget's children go in, which is what made the
+Image mismatch above legible. But a project now commits two copies of the same
+43 files unless it ignores one, and nothing says which is canonical.
+
+### 143. `create or replace` a document and its translations go with it
+
+Replaying `32-theme-bar.mdl` — one `create or replace snippet` — silently reset
+the theme bar's label to English in all six languages. The browser had shown
+"Design" / "Thème" / "Motiv" before the replay and "Theme" after it, with no
+error anywhere in between.
+
+The mechanism is not surprising once stated: a translation belongs to the
+document that holds the string, `create or replace` replaces the document, and
+the translations go with it. What makes it worth recording is that nothing in
+the output suggests it. The replay reports `Created snippet
+Ledger.SNIPPET_ThemeBar`, `mx check` reports 0 errors, and the app renders — in
+one language.
+
+Re-running the six translation files put them back, keyed on the same source
+string:
+
+```
+$ for f in mdlsource/31-translations-*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
+Set 13 de_DE translation(s) across 2 document(s)
+…
+```
+
+**The rule this establishes for the file set:** translations are file 31 and
+have to stay downstream of every document that carries a translatable string.
+Any replay that touches an earlier file needs 31 re-run after it, which is the
+same ordering constraint finding 118 describes and the reason the numbering is
+load-bearing rather than decorative.
+
+**Ask:** report it. `create or replace` already knows how many translations the
+document it is replacing carried; saying "replaced 1 snippet, dropping 6
+translations" would turn a silent regression into a line of output.

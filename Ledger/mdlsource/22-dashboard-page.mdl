@@ -58,7 +58,6 @@ create or replace page Ledger.Dashboard
       column colDashBody (desktopwidth: 12) {
         dataview dvDash (datasource: microflow Ledger.DS_OverviewContext) {
           dynamictext txtDashHeading (content: 'Dashboard', rendermode: H2)
-          snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
           dynamictext txtDashSub (attribute: SubText, rendermode: paragraph, class: 'text-muted')
 
           layoutgrid lgDashSplit {

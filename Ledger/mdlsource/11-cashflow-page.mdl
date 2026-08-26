@@ -44,7 +44,6 @@ create or replace page Ledger.Cashflow_Overview
       column colBody (desktopwidth: 12) {
         dataview dvContext (datasource: microflow Ledger.DS_ReportContext) {
           dynamictext txtHeading (content: 'Cashflow', rendermode: H2)
-          snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
           dynamictext txtSub (attribute: Subheading, rendermode: paragraph, class: 'text-muted')
 
           -- Mode switch

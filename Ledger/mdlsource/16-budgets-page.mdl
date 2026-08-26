@@ -36,7 +36,6 @@ create or replace page Ledger.Budgets_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Budgets', rendermode: H2)
-        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (
           content: 'One amount per category per month. Click a cell to change it. Months that override the category baseline are marked.',
           rendermode: paragraph,

@@ -32,71 +32,23 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- Repair: the two generated actions that take a parameter cannot run
+-- This file used to repair two of mxcli's generated actions. It no longer does.
 -- ----------------------------------------------------------------------------
--- `mxcli theme switcher install` writes six JavaScript actions. The four with
--- no parameters work. The two that take one throw a ReferenceError the first
--- time a button calls them:
+-- `SetAppSkin` and `SetAppTheme` were dead on arrival: mxbuild lowers the first
+-- letter of a JavaScript action's parameter when it generates the wrapper, and
+-- mxcli wrote bodies using the modelled spelling, so the first click was
+-- `ReferenceError: Skin is not defined`. This file carried corrected copies of
+-- both bodies.
 --
---   Client: An error occurred while executing an action of
---   Ledger.SNIPPET_ThemeBar.btnSkinIng: Skin is not defined
+-- Fixed upstream in mxcli `55a44a77` (FINDINGS 135). The generated bodies now
+-- use the lowercase name and say why in a comment, so the copies here were
+-- doing nothing but drifting from their originals — a repair that outlives the
+-- defect is just a second definition nobody diffs.
 --
--- Mendix generates the JS wrapper with the parameter's first letter LOWERED —
--- `export async function SetAppSkin(skin)` for a parameter modelled as `Skin` —
--- and mxcli writes a body that refers to it as `Skin`. The two never meet, in a
--- file that is regenerated on every build so it cannot be patched in place.
---
--- Nothing catches it before runtime: `mx check` reports 0 errors, because as
--- far as Mendix is concerned the action is well-formed and the body is opaque
--- user code.
---
--- The bodies below are mxcli's own, with the parameter references lowercased
--- and nothing else touched. RE-RUNNING `mxcli theme switcher install` PUTS THE
--- DEFECT BACK — this file must be replayed after it.
+-- What this file still owns: the three nanoflows and the snippet. Those depend
+-- on `mxcli theme switcher install` having created `SetAppSkin` first, which is
+-- the ordering finding 118 is about.
 -- ----------------------------------------------------------------------------
-
-create or modify javascript action Ledger.SetAppSkin(Skin: String)
-  returns String
-  exposed as 'Set app theme skin' in 'Theme'
-  platform Web
-as $$
-	var skins = ["ledgerpaper", "ing", "rabobank"];
-	var root = document.documentElement;
-	skins.forEach(function (s) { root.classList.remove("mxt-" + s); });
-
-	var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
-	root.classList.add("mxt-" + chosen);
-	try {
-	    window.localStorage.setItem("mxcli-skin", chosen);
-	} catch (e) {
-	    // No storage available: the choice still applies for this page view.
-	}
-	return Promise.resolve(chosen);
-$$;
-/
-
-create or modify javascript action Ledger.SetAppTheme(Theme: String not null)
-  returns Boolean
-  exposed as 'Set app theme' in 'Theme'
-  platform Web
-as $$
-	var root = document.documentElement;
-	root.classList.remove("theme-light", "theme-dark");
-	try {
-	    if (theme === "light" || theme === "dark") {
-	        root.classList.add("theme-" + theme);
-	        window.localStorage.setItem("mxcli-theme", theme);
-	    } else {
-	        window.localStorage.removeItem("mxcli-theme");
-	    }
-	} catch (e) {
-	    if (theme === "light" || theme === "dark") {
-	        root.classList.add("theme-" + theme);
-	    }
-	}
-	return Promise.resolve(true);
-$$;
-/
 
 create or modify nanoflow Ledger.ACT_SkinLedgerPaper ()
 returns String

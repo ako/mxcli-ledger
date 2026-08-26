@@ -1,0 +1,198 @@
+-- ============================================================================
+-- 33 - The app's own layout, so the theme selector can sit in the topbar
+-- ============================================================================
+-- FINDINGS 136 said the topbar was out of MDL's reach: `DESCRIBE LAYOUT` used
+-- to print "Layouts cannot be created via MDL; they must be created in Studio
+-- Pro", so the theme bar went on every page instead. That is fixed in mxcli
+-- `00443a90` — layouts describe as re-executable MDL and `ALTER LAYOUT` exists —
+-- and this file is the consequence: the theme selector is now where it was
+-- asked for, beside the language selector Atlas puts in the topbar.
+--
+-- WHY A COPY RATHER THAN AN EDIT. `alter layout Atlas_Core.Atlas_Default`
+-- is refused, and correctly:
+--
+--   Error: layout Atlas_Core.Atlas_Default is in a marketplace module — an edit
+--   there is overwritten by the next module update. Copy it into a module of
+--   your own first
+--
+-- So this is Atlas_Default described, renamed into Ledger, and re-run. The one
+-- change is `snippetcall scThemeBar` before the language selector, which puts
+-- the two controls side by side at the top right.
+--
+-- WHAT THE COPY COSTS, STATED RATHER THAN DISCOVERED. `describe layout` flags
+-- its own gap:
+--
+--   -- Forms$SidebarToggleButton (sidebarToggle3)  -- NOT re-executable: mxcli
+--   -- cannot author this widget, so re-running this script would drop it
+--
+-- That is Atlas' hamburger, and the README documents the 52px / 232px sidebar
+-- collapse it drives. A copy of the layout loses it. `ALTER LAYOUT`'s own help
+-- makes the same point — "a rewrite is only as complete as its describe" — and
+-- recommends ALTER for a layout you did not author, which is exactly the option
+-- a marketplace module forecloses. The two rules meet in a corner with no good
+-- move in it.
+--
+-- The replacement below is authored rather than lost: `ToggleAppSidebar` is a
+-- JavaScript action driving the same two things the Forms widget drives — the
+-- region's inline `--sidebar-size`, which is the width, and the scroll
+-- container's shrink/open classes, which are what the rail's content rules key
+-- off. It is not the marketplace widget and does not claim to be; it restores
+-- the behaviour the copy would otherwise have dropped, using the mechanism the
+-- theme switcher already established for client-side DOM work.
+--
+-- It took three attempts, and the two failures are the lesson: both flipped
+-- classes, both left the DOM demonstrably changed, and both left the sidebar at
+-- 232px, because the width is an inline custom property that no class touches.
+-- A class toggle cannot fail — which is exactly why it needs a test that
+-- measures the rendered width rather than asserting on the class.
+-- ============================================================================
+
+/**
+ * Toggle the sidebar, replacing the marketplace widget the copy cannot carry.
+ *
+ * The state lives on the SCROLL CONTAINER, not on the layout root — Mendix puts
+ * `mx-scrollcontainer-open` there, and this project's own stylesheet already
+ * keys off it:
+ *
+ *   .mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open) > .region-sidebar
+ *
+ * So this flips exactly what the Forms button flips, and the 52px rail rules
+ * that were written against that selector keep working untouched.
+ *
+ * The first attempt toggled `sidebar-open` on `.layout-atlas`, which is a class
+ * nothing in the app responds to: the DOM changed, the sidebar did not, and the
+ * button looked wired while doing nothing. Worth stating because a class toggle
+ * always "succeeds" — there is no error to catch, only a screenshot that looks
+ * identical before and after.
+ */
+create or modify javascript action Ledger.ToggleAppSidebar()
+  returns Boolean
+  exposed as 'Toggle the sidebar' in 'Theme'
+  platform Web
+as $$
+	// The WIDTH is an inline custom property on the region, not a class:
+	//   <div class="region-sidebar" style="--sidebar-size: 232px">
+	// Two earlier attempts flipped classes instead and both "worked" — the DOM
+	// changed, the selector matched, and the sidebar stayed 232px, because no
+	// rule keyed to those classes sets a width. The class still matters for the
+	// rail's CONTENT (the project's own 52px rules, and the 'L' mark that
+	// replaces the wordmark), so both are set: the property for the width, the
+	// class for what goes in it.
+	var sidebar = document.querySelector(".region-sidebar");
+	if (!sidebar) {
+	    return Promise.resolve(false);
+	}
+	var sc = sidebar.parentElement;
+	var closed = (getComputedStyle(document.documentElement)
+	    .getPropertyValue("--navsidebar-width-closed") || "52px").trim();
+	var collapsed = sidebar.style.getPropertyValue("--sidebar-size").trim() === closed;
+
+	if (collapsed) {
+	    sidebar.style.setProperty("--sidebar-size", "232px");
+	    if (sc) { sc.classList.add("mx-scrollcontainer-open"); }
+	} else {
+	    sidebar.style.setProperty("--sidebar-size", closed);
+	    // `mx-scrollcontainer-shrink` is not in the model — ScrollBehavior is
+	    // PerRegion on Atlas' layout and on this copy alike, so the marketplace
+	    // widget must add it at runtime. Added here for the same reason.
+	    if (sc) {
+	        sc.classList.add("mx-scrollcontainer-shrink");
+	        sc.classList.remove("mx-scrollcontainer-open");
+	    }
+	}
+	return Promise.resolve(collapsed);
+$$;
+/
+
+create or modify nanoflow Ledger.ACT_ToggleSidebar ()
+returns Boolean
+begin
+  @position(360, 200)
+  $Open = call javascript action Ledger.ToggleAppSidebar();
+  @position(520, 200)
+  return $Open;
+end;
+/
+
+/**
+ * Ledger's layout: Atlas_Default, copied, with the theme bar in the topbar.
+ *
+ * Everything except the two additions is Atlas' own structure as `describe`
+ * emitted it. The class list is kept verbatim — Atlas' stylesheet and this
+ * project's own SCSS both key off `layout-atlas`, so renaming it would silently
+ * unstyle the whole app.
+ */
+create or replace layout Ledger.App_Default (
+  layouttype: 'Responsive',
+  class: 'layout-atlas layout-atlas-responsive-default'
+) {
+  scrollcontainer layoutContainer {
+    region top (Class: 'region-topbar') {
+      snippetcall snippetCall1 (Snippet: Atlas_Core.FeedbackWidget)
+      container container1 (
+        Class: 'topbar-content',
+        DesignProperties: ['Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center']
+      ) {
+        actionbutton btnSidebarToggle (
+          Caption: '',
+          Action: nanoflow Ledger.ACT_ToggleSidebar,
+          Class: 'ledger-sidebar-toggle'
+        )
+        container container2 (
+          DesignProperties: ['Flex container': 'Horizontal (row)', 'Align items X': 'Space between (only for horizontal containers)', 'Disable row wrap': on, 'Align items Y': 'Center', 'Grow / shrink (self)': '1 (auto)']
+        ) {
+          -- Atlas' brand image is NOT in this copy, and it is the second thing
+          -- the describe does not carry. Unlike the sidebar toggle, this one is
+          -- not flagged: `describe layout` emits it as the built-in shorthand
+          -- `image staticImage1 (Responsive: false)`, but Atlas' widget is the
+          -- pluggable `com.mendix.widget.web.image.Image` with a required
+          -- datasource, so re-running the describe produces a widget whose
+          -- definition does not match and `mx check` fails with CE0463 — after
+          -- reporting 0 errors on the original. `mxcli widget init` does not
+          -- help; the shape is wrong, not the cached definition.
+          --
+          -- What is lost is the Mendix "mx" mark, which was never Ledger's
+          -- branding anyway. A wordmark belongs here eventually; leaving the
+          -- slot empty is not a design decision, it is an unfinished one.
+          container ctnBrand (
+            Class: 'navbar-brand',
+            DesignProperties: ['Grow / shrink (self)': 'Hug content (only shrink)']
+          ) {
+            dynamictext txtWordmark (
+              Content: 'Ledger',
+              RenderMode: paragraph,
+              Class: 'ledger-wordmark'
+            )
+          }
+          container ctnTopbarControls (
+            DesignProperties: ['Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center']
+          ) {
+            snippetcall scThemeBar (Snippet: Ledger.SNIPPET_ThemeBar)
+            snippetcall snippetCall2 (Snippet: Atlas_Core.LanguageSelectorWidget)
+          }
+        }
+      }
+    }
+    region left (Size: 232, SizeMode: 'Pixels', Class: 'region-sidebar') {
+      navigationtree navigationTree3 (Profile: 'Responsive')
+    }
+    region center (Class: 'region-content') {
+      placeholder Main
+    }
+  }
+}
+/
+
+-- Every page moves at once. The MAP clause is unnecessary here because the
+-- placeholder is called Main in both, which is the only reason this is a
+-- one-liner rather than a page-by-page rebind.
+--
+-- THE PAGE FILES STILL NAME Atlas_Default, deliberately. Replaying 05 or 22
+-- recreates those pages on whatever layout their own source declares, so this
+-- statement has to run after them — which it does, being file 33. Putting
+-- `Ledger.App_Default` in the page files instead would make file 05 reference a
+-- layout file 33 has not created yet: the forward reference finding 118 is
+-- about, traded for a repoint that is idempotent and costs one line.
+alter pages in Ledger set layout = Ledger.App_Default
+  where layout = Atlas_Core.Atlas_Default;
+/
