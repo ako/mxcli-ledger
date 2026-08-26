@@ -16,17 +16,19 @@ import { Big } from "big.js";
  */
 export async function SetAppSkin(skin) {
 	// BEGIN USER CODE
+	// Modelled as Skin, reaches the body as lowercase skin — mxbuild lowers the
+	// first letter when it generates the wrapper.
 	var skins = ["ledgerpaper", "ing", "rabobank"];
-		var root = document.documentElement;
-		skins.forEach(function (s) { root.classList.remove("mxt-" + s); });
+	var root = document.documentElement;
+	skins.forEach(function (s) { root.classList.remove("mxt-" + s); });
 	
-		var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
-		root.classList.add("mxt-" + chosen);
-		try {
-		    window.localStorage.setItem("mxcli-skin", chosen);
-		} catch (e) {
-		    // No storage available: the choice still applies for this page view.
-		}
-		return Promise.resolve(chosen);
+	var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
+	root.classList.add("mxt-" + chosen);
+	try {
+	    window.localStorage.setItem("mxcli-skin", chosen);
+	} catch (e) {
+	    // No storage available: the choice still applies for this page view.
+	}
+	return Promise.resolve(chosen);
 	// END USER CODE
 }

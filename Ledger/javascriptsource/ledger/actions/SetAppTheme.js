@@ -16,20 +16,24 @@ import { Big } from "big.js";
  */
 export async function SetAppTheme(theme) {
 	// BEGIN USER CODE
+	// The parameter is modelled as Theme and reaches the body as lowercase
+	// lowers the first letter when it generates the wrapper. Using the modelled
+	// spelling here is a ReferenceError on the first click, and nothing catches it
+	// before then — mx check sees a well-formed action with opaque user code.
 	var root = document.documentElement;
-		root.classList.remove("theme-light", "theme-dark");
-		try {
-		    if (theme === "light" || theme === "dark") {
-		        root.classList.add("theme-" + theme);
-		        window.localStorage.setItem("mxcli-theme", theme);
-		    } else {
-		        window.localStorage.removeItem("mxcli-theme");
-		    }
-		} catch (e) {
-		    if (theme === "light" || theme === "dark") {
-		        root.classList.add("theme-" + theme);
-		    }
-		}
-		return Promise.resolve(true);
+	root.classList.remove("theme-light", "theme-dark");
+	try {
+	    if (theme === "light" || theme === "dark") {
+	        root.classList.add("theme-" + theme);
+	        window.localStorage.setItem("mxcli-theme", theme);
+	    } else {
+	        window.localStorage.removeItem("mxcli-theme");
+	    }
+	} catch (e) {
+	    if (theme === "light" || theme === "dark") {
+	        root.classList.add("theme-" + theme);
+	    }
+	}
+	return Promise.resolve(true);
 	// END USER CODE
 }

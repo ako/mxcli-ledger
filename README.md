@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 140 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 141 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -540,7 +540,7 @@ Three rules learned the hard way and worth stating up front:
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
   couple pass both and only show up at runtime. It also runs the other way: as of
-  mxcli `0bf0f0ea`, `mxcli check` reports three "Unexpected token after
+  mxcli `55a44a77`, `mxcli check` reports three "Unexpected token after
   expression" errors — two in `25-insights-data.mdl`, one in `28-oql-dml.mdl` —
   that are false. Its expression lexer does not know the `''` apostrophe escape
   (`FINDINGS` 131); `mx check` reports 0 errors and the unit suite covers the
@@ -674,7 +674,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              140 numbered findings — the main deliverable alongside the app
+FINDINGS.md              141 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

@@ -5755,3 +5755,170 @@ the `purpose` strings are regenerated and do not.
 
 **Ask:** rename the licence to the created theme's name at scaffold time, the
 same treatment the mixin and the import already get.
+
+---
+
+## Phase 24 — re-tested against mxcli `55a44a77` (2026-08-26)
+
+Three of Phase 23's findings are fixed and credited in the changelog. The other
+four are untouched, and 131 now stands across six builds. Everything was
+re-verified by hand rather than read off the changelog.
+
+| finding | status on `55a44a77` |
+|---|---|
+| 131 apostrophe escape rejected | **open** — 6th build |
+| 135 parameterised switcher actions throw | **FIXED** |
+| 136 layouts not authorable | **open** |
+| 137 `IN <Module>` misses navigation | **open** |
+| 138 snippet → nanoflow reference false positive | **open** |
+| 139 `theme create` path reporting | **FIXED** |
+| 140 scaffolded theme's licence filename | **FIXED** (main half) |
+
+### 135 is fixed, verified through the click that used to fail
+
+The generated body now uses the lowercase name and explains itself:
+
+```
+$ mxcli theme switcher install --module Ledger --print -p Ledger.mpr
+// Modelled as Skin, reaches the body as lowercase skin — mxbuild lowers the
+// first letter when it generates the wrapper.
+var chosen = skins.indexOf(skin) === -1 ? "ledgerpaper" : skin;
+```
+
+and after a build the wrapper agrees:
+
+```
+export async function SetAppSkin(skin) {
+export async function SetAppTheme(theme) {
+```
+
+Re-installed over the project's own repaired copies and driven in a browser —
+the three buttons that produced `ReferenceError: Skin is not defined` now switch
+the palette:
+
+```
+DEFAULT        cls=(none)          brand=#1b4d4b  ground=#f6f4f0
+ING            cls=mxt-ing         brand=#ff6200  ground=#f7f7f8
+Rabobank       cls=mxt-rabobank    brand=#000099  ground=#f5f6f9
+Ledger Paper   cls=mxt-ledgerpaper brand=#1b4d4b  ground=#f6f4f0
+JS errors: none
+```
+
+`mdlsource/32-theme-bar.mdl` no longer carries the repaired bodies. A workaround
+that outlives its defect is a second definition nobody diffs, and this one would
+have silently drifted from the original the moment upstream changed it again.
+
+### 141. A JavaScript action's body is not in the model, and that is worth knowing
+
+Not a defect — a piece of the model that behaves unlike everything else here,
+and it cost half an hour to work out.
+
+After re-installing the switcher, `DESCRIBE` returned a body containing mxcli's
+new comment while **git reported nothing changed**:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE JAVASCRIPT ACTION Ledger.SetAppSkin"
+	// Modelled as Skin, reaches the body as lowercase skin …
+
+$ git status --short          # only the .js files
+ M Ledger/javascriptsource/ledger/actions/SetAppSkin.js
+ …
+$ grep -c "Modelled" Ledger.mpr ; grep -rl "Modelled" mprcontents/
+0
+(nothing)
+```
+
+The `.mpr` mtime was a day old and the string appeared nowhere under
+`mprcontents/`. The install had reported `Modified javascript action:
+Ledger.SetAppSkin` and left no trace in the model.
+
+Both are true. **Mendix stores a JavaScript action's code in
+`javascriptsource/<module>/actions/<Name>.js`, not in the model** — the model
+carries only the signature. `DESCRIBE` reads the body back out of the file, and
+`create or modify javascript action … as $$ … $$` writes it there. The
+signature was already right, so the model genuinely did not change.
+
+Two consequences worth stating:
+
+- **`javascriptsource/` is not optional to commit.** For a Java action the body
+  travels in the `.mpr`; for a JavaScript action it does not exist anywhere else.
+  A commit of the model without the `.js` files is a commit of empty actions.
+- **It has finding 130's shape.** mxcli writes the whole file including the
+  wrapper, and its wrapper uses the *modelled* capitalisation —
+  `export async function SetAppSkin(Skin)` — which mxbuild then rewrites to
+  `(skin)` on the next build. Measured before and after a build on the same
+  file. Harmless in a build-then-commit order, and a broken commit in the other
+  order, which is exactly what 130 says about `javasource/`.
+
+**Ask:** nothing to fix. It belongs in the `java-actions` skill beside its Java
+sibling, because the difference between the two is invisible until it bites.
+
+### The three that are unchanged, re-measured
+
+**131** — same false error, same missing location, on the sixth consecutive
+build (`a44c735c` → `55a44a77`). Project sweep is still exactly the same three
+findings in the same two files.
+
+**136** — `DESCRIBE LAYOUT` still prints `Layouts cannot be created via MDL;
+they must be created in Studio Pro`, and `mxcli syntax` still has no layout
+entry at all, so the limitation is still only discoverable by describing a
+layout and reading a comment.
+
+**137** — `mxcli syntax translations` still says only "IN <Module> scopes both
+directions", with no mention that navigation is a project-level document and
+therefore outside every module scope.
+
+**138** — unchanged, and the note above the failure still contradicts it:
+
+```
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 2: snippet 'Ledger.SNIPPET_Probe138' has reference errors:
+  - nanoflow not found: Ledger.ProbeSkinNano
+```
+
+### 140's smaller half is still there
+
+The licence is renamed with the theme, which was the substance:
+
+```
+$ mxcli theme create probe139 --from signal -p Ledger.mpr
+  created   theme/mxcli-themes/probe139/files/theme/web/mxcli-fonts/OFL-probe139.txt
+  created   theme/mxcli-themes/probe139/theme.json
+```
+
+That output also closes 139 — every path is now printed under the scaffold root,
+and `theme.json` is no longer mislabelled as living under `files/`.
+
+The name-derived prose is unchanged, which is what 140 recorded as its aside:
+a theme named `probe139` is still titled `Probe139`, its summary still describes
+the base theme, and its file purposes still read "Layer 1 — the Probe139
+palette". `title` is editable and stays edited; `purpose` is regenerated.
+
+### Not tested: the caption-language fix
+
+`#970` — captions landing under the project's `DefaultLanguageCode` rather than
+a hardcoded `en_US` — cannot be exercised here. Ledger's default **is** `en_US`,
+so the fix is a no-op for it by construction.
+
+What this project can offer is the regression control the changelog claims, and
+it holds: with seven languages enabled and en_US the default, the app still
+renders English before any selection and the six translation files still apply
+cleanly — navigation and the theme bar both switch in de / fr / cs.
+
+### Everything else still passes
+
+| check | result |
+|---|---|
+| `mx check Ledger.mpr` | 0 errors |
+| `tests/csv-import.test.mdl` | 42 passed |
+| `tests/bank-formats.test.mdl` | 17 passed |
+| browser pass, all 8 pages | theme bar on each, 0 chart errors, 0 JS errors |
+| theme switch | all three, both directions, no JS errors |
+| language switch | navigation + theme label in de / fr / cs |
+| data | 2,588 transactions over 5 years |
+
+One environment note: Postgres does not start with the container. `mxcli run`
+says so precisely — `database not reachable at 127.0.0.1:5432 … Pass --ensure-db
+to provision it` — which is the right error in the right place. The data
+survived; only the server needed starting.
