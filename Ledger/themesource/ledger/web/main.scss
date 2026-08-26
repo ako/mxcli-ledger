@@ -972,9 +972,10 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
 // single choice — the pieces are joined, and only the borders between them are
 // collapsed so the group has one outline rather than three.
 //
-// It is here rather than in the topbar because the topbar belongs to the
-// layout, and layouts are the one document MDL cannot author (mxcli says so
-// outright: "Layouts cannot be created via MDL"). See mdlsource/32-theme-bar.mdl.
+// It now sits in the TOPBAR, beside the language selector, which is where it
+// was always meant to go. That needed mxcli to learn to author layouts
+// (FINDINGS 136, fixed in 00443a90); until then it lived under each page title.
+// See mdlsource/33-layout.mdl.
 //
 // Every colour below is a --mxt-* token, so the bar is themed by whichever
 // theme it is currently selecting.
@@ -1032,6 +1033,75 @@ $cf-under: rgb(44, 110, 74); // the favourable direction
             box-shadow: var(--mxt-focus-halo);
             position: relative;
             z-index: 2;
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Topbar placement
+// ---------------------------------------------------------------------------
+// The bar was first designed to sit under a page title, where it had a whole
+// row to itself. In the topbar it shares a 40px strip with the language
+// selector, so the label goes and the buttons shrink. Same markup, different
+// room.
+
+.region-topbar {
+    .ledger-themebar {
+        margin: 0 12px 0 0;
+
+        // The label is redundant here: three theme names beside a language
+        // selector read as a theme picker without being told.
+        .ledger-themebar-label {
+            display: none;
+        }
+
+        .btn.ledger-themebar-btn {
+            font-size: 10px;
+            padding: 4px 8px;
+        }
+    }
+
+    // Atlas' own brand slot, now carrying a wordmark instead of the mx mark.
+    .ledger-wordmark {
+        font-family: var(--ledger-serif);
+        font-size: 17px;
+        line-height: 1;
+        letter-spacing: 0.01em;
+        color: var(--ledger-ink);
+        margin: 0;
+    }
+
+    // Stands in for the marketplace sidebar toggle the layout copy cannot
+    // carry. Drawn as a hamburger in CSS so it needs no icon font.
+    .btn.ledger-sidebar-toggle {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        margin-right: 8px;
+        border: 1px solid transparent;
+        background: transparent;
+        border-radius: var(--mxt-radius);
+        position: relative;
+        flex: 0 0 auto;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: 9px;
+            top: 10px;
+            width: 14px;
+            height: 2px;
+            background: var(--ledger-ink-2);
+            box-shadow: 0 5px 0 var(--ledger-ink-2), 0 10px 0 var(--ledger-ink-2);
+        }
+
+        &:hover {
+            background: var(--mxt-surface-hover);
+        }
+        &:focus-visible {
+            outline: none;
+            box-shadow: var(--mxt-focus-halo);
         }
     }
 }

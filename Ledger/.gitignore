@@ -29,3 +29,11 @@
 mxcli
 mxcli.exe
 .mxcli/
+
+# mxcli widget init writes the same 43 widget docs to two places:
+#   Generated 43 widget docs in .ai-context/skills/widgets
+#   Generated 43 widget docs in .claude/skills/widgets
+# They are byte-identical (FINDINGS 142). .ai-context/ is the one this project's
+# CLAUDE.md points at and the one that is committed; ignoring the copy keeps the
+# same files from landing in the repo twice. `mxcli widget init` recreates it.
+.claude/skills/

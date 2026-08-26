@@ -5922,3 +5922,170 @@ One environment note: Postgres does not start with the container. `mxcli run`
 says so precisely — `database not reachable at 127.0.0.1:5432 … Pass --ensure-db
 to provision it` — which is the right error in the right place. The data
 survived; only the server needed starting.
+
+---
+
+## Phase 25 — layouts become authorable, and the copy recipe is tested (2026-08-26)
+
+`00443a90` (PR #304) makes layouts a first-class MDL document. That closes
+finding 136 and, with it, the one thing this app was asked for and could not
+have: the theme selector in the topbar, beside the language selector.
+
+Using it turned up three things the documented copy recipe does not carry.
+
+### 136 is fixed — layouts describe, and ALTER LAYOUT exists
+
+What used to be a refusal is now re-executable MDL:
+
+```
+$ mxcli -p Ledger.mpr -c "DESCRIBE LAYOUT Atlas_Core.Atlas_Default"
+create layout Atlas_Core.Atlas_Default (
+  layouttype: 'Responsive',
+  class: 'layout-atlas layout-atlas-responsive-default'
+) {
+  scrollcontainer layoutContainer {
+    region top (Class: 'region-topbar') { … }
+```
+
+`mxcli syntax` now carries `layout`, `layout.alter` and `layout.show`, and
+`ALTER LAYOUT` takes the same operations as `ALTER PAGE` plus
+`INSERT INTO <container>.<region>`. The help's own example is this app's exact
+use case — a topbar snippet added without rewriting the document.
+
+**The marketplace guard is right and its error is the best kind.** Atlas is a
+marketplace module, so an edit is refused with the recipe attached:
+
+```
+Error: layout Atlas_Core.Atlas_Default is in a marketplace module — an edit
+there is overwritten by the next module update. Copy it into a module of your
+own first: `describe layout Atlas_Core.Atlas_Default`, rename it, run it, then
+repoint pages with `alter pages set layout = <yours> where layout = …`
+```
+
+`alter pages … where layout = …` then moved all eight pages in one statement.
+
+### 142. The copy recipe loses three things, and flags one of them
+
+`describe → rename → run` is what both the error above and `mxcli syntax
+layout.show` recommend. Run against Atlas_Default it produces a layout that is
+missing three things. Only the first announces itself.
+
+**1. The sidebar toggle — flagged, in the describe output itself:**
+
+```
+-- Forms$SidebarToggleButton (sidebarToggle3)  -- NOT re-executable: mxcli
+-- cannot author this widget, so re-running this script would drop it
+```
+
+That is exactly the right thing to print, and it is the only reason the other
+two were looked for.
+
+**2. The brand image — silent, and it fails the build.** `describe` emits
+
+```
+image staticImage1 (Responsive: false)
+```
+
+but Atlas' widget is the pluggable `com.mendix.widget.web.image.Image`, whose
+`datasource` is required. Re-running the describe produces a widget whose
+definition does not match, and `mx check` — which reported **0 errors** on the
+original — fails on the copy:
+
+```
+[error] [CE0463] "The definition of this widget has changed. Update this widget…"
+  at Image 'staticImage1'
+```
+
+`mxcli widget init` does not help: the cached definition is current, the emitted
+shape is wrong.
+
+**3. The scroll container's shrink mode — silent, and it removes a feature.**
+This is the interesting one, because it is not a describe gap at all. The copy
+renders
+
+```
+mx-scrollcontainer mx-scrollcontainer-vertical mx-scrollcontainer-fixed
+```
+
+where Atlas' renders `-shrink`, and the app's 52px collapsed rail is written
+against `.mx-scrollcontainer-shrink:not(.mx-scrollcontainer-open)`. So the
+sidebar became permanently 232px — the collapse the README documents with two
+screenshots, gone, with `mx check` reporting 0 errors.
+
+The cause is not in the model. Every `Forms$ScrollContainer` in the project —
+Atlas' and the copy's alike — stores `ScrollBehavior: PerRegion`; there is no
+shrink property to lose. **The marketplace toggle widget adds the class at
+runtime.** Drop the widget and the mode goes with it, which no amount of
+round-tripping the layout could have preserved.
+
+**What this costs to work around.** A JavaScript action doing what the widget
+does — add `mx-scrollcontainer-shrink`, toggle `mx-scrollcontainer-open` — plus
+a nanoflow and a button. It is not the marketplace widget and the first attempt
+was worse than useless: it toggled `sidebar-open` on the layout root, a class
+nothing in the app reads. The DOM changed, the sidebar did not, and the button
+looked wired. **A class toggle always succeeds** — there is no error to catch,
+only a screenshot identical before and after, which is why the probe now
+measures the rendered sidebar width rather than asserting on the class.
+
+**Ask:** the describe already knows how to say "NOT re-executable" for a widget
+it cannot author. Two more cases deserve the same line — a pluggable widget
+emitted as a built-in shorthand, and a layout whose behaviour depends on a
+widget being dropped. The recipe is recommended in two places; what it silently
+costs should be printed where it is recommended.
+
+### Everything else is unchanged on `00443a90`
+
+131, 137 and 138 all still reproduce, re-tested on this build rather than
+carried over: the apostrophe false positive (seventh build), the `IN <Module>`
+help with no mention of project-level documents, and the reference checker
+contradicting its own "objects created within the script are skipped" note one
+line above the failure.
+
+### A smaller one: widget docs are now written twice
+
+`mxcli widget init` reports both, and the trees are byte-identical:
+
+```
+Generated 43 widget docs in .ai-context/skills/widgets
+Generated 43 widget docs in .claude/skills/widgets
+$ diff -q .claude/skills/widgets/image.md .ai-context/skills/widgets/image.md
+(no output)
+```
+
+Harmless, and the docs themselves improved — the MDL example now shows the
+`content { }` block a pluggable widget's children go in, which is what made the
+Image mismatch above legible. But a project now commits two copies of the same
+43 files unless it ignores one, and nothing says which is canonical.
+
+### 143. `create or replace` a document and its translations go with it
+
+Replaying `32-theme-bar.mdl` — one `create or replace snippet` — silently reset
+the theme bar's label to English in all six languages. The browser had shown
+"Design" / "Thème" / "Motiv" before the replay and "Theme" after it, with no
+error anywhere in between.
+
+The mechanism is not surprising once stated: a translation belongs to the
+document that holds the string, `create or replace` replaces the document, and
+the translations go with it. What makes it worth recording is that nothing in
+the output suggests it. The replay reports `Created snippet
+Ledger.SNIPPET_ThemeBar`, `mx check` reports 0 errors, and the app renders — in
+one language.
+
+Re-running the six translation files put them back, keyed on the same source
+string:
+
+```
+$ for f in mdlsource/31-translations-*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
+Set 13 de_DE translation(s) across 2 document(s)
+…
+```
+
+**The rule this establishes for the file set:** translations are file 31 and
+have to stay downstream of every document that carries a translatable string.
+Any replay that touches an earlier file needs 31 re-run after it, which is the
+same ordering constraint finding 118 describes and the reason the numbering is
+load-bearing rather than decorative.
+
+**Ask:** report it. `create or replace` already knows how many translations the
+document it is replacing carried; saying "replaced 1 snippet, dropping 6
+translations" would turn a silent regression into a line of output.

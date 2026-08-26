@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 141 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 143 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -611,10 +611,20 @@ Redefining those tokens as `var(--mxt-…)` fixes it in nineteen lines, because
 custom properties resolve at *use* time and pick up whichever theme is scoped on
 `:root`. One alias layer, and one class swap moves everything.
 
-The three buttons sit under each page title rather than in the topbar, and that
-is a toolchain limit rather than a choice: **layouts are the one document MDL
-cannot author** (`mxcli` says so outright when you describe one), so nothing can
-be added beside the language selector. Finding 136.
+The three buttons sit **in the topbar**, beside the language selector. They did
+not always: layouts used to be the one document MDL could not author, so the bar
+lived under each page title instead. mxcli `00443a90` made layouts describable
+and `ALTER LAYOUT` real (finding 136), and `mdlsource/33-layout.mdl` is what that
+bought — Atlas' layout copied into `Ledger.App_Default` with the theme bar added,
+and all eight pages repointed onto it in one statement.
+
+The copy is not free, and finding 142 measures what it costs: `describe layout`
+flags the one widget it cannot author, and silently drops two more things — the
+brand image comes back as a built-in shorthand where Atlas has a pluggable widget
+(CE0463, on a model that checked clean), and the sidebar's shrink mode turns out
+not to live in the model at all. The sidebar collapse is restored by an authored
+JavaScript action driving the same inline `--sidebar-size` the marketplace widget
+drives; the Mendix wordmark is replaced by a Ledger one.
 
 Note that the charts do not re-theme. Their palettes are baked into the Vega
 specifications as literal hex, which is the right call for a chart — a spec that
@@ -674,7 +684,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              141 numbered findings — the main deliverable alongside the app
+FINDINGS.md              143 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows

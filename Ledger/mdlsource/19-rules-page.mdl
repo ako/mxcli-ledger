@@ -31,7 +31,6 @@ create or replace page Ledger.Category_Overview
     row rowMain {
       column colBody (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Categories & rules', rendermode: H2)
-        snippetcall scThemeBar (snippet: Ledger.SNIPPET_ThemeBar)
         dynamictext txtSub (
           content: 'Two-level taxonomy plus the rules that assign categories. Rules run in order and the first match wins.',
           rendermode: paragraph,
