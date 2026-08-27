@@ -1,6 +1,6 @@
 # Ledger
 
-A household-finance app for Mendix 11.13.0, authored **entirely through
+A household-finance app for Mendix 11.14.0, authored **entirely through
 [mxcli](https://github.com/ako/mxcli) and MDL**. No hand-edited `.mpr`, no Studio
 Pro. Every entity, microflow, page and theme token in this repository was written
 as MDL source and applied from the command line.
@@ -9,7 +9,7 @@ It began as a [Claude artifact prototype](./PROTOTYPE-ANALYSIS.md) and was
 rebuilt slice by slice, each one verified by running the app and reading the
 figures back out of it.
 
-The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 143 numbered entries
+The second deliverable is [`FINDINGS.md`](./FINDINGS.md) — 146 numbered entries
 recording every mxcli bug, surprise and workaround found along the way, with the
 exact command and output. Several have since been fixed upstream; the file
 records which, and how they were verified.
@@ -497,7 +497,7 @@ the build order and every file is idempotent (`create or modify` throughout).
 cd Ledger
 mxcli widget init -p Ledger.mpr                          # required first — see below
 for f in mdlsource/*.mdl; do mxcli exec "$f" -p Ledger.mpr; done
-~/.mxcli/mxbuild/11.13.0/modeler/mx check Ledger.mpr     # the authority
+~/.mxcli/mxbuild/11.14.0/modeler/mx check Ledger.mpr     # the authority
 mxcli test tests/ -p Ledger.mpr --local                  # 38 unit tests
 mxcli run --local --ensure-db                            # run it
 ```
@@ -537,6 +537,12 @@ browser instead, where a paste carries real tabs.
 
 Three rules learned the hard way and worth stating up front:
 
+- **`mxcli run --local` cannot start this app as shipped.** Mendix 11.14.0's
+  mxbuild bundles the browser client itself and stops emitting the
+  `rollup.config.mjs` that mxcli's own bundling step requires, so `run --local`
+  fails on a file whose purpose has been served (`FINDINGS` 146). The fix is
+  five lines upstream — skip when `web/dist/index.js` already exists — and every
+  browser result recorded here was measured through a binary carrying it.
 - **`mxcli check` is a syntax and reference gate; `mx check` is the authority.**
   Several defects in `FINDINGS.md` pass the first and fail the second, and a
   couple pass both and only show up at runtime. It also runs the other way: as of
@@ -684,7 +690,7 @@ Stated rather than hidden:
 ## Layout
 
 ```
-FINDINGS.md              143 numbered findings — the main deliverable alongside the app
+FINDINGS.md              146 numbered findings — the main deliverable alongside the app
 PROTOTYPE-ANALYSIS.md    what the prototype did, what was real, what was decided
 TOOLING.md               environment, ground rules, tool versions
 docs/observability.md    runtime monitoring pass — errors, DB pressure, hot flows
