@@ -102,16 +102,16 @@ the module graph.
 
 ### 3. Mendix engine + runtime pre-cache
 
-Target version **11.13.0**, pre-fetched so the first build of a session is not a
+Target version **11.14.0**, pre-fetched so the first build of a session is not a
 cold download:
 
 ```
-mxcli setup mxbuild  --version 11.13.0   # ~1.7 GB → ~/.mxcli/mxbuild/11.13.0
-mxcli setup mxruntime --version 11.13.0  # ~397 MB → ~/.mxcli/runtime/11.13.0
+mxcli setup mxbuild  --version 11.14.0   # ~1.7 GB → ~/.mxcli/mxbuild/11.14.0
+mxcli setup mxruntime --version 11.14.0  # ~397 MB → ~/.mxcli/runtime/11.14.0
 ```
 
 This gives `mx` (the validator) at
-`~/.mxcli/mxbuild/11.13.0/modeler/mx` and `mxbuild` beside it.
+`~/.mxcli/mxbuild/11.14.0/modeler/mx` and `mxbuild` beside it.
 
 Override with `MENDIX_VERSION=… bash scripts/setup-tools.sh`, or skip the download
 entirely with `SKIP_MENDIX_CACHE=1`.

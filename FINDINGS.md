@@ -6089,3 +6089,218 @@ load-bearing rather than decorative.
 **Ask:** report it. `create or replace` already knows how many translations the
 document it is replacing carried; saying "replaced 1 snippet, dropping 6
 translations" would turn a silent regression into a line of output.
+
+---
+
+## Phase 26 — upgrading to Mendix 11.14.0 (2026-08-26)
+
+The upgrade itself is three commands. Getting to the point where those three
+commands would run took the rest of this phase, because the project could not be
+converted at all — and the reason was damage this project had done to its own
+model, silently, months of findings ago.
+
+### 144. Replacing a document after translating it corrupts the model, and only `mx convert` notices
+
+`mx convert --in-place .` refused to save:
+
+```
+Conversion failed: System.InvalidOperationException: An error occurred while
+saving the project: Duplicate Guid in unit page 'Ledger.Account_Overview'.
+Object types: Mendix.Modeler.Texts.Translation, Mendix.Modeler.Texts.Translation.
+```
+
+Two `Texts.Translation` objects in one page unit sharing a GUID. **Nothing else
+in the toolchain sees it.** `mx check` reports 0 errors on 11.13.0 *and* on
+11.14.0, mxbuild compiles, the app runs, 42 + 17 tests pass, and eight pages
+render. The only tool that looks is the one that has to rewrite every unit.
+
+**The minimal reproduction is a three-step cycle**, built from the commit before
+this project had any translations (`47bf4b7`, which converts cleanly):
+
+| step | command | result |
+|---|---|---|
+| 1 | `create or modify translations … for nl_NL` | `Set 263 nl_NL translation(s) across 54 document(s)` |
+| 2 | `exec 05-pages-foundation.mdl` (a `create or replace page`) | 0 errors |
+| 3 | `create or modify translations … for nl_NL` | `Set 0` |
+| | `mx convert --in-place .` | **fails, 4 duplicate GUIDs** |
+
+Step 3 is the tell: it reports **zero** changes — it believes the translations
+are already correct — and the model is corrupt by the time it returns.
+
+Controls, each run from the same clean base:
+
+- translate once, convert → **clean**
+- translate three times in a row, convert → **clean** (runs 2 and 3 set 0 and
+  change nothing)
+- translate, replace the document, translate again, convert → **corrupt**
+
+So it is not repetition. It is **replacing a document that already carries
+translations, then translating again**. Finding 143 recorded the visible half of
+this — a `create or replace` drops the translations that were on the document.
+This is the invisible half: what it leaves behind collides with what comes next.
+
+**What does not fix it.** Re-running the page's own MDL (`create or replace
+page`) leaves all 12 duplicates. Dropping the page and recreating it makes it
+**worse** — 34 duplicate reports across more units, because the drop orphans
+more translation objects than it clears.
+
+**What does.** Clear the module's translations, convert, put them back:
+
+```
+create or replace translations in Ledger for <lang> ( );   -- ×6
+  → removed 276 nl_NL translation(s) across 21 document(s)
+mx convert --in-place .                                     → exit 0
+exec 31-translations-<lang>.mdl                             -- ×6, restores 213 each
+```
+
+**Scope the clear to the module.** Unscoped, `create or replace translations for
+nl_NL ( )` removes **739 translations across 81 documents** — every Atlas and
+System string Mendix ships translated goes with it, and the project's own files
+cannot put those back. Scoped to `in Ledger` it removes 276 across 21, which is
+exactly the corrupted set.
+
+**Ask:** whatever `create or replace <document>` does to the translations on the
+document it replaces, it should also do to their GUIDs — or `mx check` should
+learn the check `mx convert` already has. A defect that only a version upgrade
+can see is one that is found years late by definition.
+
+### 145. A failed `mx convert --in-place` destroys the project
+
+This is the part that turns a blocked upgrade into an incident. The failure
+above is not clean:
+
+```
+$ mxcli -p Ledger.mpr -c "SHOW MODULES"      # before: 10 modules
+$ mx convert --in-place .                    # fails
+$ mxcli -p Ledger.mpr -c "SHOW MODULES"
+(1 modules)                                  # System only
+```
+
+535 unit files rewritten, nine modules gone. And the version metadata was
+already bumped before the save failed, so a **second** run reads the project as
+`11.14.0` and fails differently — `Root unit not found` — which is a much less
+informative error than the real one and sends you looking in the wrong place.
+
+Recovery was `git checkout -- .` and a `git clean` of the orphaned units, back
+to 10 modules and `11.13.0`. Which is only recovery because the `.mpr` is
+committed and the tree was clean before the attempt.
+
+**The rule this earns: never run `mx convert --in-place` against the working
+copy.** Convert a throwaway copy first, read the failure there, fix the model in
+the working copy, and only then convert it. Every diagnosis in finding 144 was
+made on copies under `/tmp` for exactly this reason.
+
+**Ask:** save to a temporary location and move into place on success, so a
+failed conversion leaves the input untouched. Failing that, refuse to start
+without a clean git tree, the way a rebase does.
+
+### The upgrade, once the model allowed it
+
+```
+$ mx convert --in-place .
+The mpr file version is '11.13.0'.
+Converting the mpr file.
+Checking project for errors.
+The project contains 0 errors, 64 warnings and 2 deprecations.
+Saving the converted mpr file.
+mx convert finished.
+
+$ mx check Ledger.mpr
+The mpr file version is '11.14.0'.
+The app contains: 0 errors.
+```
+
+147 unit files changed and **no `mdlsource/` file needed editing** — which is
+the claim this project has been making for twenty-five phases, tested by a
+version upgrade for the first time. The MDL is version-independent; only the
+serialised model moved.
+
+`mxcli` picked up the new version by itself, from the `.mpr`: `MxBuild 11.14.0
+already cached`. The pins that did need moving are the ones outside the model —
+`scripts/setup-tools.sh`, `TOOLING.md`, and the README's own header.
+
+One number worth recording: the pre-translation snapshot converted with **1
+error** under 11.14.0's stricter check, and the repaired project converts with
+**0**. The error was in the translations that the clear removed.
+
+### 146. `mxcli run --local` cannot start a Mendix 11.14.0 app
+
+The model converted, `mx check` passed, both suites passed — and the app would
+not start:
+
+```
+Bundling web client...
+Error: bundling web client: no rollup.config.mjs in …/deployment/web
+       (run a serve Deploy build first)
+```
+
+The advice is not actionable: a serve Deploy build had just run, and under
+11.14.0 it does not produce that file.
+
+**Why the step exists, and why it no longer should.** `webclient.go` says so
+itself:
+
+> mxbuild's serve Deploy target writes the client *source* … and a self-contained
+> `web/rollup.config.mjs`, but it does NOT run the rollup step that bundles them
+> into `web/dist/`. A standalone-served app therefore 404s on `/dist/index.js`
+> and renders blank. This runs mxbuild's own bundled rollup runner to close that
+> gap.
+
+**11.14.0 closes that gap upstream.** After a build, `deployment/web/dist/`
+holds `index.js` (21 KB), `chunks/`, `pages/`, `locales/` and `widgets.css` —
+17 MB of finished client — and no `rollup.config.mjs`, because nothing is left
+to configure.
+
+So mxcli fails on the absence of a file whose purpose has been served. The call
+is unconditional (`runlocal.go:664` and `:1091`) and the check is fatal, which
+makes this **every** 11.14.0 app, not this one.
+
+The doc comment calls `BuildWebClient` "a no-op-safe prerequisite". It is not
+no-op-safe: with the config gone it is an unconditional error.
+
+**Verified fix.** Skip when the bundle is already there — five lines, and the
+app then starts and renders:
+
+```go
+if fi, err := os.Stat(filepath.Join(webDir, "rollup.config.mjs")); err != nil || fi.IsDir() {
+    if fi, err := os.Stat(filepath.Join(webDir, "dist", "index.js")); err == nil && !fi.IsDir() {
+        fmt.Fprintln(w, "  Web client already bundled by mxbuild; skipping rollup step")
+        return nil
+    }
+    return fmt.Errorf("no rollup.config.mjs in %s (run a serve Deploy build first)", webDir)
+}
+```
+
+```
+Bundling web client...
+  Web client already bundled by mxbuild; skipping rollup step
+…
+app serving at http://127.0.0.1:8080/
+```
+
+Everything below was measured through that patched binary. **Unpatched mxcli
+`00443a90` cannot run this app**, which is the one thing the upgrade costs.
+
+**Ask:** gate the rollup step on `web/dist/index.js` being absent rather than on
+`rollup.config.mjs` being present. The condition then describes the gap it is
+closing instead of the shape one Mendix version happened to leave behind.
+
+### The app on 11.14.0
+
+| check | result |
+|---|---|
+| `mx check Ledger.mpr` (11.14.0) | 0 errors |
+| `tests/csv-import.test.mdl` | 42 passed |
+| `tests/bank-formats.test.mdl` | 17 passed |
+| browser pass, all 8 pages | 0 chart errors, 0 JS errors |
+| chart counts | Dashboard 2, Cashflow 19, Insights 7 — unchanged |
+| theme switch | all three from the topbar |
+| sidebar collapse | 232 → 52 → 232 |
+| languages | navigation + theme label in de / fr / cs |
+| data | 2,588 transactions over 5 years, no migration prompt |
+
+One operational note: `deployment/` had to be deleted before the first 11.14.0
+build. A folder built by 11.13.0 leaves mxcli's bundler looking for a layout the
+new build no longer writes into it, and the error is finding 146's — from stale
+output rather than from the version. It is gitignored, so removing it costs
+nothing.
