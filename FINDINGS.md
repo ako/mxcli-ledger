@@ -6304,3 +6304,206 @@ build. A folder built by 11.13.0 leaves mxcli's bundler looking for a layout the
 new build no longer writes into it, and the error is finding 146's — from stale
 output rather than from the version. It is gitignored, so removing it costs
 nothing.
+
+## Phase 27 — re-tested against mxcli `c5fb9ec` (2026-08-27)
+
+The changelog credits this project for 135, 139 and 140 only — none of the seven
+findings still open. That is not evidence of anything: 136 was fixed in
+`00443a90` without ever appearing in the changelog, which is how the previous
+round nearly reported a fixed bug as open. So every finding below was probed by
+hand, and four of them moved.
+
+| finding | status on `c5fb9ec` |
+|---|---|
+| 131 apostrophe escape rejected | **FIXED** — after 8 builds |
+| 137 `IN <Module>` misses navigation | open |
+| 138 snippet → nanoflow reference false positive | open |
+| 142 layout copy silently drops three things | open |
+| 143 `create or replace` takes translations with it | **FIXED** |
+| 144 duplicate-GUID translations break `mx convert` | **FIXED** |
+| 146 `run --local` cannot start an 11.14.0 app | **FIXED** |
+
+### 131 — the lexer learned the escape
+
+The probe that failed on seven consecutive builds passes:
+
+```
+$ mxcli check apos.mdl
+✓ Syntax OK (1 statements)
+
+Check passed!
+```
+
+All four literal shapes, in one microflow, in one pass:
+
+| intended value | source | `a44c735c` … `00443a90` | `c5fb9ec` |
+|---|---|---|---|
+| `x`    | `'x'`     | clean | clean |
+| `a'b`  | `'a''b'`  | error | clean |
+| `x'`   | `'x'''`   | error | clean |
+| `'x`   | `'''x'`   | error | clean |
+
+And across the project's own 41 source files, the three false errors in two
+files are gone:
+
+```
+$ for f in Ledger/mdlsource/*.mdl; do mxcli check "$f"; done
+… 0 errors across all 41 files
+```
+
+The second half of the finding — that the diagnostic carried no rule id, file or
+line — is not separately testable now that the rule no longer fires. It stays
+worth asking for on its own merits; MDL-ORDER01 still prints an empty `at`.
+
+`docs/issue-exprcheck-apostrophe.md` was written up for the mxcli tracker and
+never filed, because adding that repo to the session was refused. It can be
+closed unfiled: the bug it describes is gone.
+
+### 143 — replacing a document no longer costs its translations
+
+Measured as a set difference rather than a count, which matters: the count went
+**up**, and a count alone would have read as a different bug.
+
+```
+before=129  after=133
+=== LOST (in before, not after) ===
+=== GAINED ===
+    'All %d rows selected.' as 'Alle %d rijen geselecteerd.',
+    'Select all %d rows in the data source' as 'Selecteer alle %d rijen …',
+    'Select all rows in the data source' as 'Selecteer alle rijen …',
+    'Selecting all items...' as 'Alle items selecteren...',
+```
+
+Nothing was lost. The four gained entries are datagrid selection strings the
+replaced page reintroduced, and because translations are keyed on the source
+string they were already translated and simply became reachable again.
+
+### 144 — the duplicate-GUID objects are gone
+
+Phase 26's minimal repro, run step for step on a throwaway copy:
+
+1. translate (129 entries, nl_NL)
+2. `create or replace page` over a translated document
+3. re-apply the same translation file
+4. `mx convert --in-place`
+
+Step 3 used to report `Set 0` — the tell that the merge had gone somewhere
+invisible. It now reports what actually happened:
+
+```
+Unchanged translations: nl_NL (129 of 129 entries already in place)
+```
+
+and step 4, which used to fail, completes:
+
+```
+This is mx convert, version 11.14.0.
+The project contains 0 errors, 64 warnings and 2 deprecations.
+Saving the converted mpr file.
+
+mx convert finished.
+```
+
+So the scoped clear-convert-restore workaround Phase 26 documented is no longer
+needed. Keep the *scoping* lesson anyway: an unscoped
+`create or replace translations for <lang> ( );` still removes 739 translations
+across 81 documents including Atlas and System, and that is a property of the
+command, not of the bug.
+
+One incidental correction for anyone following Phase 26's commands: in 11.14.0
+`mx convert` takes the app **directory**, not the `.mpr`. Given the file it says
+`The app directory 'Ledger.mpr' does not exist.`
+
+**145 is now unreachable by the route that found it.** It said a *failed*
+`mx convert` destroys the project — 535 units rewritten, 9 of 10 modules gone,
+the version bumped so the retry fails with a misleading `Root unit not found`.
+Its only known trigger was 144, which is fixed, and synthesising a different
+convert failure just to watch it destroy something is not a test worth running.
+145 stays open and untested: nothing here says the destructive behaviour was
+changed, only that the door it came through is shut.
+
+### 146 — the web client bundles itself
+
+`mxcli run --local -p Ledger.mpr --ensure-db`, unpatched, on 11.14.0:
+
+```
+Bundling web client...
+  Web client already bundled by mxbuild; skipping rollup step
+Runtime started; app serving at http://127.0.0.1:8080/
+```
+
+That is the gate the finding asked for. Phase 26's whole "measured through a
+patched binary" caveat is retired — this app now runs on stock mxcli.
+
+Driven in a browser to confirm the app itself, not just the process:
+
+| check | result |
+|---|---|
+| `GET /` | 200 |
+| page errors | 0 |
+| navigation | all 8 entries render |
+| sidebar collapse | 232px → 52px → 232px |
+| theme bar | present in the topbar |
+
+### 137 — still misses project-level navigation
+
+Worth stating how this was measured, because the obvious measurement lies. All
+eight of this app's navigation captions appear in `IN Ledger` output — and prove
+nothing, because every one of them is also a page title, and translations are
+keyed on the source string. A caption that exists **only** in navigation is the
+discriminator. On a throwaway copy:
+
+```
+menu item 'ZZProbeNavCaption' page Ledger.Dashboard …
+
+=== scoped IN Ledger ===   0
+=== unscoped ===           1
+```
+
+Navigation is a project-level document, so `IN <Module>` excludes it — defensible
+as a rule, but it means a per-module translation workflow silently leaves the
+menu untranslated, and the only way to notice is to look at the running app.
+
+### 138 — same-script snippet reference still not exempted
+
+Two statements, one file, the nanoflow created first:
+
+```
+$ mxcli check snip.mdl -p Ledger.mpr --references
+✓ Syntax OK (2 statements)
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 2: snippet 'Ledger.SNIPPET_Probe' has reference errors:
+  - nanoflow not found: Ledger.ProbeNF
+
+✗ 1 reference error(s) found
+```
+
+The note in the output states the rule that is not being applied. Microflow and
+page references from the same script are exempted; a snippet's `Action: nanoflow`
+is not.
+
+### 142 — the layout copy still drops three things
+
+Unchanged, and the three failure modes still differ in how loudly they fail:
+
+```
+13:  -- Forms$SidebarToggleButton (sidebarToggle3)  -- NOT re-executable: mxcli
+     -- cannot author this widget, so re-running this script would drop it
+21:  image staticImage1 (Responsive: false)
+```
+
+1. **Sidebar toggle** — flagged. This is the good case: the describe says what it
+   cannot carry, and `33-layout.mdl` replaces it with a JavaScript action.
+2. **Brand image** — silent. Atlas' widget is the pluggable
+   `com.mendix.widget.web.image.Image`; the describe emits the built-in `image`
+   shorthand, and re-running it produces a widget whose definition does not match
+   (`mx check` CE0463) *after* reporting 0 errors on the original.
+3. **Scroll-container shrink mode** — absent from the model entirely. The two
+   `shrink` hits in the describe are the flex `Grow / shrink (self)` design
+   property, nothing to do with scroll behaviour; the marketplace widget adds the
+   class at runtime.
+
+Only the first is recoverable from the describe alone. The second is the one to
+fix: emitting a pluggable widget as a built-in shorthand is a describe that
+round-trips into a project that no longer checks.
