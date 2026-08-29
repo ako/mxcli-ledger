@@ -6507,3 +6507,187 @@ Unchanged, and the three failure modes still differ in how loudly they fail:
 Only the first is recoverable from the describe alone. The second is the one to
 fix: emitting a pluggable widget as a built-in shorthand is a describe that
 round-trips into a project that no longer checks.
+
+## Phase 28 — re-tested against mxcli `81595f6` / v0.20.0 (2026-08-29)
+
+92 commits since `c5fb9ec`, including the v0.20.0 release. The changelog now
+credits this project for 131, 143 and 146 — the three Phase 27 verified — so
+that round is confirmed upstream. None of the still-open findings moved, and the
+release's new check rules produced two false positives and one behaviour change
+worth knowing about.
+
+| finding | status on `81595f6` |
+|---|---|
+| 131 apostrophe escape | FIXED — holds, no regression |
+| 137 `IN <Module>` misses navigation | **open** |
+| 138 snippet → nanoflow reference false positive | **open** |
+| 142 layout copy drops three things | **open** |
+| 143 replace takes translations | FIXED — holds |
+| 144 duplicate-GUID translations | FIXED — holds |
+| 145 failed convert destroys the project | open, still unreachable |
+| 146 `run --local` on 11.14.0 | FIXED — holds |
+| **147 CE1571 false positive (new)** | **new** |
+| **148 MDL071 over-fires on non-persistent entities (new)** | **new** |
+| **149 `mx convert`'s error count depends on `deployment/` (new)** | **new** |
+
+The three still open are unchanged in every particular. 137 measured the only way
+that discriminates — a caption existing only in navigation, scoped `0` against
+unscoped `1`, since all eight real captions are also page titles. 138 still
+reports `nanoflow not found: Ledger.ProbeNF` for a nanoflow created in statement
+1 of the same file. 142 still flags the sidebar toggle, still emits Atlas'
+pluggable brand image as the built-in `image` shorthand, and still has no scroll
+shrink mode.
+
+Regression battery on the four fixed: all hold. 0 errors across the 41 source
+files, 42 + 17 unit tests pass, and the app runs on stock mxcli and renders.
+
+### 149. `mx convert`'s error count is not a property of the model
+
+Recording this first because it nearly produced a false regression report, and
+because Phase 26 diagnosed finding 144 through exactly this number.
+
+`mx convert --in-place` reports **1 error** or **0 errors** for the same model
+depending on whether a built `deployment/` directory is present:
+
+```
+K1 deployment ABSENT  -> contains 1 errors, 64 warnings
+K2 deployment PRESENT -> contains 0 errors, 64 warnings
+
+K1 (deployment absent) mx check -> contains: 0 errors
+```
+
+Three things make this a trap rather than a curiosity:
+
+1. **convert never names the error.** The full output is the count. There is no
+   rule id, no document, no `-v`; `mx check -j` on the same model writes
+   `"errors": [], "total-problems": 0`.
+2. **`mx check` creates `deployment/` as a side effect**, so checking a project
+   before converting it silently changes the convert result. A fresh copy gives
+   `1`; the same copy after one `mx check` gives `0`.
+3. **Converting twice gives `0`**, because the first convert also leaves the
+   directory behind — so the natural "did it really fail?" retry reports success
+   and hides the original number.
+
+Which means the count moves with test hygiene. This project's ground rules say
+not to commit `deployment/`, and Phase 26 learned to delete a stale one before
+an 11.14.0 build — so every throwaway copy made here starts without it, and
+every such copy reports `1`. Verified identical on `c5fb9ec` and `81595f6`, so
+it is not an mxcli behaviour at all.
+
+**The Phase 26 and 27 records both stand**, and it is worth being exact about
+why, because the two rounds ran the same repro to opposite conclusions and only
+one of them was reading this artefact. Phase 26's 144 was a real defect: the
+duplicate-GUID `Texts.Translation` objects were there, `mx convert` named them,
+and clearing the translations fixed it. Phase 27's 0-error result was measured
+on `p144c`, a copy that carried `deployment/` — checked in the transcript rather
+than assumed. Today's identical sequence with `deployment/` kept also reports 0:
+
+```
+Replaced page Ledger.Category_Overview
+Unchanged translations: nl_NL (129 of 129 entries already in place)
+144 full repro, deployment kept -> contains 0 errors, 64 warnings
+```
+
+So 144 is genuinely fixed, and the general lesson is narrower than "convert is
+unreliable": **an unnamed error count is not evidence about a model.** If convert
+reports errors and will not say which, reproduce them under `mx check` before
+believing them.
+
+### 147. A new check calls a working page an error (CE1571)
+
+v0.20.0 added `feat(check): catch a microflow data source with no arguments
+(CE1571)`. On this project it fires as a **reference error**, not a warning:
+
+```
+$ mxcli check mdlsource/11-cashflow-page.mdl -p Ledger.mpr --references
+Reference errors:
+  statement 1: page 'Ledger.Cashflow_Overview' has data source errors:
+  - widget 'dgMatrix': microflow data source Ledger.DS_CashflowRows has no
+    argument for parameter 'Context' — Mendix rejects this with CE1571 and does
+    not fill it in, even when an object of the right type is in scope.
+
+✗ 1 reference error(s) found
+```
+
+The message's own claim is the falsifiable part, and this app falsifies it.
+`dgMatrix` is nested inside a dataview bound to the parameter's type:
+
+```
+dataview dvContext (DataSource: microflow Ledger.DS_ReportContext) {
+  …
+  datagrid dgMatrix (DataSource: microflow Ledger.DS_CashflowRows, …)
+```
+
+`Ledger.DS_CashflowRows` really does take `$Context: Ledger.ReportContext` and
+really is called with no argument. Mendix accepts it: `mx check Ledger.mpr`
+reports **0 errors**, the app builds, and the grid renders real data —
+
+```
+CATEGORY TREND JAN FEB … TOTAL
+INCOME   € 6,016 € 6,703 € 5,982 … € 51,182
+Salary   € 5,309 € 5,623 € 5,068 … € 43,661
+HOUSING  € 1,858 € 1,552 € 1,622 …
+```
+
+(0 page errors. The grid is a Datagrid 2, so it has no `<tr>` — a row count
+taken with a table selector reads 0 and looks like an empty grid, which is worth
+saying because that is the measurement that would have wrongly confirmed the
+rule.)
+
+**Impact:** `mxcli check … --references` now fails on a page that works, so the
+project's own pre-flight step reports an error it must be told to ignore. That
+is the cost of a false positive at error severity rather than warning.
+
+**Ask:** either treat an enclosing data context of the parameter's type as
+supplying the argument, or demote the rule to a warning and soften the message,
+which currently asserts as fact something Mendix does not do.
+
+### 148. MDL071 fires where OQL cannot reach
+
+The same release added `feat(check): warn on an OQL reserved word where the name
+is chosen (MDL071)`. The rule is sound and its guidance is right — this project
+already hit the underlying trap and named a view column `Yr` to dodge it:
+
+```
+create or modify view entity Ledger.VTransactionYear (
+  Yr: integer, TxCount: integer
+) as ( select datepart(YEAR, t.TxDate) as Yr, … );
+```
+
+and the genuine case is caught precisely, as an error, with the right advice:
+
+```
+statement 1: view entity 'Ledger.VProbeYear' has type mismatches:
+  - OQL reserved word "Year" used unquoted — MxBuild rejects the view with
+    CE0174; quote it as "Year"
+```
+
+The two warnings it raises on this project, though, are on `Ledger.BudgetContext`
+and `Ledger.BudgetRow` — both **non-persistent** entities:
+
+```
+⚠ attribute 'Year' is an OQL reserved word — valid Mendix, but a view entity
+  referencing it unquoted fails to build with CE0174  [MDL071]
+    at Ledger.BudgetContext
+```
+
+A non-persistent entity has no table, so no view entity can reference it in OQL
+at all. The premise of the warning cannot arise. It is warning-level and so
+costs only noise, but it is the kind of noise that teaches you to skim warnings.
+
+**Ask:** skip non-persistent entities. The persistent case is worth keeping —
+there a view entity really could reference the column unquoted later.
+
+### MDL067 — a behaviour change, correctly announced
+
+Not a defect, recorded because it changes what this app's microflows do:
+
+```
+ℹ 76 commit activities use the default, which is now WITH EVENTS to match
+  Studio Pro (#895); before this release a bare `commit $X;` wrote events OFF
+```
+
+Checked rather than assumed: **0 of this project's entities have event
+handlers**, so the change is inert here and no `without events` needs writing.
+For a project that does use handlers this silently starts running them, and the
+note is how you would find out.
