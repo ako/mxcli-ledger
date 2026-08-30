@@ -6691,3 +6691,124 @@ Checked rather than assumed: **0 of this project's entities have event
 handlers**, so the change is inert here and no `without events` needs writing.
 For a project that does use handlers this silently starts running them, and the
 note is how you would find out.
+
+## Phase 29 — verified against PR 346 (`c79a78a6`, 2026-08-30)
+
+PR 346 is aimed squarely at the last round: four of its five commits fix
+findings 137, 138, 147 and 148, and the fifth writes 149 into the `debug-bson`
+skill. It carries bug-test fixtures named `ledger-138`, `ledger-147` and
+`ledger-148`. Built from `pull/346/head` and measured against main `81595f6`
+side by side.
+
+| finding | `81595f6` | PR 346 |
+|---|---|---|
+| 137 scoped translations silently miss navigation | open | **FIXED** |
+| 138 same-script snippet → nanoflow false positive | open | **FIXED** |
+| 147 CE1571 false positive on a working page | open | **FIXED** |
+| 148 MDL071 fires on non-persistent entities | open | **FIXED** |
+| 149 convert's error count is not evidence | open | **documented** |
+| 142 layout copy drops three things | open | open (not in scope) |
+
+Every fix was checked twice: once that the false positive is gone, once that
+the **genuine** case it was guarding is still caught. A fix that only silences
+is worse than the bug, so the second half is the half worth reporting.
+
+### The project-level effect
+
+The reference sweep across all 41 source files:
+
+```
+main 81595f6 -> 1 file with reference errors (mdlsource/11-cashflow-page.mdl)
+PR 346       -> 0 files with reference errors
+```
+
+42 + 17 unit tests pass, the app builds and runs, and the cashflow grid still
+renders real figures (`INCOME € 6,016 … TOTAL € 51,182`, 0 page errors). So the
+project's own pre-flight step is clean again without anything being told to
+ignore an error.
+
+### 147 — and the message was corrected, not just the rule
+
+The page now passes. The negative control — the same datagrid with no enclosing
+data container of the parameter's type — still errors, and the wording is the
+part worth quoting, because the old message's factual claim was the defect:
+
+```
+- widget 'dgBad': microflow data source Ledger.DS_CashflowRows has no argument
+  for parameter 'Context' — Mendix rejects this with CE1571. Write it as
+  `Ledger.DS_CashflowRows(Context: $Value)`, or nest the widget in a data
+  container of type Ledger.ReportContext, which Mendix fills the parameter in from
+```
+
+The assertion that Mendix "does not fill it in, even when an object of the right
+type is in scope" is gone, and the behaviour it denied is now the second
+suggested remedy. That is the right repair: the rule was wrong about Mendix, not
+merely over-eager.
+
+### 148 — narrowed to where OQL can reach
+
+The two warnings on `Ledger.BudgetContext` and `Ledger.BudgetRow` are gone.
+Both controls hold: a **persistent** entity with a `Year` attribute still warns
+(a view entity really could reference it unquoted later), and a **view entity
+whose own select alias** is `Year` still fails as a reference error with
+`CE0174`. Exactly the two cases that should survive.
+
+### 138 — the exemption is scoped, not blanket
+
+A snippet whose `Action: nanoflow` names a nanoflow created in statement 1 of
+the same script now passes. A snippet naming a nanoflow that exists nowhere
+still fails:
+
+```
+statement 1: snippet 'Ledger.SNIPPET_ProbeBad' has reference errors:
+  - nanoflow not found: Ledger.DoesNotExistAnywhere
+```
+
+### 137 — the best of the five, because it fixes the *diagnosis*
+
+The finding was that `IN <Module>` silently leaves the menu untranslated. The
+fix does not change the scoping, which is correct — a project-level document is
+genuinely outside a module. It makes the run say so, and names the entry:
+
+```
+Unchanged translations: nl_NL (1 of 2 entries already in place)
+
+Not considered: 1 of this file's source string(s) also occur OUTSIDE module Ledger,
+and `in Ledger` did not reach them. The navigation is a project-level document, so a
+scoped run leaves the menu in the source language while the pages switch:
+
+  'ZZProbeNavCaption'
+
+Re-run the same file without `in Ledger` to land these as well.
+```
+
+That last clause is the symptom this project originally reported, printed by the
+tool at the moment it happens.
+
+The second half is the one that would have saved the most time. On main the same
+entry is reported as **drift** — the opposite of true:
+
+```
+  "ZZProbeNavCaption" as "ZZProefMenu"
+      No text has "ZZProbeNavCaption" as its source, and nothing carries this
+      nl_NL translation, so there is no telling where it went. The text may have
+      been deleted, or the key may be a typo.
+```
+
+The text existed; it was out of scope. A warning that misidentifies the cause is
+worse than silence, because it sends you looking for a typo. Both controls from
+the commit message check out: an unscoped run of the same file lands the string
+(`Set 1 nl_NL translation(s) across 1 document(s)`) with no note, and a key that
+matches nothing anywhere is still explained as drift.
+
+### 149 — recorded where it will be read
+
+Written into `.claude/skills/debug-bson.md` rather than fixed, which is right —
+it is a Mendix tool behaviour, not an mxcli one. The entry keeps the nuance that
+matters: convert remains authoritative where it names what it changed, and it is
+the bare count that proves nothing.
+
+### Still open
+
+142 only, plus 145 which remains unreachable by the route that found it. Neither
+is in this PR's scope; 142 is unchanged in all three particulars.
