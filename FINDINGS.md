@@ -6812,3 +6812,135 @@ the bare count that proves nothing.
 
 142 only, plus 145 which remains unreachable by the route that found it. Neither
 is in this PR's scope; 142 is unchanged in all three particulars.
+
+## Phase 30 — re-tested against mxcli `86640af0` (2026-08-31)
+
+49 commits since `81595f6`. PR 346 is merged, so 137, 138, 147 and 148 are fixed
+on main — all four re-verified here rather than assumed from the merge. Beyond
+it, the release's image-widget work moves finding **142** further than any round
+so far, and one commit breaks `mxcli test --local` outright.
+
+| finding | status on `86640af0` |
+|---|---|
+| 137 / 138 / 147 / 148 | FIXED on main (PR 346 merged), re-verified |
+| 142 brand image | **root-caused to one field**, one-line workaround |
+| 142 sidebar toggle / scroll shrink | open, unchanged |
+| 145 | open, still unreachable |
+| **150 `mxcli test --local` cannot start (new)** | **new — regression** |
+
+Reference sweep across all 41 source files: **0 files with errors**. The app
+builds, runs, and drives: navigation renders, the sidebar toggles 232 → 52 →
+232, the theme bar is present, 0 page errors.
+
+### 142 — the brand image, finally taken apart
+
+Three releases of this finding have said "the shape is wrong, not the cached
+definition". **That diagnosis is now wrong, and this round replaces it.**
+
+Two things changed upstream. MDL can now name *which* image an image widget
+shows, so the reference survives a describe:
+
+```
+image staticImage1 (Image: 'Atlas_Core.Layout.logo', Responsive: false)
+```
+
+And the round trip stores the *correct widget kind*. Decoding both units, Atlas'
+own brand image and a describe → rename → exec copy of it are both
+`CustomWidgets$CustomWidget` with identical 23-key property sets. So the earlier
+"built-in shorthand versus pluggable widget" reading is superseded.
+
+CE0463 still fires — and a full field-level diff of the two widget subtrees, GUIDs
+masked, gives the reason in one line out of 1480:
+
+```
+atlas lines: 1480  mine: 1480
+=== ONLY IN ATLAS ===
+Object/Properties/21/Value/PrimitiveValue = '250'
+=== ONLY IN MINE ===
+Object/Properties/21/Value/PrimitiveValue = '0'
+```
+
+Resolved through its `TypePointer`, that property is **`maxHeight`**, whose
+declared default in Image 1.6.0 is `250`. mxcli writes `0`.
+
+That single value is the whole error. Setting it clears the build:
+
+```
+alter layout Ledger.ProbeLayout142 { set maxHeight = '250' on staticImage1; };
+
+The app contains: 0 errors.
+```
+
+So the layout copy recipe is now viable, and **Ledger can have its brand image
+back** with one extra `ALTER LAYOUT` line — the slot `33-layout.mdl` describes as
+"not a design decision, an unfinished one".
+
+Two notes on the surrounding tooling. `2175fe60 fix(widgets): write a hidden
+widget property at its declared default` is exactly this class and did not cover
+this property. And `mxcli widget sync` now exists — it applied 16 property
+changes across 4 other Image instances in this project — but for this instance
+reports `Every stored widget instance already matches its installed package.
+Nothing to do`, while `mx check` still reports CE0463 on it. Its own help is
+candid that it is PARTIAL (7 of 40 on the reference fixture); the gap worth
+closing is that a "nothing to do" and a live CE0463 disagree about the same
+widget.
+
+**Ask:** write `maxHeight` at its declared default like the other hidden
+properties. The other two thirds of 142 are unchanged — the sidebar toggle is
+still flagged `NOT re-executable`, and scroll-container shrink mode is still
+absent from the model.
+
+### 150. `mxcli test --local` cannot start a runtime
+
+`2c0aa8d2 fix(test): give a local test run its own deployment tree` fixes the
+data-loss half of finding 93 — a test run rebuilding the deployment directory
+that a live `mxcli run --local` was serving, blanking the app. The isolation is
+the right design. The tree it creates is empty of everything that matters:
+
+```
+$ find .mxcli/deployment-test -maxdepth 2
+.mxcli/deployment-test
+.mxcli/deployment-test/data
+.mxcli/deployment-test/data/model-upload
+.mxcli/deployment-test/data/files
+.mxcli/deployment-test/data/tmp
+
+$ ls .mxcli/deployment-test/model
+NO model dir
+
+$ ls deployment/model          # what a real tree has
+bundles  certificates  config.json  dependencies.json  i18n  lib
+metadata.json  microflows.json  model.mdp  operations.json
+```
+
+So the runtime is pointed at a directory the build never populated, and aborts:
+
+```
+Error: local runtime: runtime admin API did not come up: runtime process exited during startup
+Exception in thread "main" java.lang.IllegalArgumentException: Path
+'/home/user/mxcli-ledger/Ledger/.mxcli/deployment-test/model/bundles' cannot be
+resolved in base path '/home/user/mxcli-ledger/Ledger/.mxcli/deployment-test'.
+```
+
+Isolated to these commits by running the same suite, on the same project, minutes
+apart:
+
+| binary | result |
+|---|---|
+| `c79a78a6` (PR 346 head) | `Total: 42  Passed: 42  Failed: 0` |
+| `86640af0` (main) | runtime exits during startup |
+
+It fails **with or without** a live app, so this is not about concurrency: the
+test command is broken for every project. This app's 42 + 17 unit tests — the
+things that check the CSV importer and the bank-format detector — cannot run.
+
+**A caveat on finding 93, stated because the temptation is to claim it fixed.**
+During the concurrent probe the running app did survive: `deployment/web/dist`
+stayed present and `dist/index.js` kept answering 200. That is *not* evidence the
+isolation works, because the test aborted before it reached the point where it
+used to do the damage. 93's status is untestable until 150 is fixed, and the
+project's standing rule — do not run `mxcli test --local` while `mxcli run` is
+live — should stay in place until it can actually be measured.
+
+**Ask:** populate the test tree from the build output, or point the test runtime
+at the tree the build actually wrote.
