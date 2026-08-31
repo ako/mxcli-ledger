@@ -6304,3 +6304,643 @@ build. A folder built by 11.13.0 leaves mxcli's bundler looking for a layout the
 new build no longer writes into it, and the error is finding 146's — from stale
 output rather than from the version. It is gitignored, so removing it costs
 nothing.
+
+## Phase 27 — re-tested against mxcli `c5fb9ec` (2026-08-27)
+
+The changelog credits this project for 135, 139 and 140 only — none of the seven
+findings still open. That is not evidence of anything: 136 was fixed in
+`00443a90` without ever appearing in the changelog, which is how the previous
+round nearly reported a fixed bug as open. So every finding below was probed by
+hand, and four of them moved.
+
+| finding | status on `c5fb9ec` |
+|---|---|
+| 131 apostrophe escape rejected | **FIXED** — after 8 builds |
+| 137 `IN <Module>` misses navigation | open |
+| 138 snippet → nanoflow reference false positive | open |
+| 142 layout copy silently drops three things | open |
+| 143 `create or replace` takes translations with it | **FIXED** |
+| 144 duplicate-GUID translations break `mx convert` | **FIXED** |
+| 146 `run --local` cannot start an 11.14.0 app | **FIXED** |
+
+### 131 — the lexer learned the escape
+
+The probe that failed on seven consecutive builds passes:
+
+```
+$ mxcli check apos.mdl
+✓ Syntax OK (1 statements)
+
+Check passed!
+```
+
+All four literal shapes, in one microflow, in one pass:
+
+| intended value | source | `a44c735c` … `00443a90` | `c5fb9ec` |
+|---|---|---|---|
+| `x`    | `'x'`     | clean | clean |
+| `a'b`  | `'a''b'`  | error | clean |
+| `x'`   | `'x'''`   | error | clean |
+| `'x`   | `'''x'`   | error | clean |
+
+And across the project's own 41 source files, the three false errors in two
+files are gone:
+
+```
+$ for f in Ledger/mdlsource/*.mdl; do mxcli check "$f"; done
+… 0 errors across all 41 files
+```
+
+The second half of the finding — that the diagnostic carried no rule id, file or
+line — is not separately testable now that the rule no longer fires. It stays
+worth asking for on its own merits; MDL-ORDER01 still prints an empty `at`.
+
+`docs/issue-exprcheck-apostrophe.md` was written up for the mxcli tracker and
+never filed, because adding that repo to the session was refused. It can be
+closed unfiled: the bug it describes is gone.
+
+### 143 — replacing a document no longer costs its translations
+
+Measured as a set difference rather than a count, which matters: the count went
+**up**, and a count alone would have read as a different bug.
+
+```
+before=129  after=133
+=== LOST (in before, not after) ===
+=== GAINED ===
+    'All %d rows selected.' as 'Alle %d rijen geselecteerd.',
+    'Select all %d rows in the data source' as 'Selecteer alle %d rijen …',
+    'Select all rows in the data source' as 'Selecteer alle rijen …',
+    'Selecting all items...' as 'Alle items selecteren...',
+```
+
+Nothing was lost. The four gained entries are datagrid selection strings the
+replaced page reintroduced, and because translations are keyed on the source
+string they were already translated and simply became reachable again.
+
+### 144 — the duplicate-GUID objects are gone
+
+Phase 26's minimal repro, run step for step on a throwaway copy:
+
+1. translate (129 entries, nl_NL)
+2. `create or replace page` over a translated document
+3. re-apply the same translation file
+4. `mx convert --in-place`
+
+Step 3 used to report `Set 0` — the tell that the merge had gone somewhere
+invisible. It now reports what actually happened:
+
+```
+Unchanged translations: nl_NL (129 of 129 entries already in place)
+```
+
+and step 4, which used to fail, completes:
+
+```
+This is mx convert, version 11.14.0.
+The project contains 0 errors, 64 warnings and 2 deprecations.
+Saving the converted mpr file.
+
+mx convert finished.
+```
+
+So the scoped clear-convert-restore workaround Phase 26 documented is no longer
+needed. Keep the *scoping* lesson anyway: an unscoped
+`create or replace translations for <lang> ( );` still removes 739 translations
+across 81 documents including Atlas and System, and that is a property of the
+command, not of the bug.
+
+One incidental correction for anyone following Phase 26's commands: in 11.14.0
+`mx convert` takes the app **directory**, not the `.mpr`. Given the file it says
+`The app directory 'Ledger.mpr' does not exist.`
+
+**145 is now unreachable by the route that found it.** It said a *failed*
+`mx convert` destroys the project — 535 units rewritten, 9 of 10 modules gone,
+the version bumped so the retry fails with a misleading `Root unit not found`.
+Its only known trigger was 144, which is fixed, and synthesising a different
+convert failure just to watch it destroy something is not a test worth running.
+145 stays open and untested: nothing here says the destructive behaviour was
+changed, only that the door it came through is shut.
+
+### 146 — the web client bundles itself
+
+`mxcli run --local -p Ledger.mpr --ensure-db`, unpatched, on 11.14.0:
+
+```
+Bundling web client...
+  Web client already bundled by mxbuild; skipping rollup step
+Runtime started; app serving at http://127.0.0.1:8080/
+```
+
+That is the gate the finding asked for. Phase 26's whole "measured through a
+patched binary" caveat is retired — this app now runs on stock mxcli.
+
+Driven in a browser to confirm the app itself, not just the process:
+
+| check | result |
+|---|---|
+| `GET /` | 200 |
+| page errors | 0 |
+| navigation | all 8 entries render |
+| sidebar collapse | 232px → 52px → 232px |
+| theme bar | present in the topbar |
+
+### 137 — still misses project-level navigation
+
+Worth stating how this was measured, because the obvious measurement lies. All
+eight of this app's navigation captions appear in `IN Ledger` output — and prove
+nothing, because every one of them is also a page title, and translations are
+keyed on the source string. A caption that exists **only** in navigation is the
+discriminator. On a throwaway copy:
+
+```
+menu item 'ZZProbeNavCaption' page Ledger.Dashboard …
+
+=== scoped IN Ledger ===   0
+=== unscoped ===           1
+```
+
+Navigation is a project-level document, so `IN <Module>` excludes it — defensible
+as a rule, but it means a per-module translation workflow silently leaves the
+menu untranslated, and the only way to notice is to look at the running app.
+
+### 138 — same-script snippet reference still not exempted
+
+Two statements, one file, the nanoflow created first:
+
+```
+$ mxcli check snip.mdl -p Ledger.mpr --references
+✓ Syntax OK (2 statements)
+(Note: References to objects created within the script are skipped)
+Reference errors:
+  statement 2: snippet 'Ledger.SNIPPET_Probe' has reference errors:
+  - nanoflow not found: Ledger.ProbeNF
+
+✗ 1 reference error(s) found
+```
+
+The note in the output states the rule that is not being applied. Microflow and
+page references from the same script are exempted; a snippet's `Action: nanoflow`
+is not.
+
+### 142 — the layout copy still drops three things
+
+Unchanged, and the three failure modes still differ in how loudly they fail:
+
+```
+13:  -- Forms$SidebarToggleButton (sidebarToggle3)  -- NOT re-executable: mxcli
+     -- cannot author this widget, so re-running this script would drop it
+21:  image staticImage1 (Responsive: false)
+```
+
+1. **Sidebar toggle** — flagged. This is the good case: the describe says what it
+   cannot carry, and `33-layout.mdl` replaces it with a JavaScript action.
+2. **Brand image** — silent. Atlas' widget is the pluggable
+   `com.mendix.widget.web.image.Image`; the describe emits the built-in `image`
+   shorthand, and re-running it produces a widget whose definition does not match
+   (`mx check` CE0463) *after* reporting 0 errors on the original.
+3. **Scroll-container shrink mode** — absent from the model entirely. The two
+   `shrink` hits in the describe are the flex `Grow / shrink (self)` design
+   property, nothing to do with scroll behaviour; the marketplace widget adds the
+   class at runtime.
+
+Only the first is recoverable from the describe alone. The second is the one to
+fix: emitting a pluggable widget as a built-in shorthand is a describe that
+round-trips into a project that no longer checks.
+
+## Phase 28 — re-tested against mxcli `81595f6` / v0.20.0 (2026-08-29)
+
+92 commits since `c5fb9ec`, including the v0.20.0 release. The changelog now
+credits this project for 131, 143 and 146 — the three Phase 27 verified — so
+that round is confirmed upstream. None of the still-open findings moved, and the
+release's new check rules produced two false positives and one behaviour change
+worth knowing about.
+
+| finding | status on `81595f6` |
+|---|---|
+| 131 apostrophe escape | FIXED — holds, no regression |
+| 137 `IN <Module>` misses navigation | **open** |
+| 138 snippet → nanoflow reference false positive | **open** |
+| 142 layout copy drops three things | **open** |
+| 143 replace takes translations | FIXED — holds |
+| 144 duplicate-GUID translations | FIXED — holds |
+| 145 failed convert destroys the project | open, still unreachable |
+| 146 `run --local` on 11.14.0 | FIXED — holds |
+| **147 CE1571 false positive (new)** | **new** |
+| **148 MDL071 over-fires on non-persistent entities (new)** | **new** |
+| **149 `mx convert`'s error count depends on `deployment/` (new)** | **new** |
+
+The three still open are unchanged in every particular. 137 measured the only way
+that discriminates — a caption existing only in navigation, scoped `0` against
+unscoped `1`, since all eight real captions are also page titles. 138 still
+reports `nanoflow not found: Ledger.ProbeNF` for a nanoflow created in statement
+1 of the same file. 142 still flags the sidebar toggle, still emits Atlas'
+pluggable brand image as the built-in `image` shorthand, and still has no scroll
+shrink mode.
+
+Regression battery on the four fixed: all hold. 0 errors across the 41 source
+files, 42 + 17 unit tests pass, and the app runs on stock mxcli and renders.
+
+### 149. `mx convert`'s error count is not a property of the model
+
+Recording this first because it nearly produced a false regression report, and
+because Phase 26 diagnosed finding 144 through exactly this number.
+
+`mx convert --in-place` reports **1 error** or **0 errors** for the same model
+depending on whether a built `deployment/` directory is present:
+
+```
+K1 deployment ABSENT  -> contains 1 errors, 64 warnings
+K2 deployment PRESENT -> contains 0 errors, 64 warnings
+
+K1 (deployment absent) mx check -> contains: 0 errors
+```
+
+Three things make this a trap rather than a curiosity:
+
+1. **convert never names the error.** The full output is the count. There is no
+   rule id, no document, no `-v`; `mx check -j` on the same model writes
+   `"errors": [], "total-problems": 0`.
+2. **`mx check` creates `deployment/` as a side effect**, so checking a project
+   before converting it silently changes the convert result. A fresh copy gives
+   `1`; the same copy after one `mx check` gives `0`.
+3. **Converting twice gives `0`**, because the first convert also leaves the
+   directory behind — so the natural "did it really fail?" retry reports success
+   and hides the original number.
+
+Which means the count moves with test hygiene. This project's ground rules say
+not to commit `deployment/`, and Phase 26 learned to delete a stale one before
+an 11.14.0 build — so every throwaway copy made here starts without it, and
+every such copy reports `1`. Verified identical on `c5fb9ec` and `81595f6`, so
+it is not an mxcli behaviour at all.
+
+**The Phase 26 and 27 records both stand**, and it is worth being exact about
+why, because the two rounds ran the same repro to opposite conclusions and only
+one of them was reading this artefact. Phase 26's 144 was a real defect: the
+duplicate-GUID `Texts.Translation` objects were there, `mx convert` named them,
+and clearing the translations fixed it. Phase 27's 0-error result was measured
+on `p144c`, a copy that carried `deployment/` — checked in the transcript rather
+than assumed. Today's identical sequence with `deployment/` kept also reports 0:
+
+```
+Replaced page Ledger.Category_Overview
+Unchanged translations: nl_NL (129 of 129 entries already in place)
+144 full repro, deployment kept -> contains 0 errors, 64 warnings
+```
+
+So 144 is genuinely fixed, and the general lesson is narrower than "convert is
+unreliable": **an unnamed error count is not evidence about a model.** If convert
+reports errors and will not say which, reproduce them under `mx check` before
+believing them.
+
+### 147. A new check calls a working page an error (CE1571)
+
+v0.20.0 added `feat(check): catch a microflow data source with no arguments
+(CE1571)`. On this project it fires as a **reference error**, not a warning:
+
+```
+$ mxcli check mdlsource/11-cashflow-page.mdl -p Ledger.mpr --references
+Reference errors:
+  statement 1: page 'Ledger.Cashflow_Overview' has data source errors:
+  - widget 'dgMatrix': microflow data source Ledger.DS_CashflowRows has no
+    argument for parameter 'Context' — Mendix rejects this with CE1571 and does
+    not fill it in, even when an object of the right type is in scope.
+
+✗ 1 reference error(s) found
+```
+
+The message's own claim is the falsifiable part, and this app falsifies it.
+`dgMatrix` is nested inside a dataview bound to the parameter's type:
+
+```
+dataview dvContext (DataSource: microflow Ledger.DS_ReportContext) {
+  …
+  datagrid dgMatrix (DataSource: microflow Ledger.DS_CashflowRows, …)
+```
+
+`Ledger.DS_CashflowRows` really does take `$Context: Ledger.ReportContext` and
+really is called with no argument. Mendix accepts it: `mx check Ledger.mpr`
+reports **0 errors**, the app builds, and the grid renders real data —
+
+```
+CATEGORY TREND JAN FEB … TOTAL
+INCOME   € 6,016 € 6,703 € 5,982 … € 51,182
+Salary   € 5,309 € 5,623 € 5,068 … € 43,661
+HOUSING  € 1,858 € 1,552 € 1,622 …
+```
+
+(0 page errors. The grid is a Datagrid 2, so it has no `<tr>` — a row count
+taken with a table selector reads 0 and looks like an empty grid, which is worth
+saying because that is the measurement that would have wrongly confirmed the
+rule.)
+
+**Impact:** `mxcli check … --references` now fails on a page that works, so the
+project's own pre-flight step reports an error it must be told to ignore. That
+is the cost of a false positive at error severity rather than warning.
+
+**Ask:** either treat an enclosing data context of the parameter's type as
+supplying the argument, or demote the rule to a warning and soften the message,
+which currently asserts as fact something Mendix does not do.
+
+### 148. MDL071 fires where OQL cannot reach
+
+The same release added `feat(check): warn on an OQL reserved word where the name
+is chosen (MDL071)`. The rule is sound and its guidance is right — this project
+already hit the underlying trap and named a view column `Yr` to dodge it:
+
+```
+create or modify view entity Ledger.VTransactionYear (
+  Yr: integer, TxCount: integer
+) as ( select datepart(YEAR, t.TxDate) as Yr, … );
+```
+
+and the genuine case is caught precisely, as an error, with the right advice:
+
+```
+statement 1: view entity 'Ledger.VProbeYear' has type mismatches:
+  - OQL reserved word "Year" used unquoted — MxBuild rejects the view with
+    CE0174; quote it as "Year"
+```
+
+The two warnings it raises on this project, though, are on `Ledger.BudgetContext`
+and `Ledger.BudgetRow` — both **non-persistent** entities:
+
+```
+⚠ attribute 'Year' is an OQL reserved word — valid Mendix, but a view entity
+  referencing it unquoted fails to build with CE0174  [MDL071]
+    at Ledger.BudgetContext
+```
+
+A non-persistent entity has no table, so no view entity can reference it in OQL
+at all. The premise of the warning cannot arise. It is warning-level and so
+costs only noise, but it is the kind of noise that teaches you to skim warnings.
+
+**Ask:** skip non-persistent entities. The persistent case is worth keeping —
+there a view entity really could reference the column unquoted later.
+
+### MDL067 — a behaviour change, correctly announced
+
+Not a defect, recorded because it changes what this app's microflows do:
+
+```
+ℹ 76 commit activities use the default, which is now WITH EVENTS to match
+  Studio Pro (#895); before this release a bare `commit $X;` wrote events OFF
+```
+
+Checked rather than assumed: **0 of this project's entities have event
+handlers**, so the change is inert here and no `without events` needs writing.
+For a project that does use handlers this silently starts running them, and the
+note is how you would find out.
+
+## Phase 29 — verified against PR 346 (`c79a78a6`, 2026-08-30)
+
+PR 346 is aimed squarely at the last round: four of its five commits fix
+findings 137, 138, 147 and 148, and the fifth writes 149 into the `debug-bson`
+skill. It carries bug-test fixtures named `ledger-138`, `ledger-147` and
+`ledger-148`. Built from `pull/346/head` and measured against main `81595f6`
+side by side.
+
+| finding | `81595f6` | PR 346 |
+|---|---|---|
+| 137 scoped translations silently miss navigation | open | **FIXED** |
+| 138 same-script snippet → nanoflow false positive | open | **FIXED** |
+| 147 CE1571 false positive on a working page | open | **FIXED** |
+| 148 MDL071 fires on non-persistent entities | open | **FIXED** |
+| 149 convert's error count is not evidence | open | **documented** |
+| 142 layout copy drops three things | open | open (not in scope) |
+
+Every fix was checked twice: once that the false positive is gone, once that
+the **genuine** case it was guarding is still caught. A fix that only silences
+is worse than the bug, so the second half is the half worth reporting.
+
+### The project-level effect
+
+The reference sweep across all 41 source files:
+
+```
+main 81595f6 -> 1 file with reference errors (mdlsource/11-cashflow-page.mdl)
+PR 346       -> 0 files with reference errors
+```
+
+42 + 17 unit tests pass, the app builds and runs, and the cashflow grid still
+renders real figures (`INCOME € 6,016 … TOTAL € 51,182`, 0 page errors). So the
+project's own pre-flight step is clean again without anything being told to
+ignore an error.
+
+### 147 — and the message was corrected, not just the rule
+
+The page now passes. The negative control — the same datagrid with no enclosing
+data container of the parameter's type — still errors, and the wording is the
+part worth quoting, because the old message's factual claim was the defect:
+
+```
+- widget 'dgBad': microflow data source Ledger.DS_CashflowRows has no argument
+  for parameter 'Context' — Mendix rejects this with CE1571. Write it as
+  `Ledger.DS_CashflowRows(Context: $Value)`, or nest the widget in a data
+  container of type Ledger.ReportContext, which Mendix fills the parameter in from
+```
+
+The assertion that Mendix "does not fill it in, even when an object of the right
+type is in scope" is gone, and the behaviour it denied is now the second
+suggested remedy. That is the right repair: the rule was wrong about Mendix, not
+merely over-eager.
+
+### 148 — narrowed to where OQL can reach
+
+The two warnings on `Ledger.BudgetContext` and `Ledger.BudgetRow` are gone.
+Both controls hold: a **persistent** entity with a `Year` attribute still warns
+(a view entity really could reference it unquoted later), and a **view entity
+whose own select alias** is `Year` still fails as a reference error with
+`CE0174`. Exactly the two cases that should survive.
+
+### 138 — the exemption is scoped, not blanket
+
+A snippet whose `Action: nanoflow` names a nanoflow created in statement 1 of
+the same script now passes. A snippet naming a nanoflow that exists nowhere
+still fails:
+
+```
+statement 1: snippet 'Ledger.SNIPPET_ProbeBad' has reference errors:
+  - nanoflow not found: Ledger.DoesNotExistAnywhere
+```
+
+### 137 — the best of the five, because it fixes the *diagnosis*
+
+The finding was that `IN <Module>` silently leaves the menu untranslated. The
+fix does not change the scoping, which is correct — a project-level document is
+genuinely outside a module. It makes the run say so, and names the entry:
+
+```
+Unchanged translations: nl_NL (1 of 2 entries already in place)
+
+Not considered: 1 of this file's source string(s) also occur OUTSIDE module Ledger,
+and `in Ledger` did not reach them. The navigation is a project-level document, so a
+scoped run leaves the menu in the source language while the pages switch:
+
+  'ZZProbeNavCaption'
+
+Re-run the same file without `in Ledger` to land these as well.
+```
+
+That last clause is the symptom this project originally reported, printed by the
+tool at the moment it happens.
+
+The second half is the one that would have saved the most time. On main the same
+entry is reported as **drift** — the opposite of true:
+
+```
+  "ZZProbeNavCaption" as "ZZProefMenu"
+      No text has "ZZProbeNavCaption" as its source, and nothing carries this
+      nl_NL translation, so there is no telling where it went. The text may have
+      been deleted, or the key may be a typo.
+```
+
+The text existed; it was out of scope. A warning that misidentifies the cause is
+worse than silence, because it sends you looking for a typo. Both controls from
+the commit message check out: an unscoped run of the same file lands the string
+(`Set 1 nl_NL translation(s) across 1 document(s)`) with no note, and a key that
+matches nothing anywhere is still explained as drift.
+
+### 149 — recorded where it will be read
+
+Written into `.claude/skills/debug-bson.md` rather than fixed, which is right —
+it is a Mendix tool behaviour, not an mxcli one. The entry keeps the nuance that
+matters: convert remains authoritative where it names what it changed, and it is
+the bare count that proves nothing.
+
+### Still open
+
+142 only, plus 145 which remains unreachable by the route that found it. Neither
+is in this PR's scope; 142 is unchanged in all three particulars.
+
+## Phase 30 — re-tested against mxcli `86640af0` (2026-08-31)
+
+49 commits since `81595f6`. PR 346 is merged, so 137, 138, 147 and 148 are fixed
+on main — all four re-verified here rather than assumed from the merge. Beyond
+it, the release's image-widget work moves finding **142** further than any round
+so far, and one commit breaks `mxcli test --local` outright.
+
+| finding | status on `86640af0` |
+|---|---|
+| 137 / 138 / 147 / 148 | FIXED on main (PR 346 merged), re-verified |
+| 142 brand image | **root-caused to one field**, one-line workaround |
+| 142 sidebar toggle / scroll shrink | open, unchanged |
+| 145 | open, still unreachable |
+| **150 `mxcli test --local` cannot start (new)** | **new — regression** |
+
+Reference sweep across all 41 source files: **0 files with errors**. The app
+builds, runs, and drives: navigation renders, the sidebar toggles 232 → 52 →
+232, the theme bar is present, 0 page errors.
+
+### 142 — the brand image, finally taken apart
+
+Three releases of this finding have said "the shape is wrong, not the cached
+definition". **That diagnosis is now wrong, and this round replaces it.**
+
+Two things changed upstream. MDL can now name *which* image an image widget
+shows, so the reference survives a describe:
+
+```
+image staticImage1 (Image: 'Atlas_Core.Layout.logo', Responsive: false)
+```
+
+And the round trip stores the *correct widget kind*. Decoding both units, Atlas'
+own brand image and a describe → rename → exec copy of it are both
+`CustomWidgets$CustomWidget` with identical 23-key property sets. So the earlier
+"built-in shorthand versus pluggable widget" reading is superseded.
+
+CE0463 still fires — and a full field-level diff of the two widget subtrees, GUIDs
+masked, gives the reason in one line out of 1480:
+
+```
+atlas lines: 1480  mine: 1480
+=== ONLY IN ATLAS ===
+Object/Properties/21/Value/PrimitiveValue = '250'
+=== ONLY IN MINE ===
+Object/Properties/21/Value/PrimitiveValue = '0'
+```
+
+Resolved through its `TypePointer`, that property is **`maxHeight`**, whose
+declared default in Image 1.6.0 is `250`. mxcli writes `0`.
+
+That single value is the whole error. Setting it clears the build:
+
+```
+alter layout Ledger.ProbeLayout142 { set maxHeight = '250' on staticImage1; };
+
+The app contains: 0 errors.
+```
+
+So the layout copy recipe is now viable, and **Ledger can have its brand image
+back** with one extra `ALTER LAYOUT` line — the slot `33-layout.mdl` describes as
+"not a design decision, an unfinished one".
+
+Two notes on the surrounding tooling. `2175fe60 fix(widgets): write a hidden
+widget property at its declared default` is exactly this class and did not cover
+this property. And `mxcli widget sync` now exists — it applied 16 property
+changes across 4 other Image instances in this project — but for this instance
+reports `Every stored widget instance already matches its installed package.
+Nothing to do`, while `mx check` still reports CE0463 on it. Its own help is
+candid that it is PARTIAL (7 of 40 on the reference fixture); the gap worth
+closing is that a "nothing to do" and a live CE0463 disagree about the same
+widget.
+
+**Ask:** write `maxHeight` at its declared default like the other hidden
+properties. The other two thirds of 142 are unchanged — the sidebar toggle is
+still flagged `NOT re-executable`, and scroll-container shrink mode is still
+absent from the model.
+
+### 150. `mxcli test --local` cannot start a runtime
+
+`2c0aa8d2 fix(test): give a local test run its own deployment tree` fixes the
+data-loss half of finding 93 — a test run rebuilding the deployment directory
+that a live `mxcli run --local` was serving, blanking the app. The isolation is
+the right design. The tree it creates is empty of everything that matters:
+
+```
+$ find .mxcli/deployment-test -maxdepth 2
+.mxcli/deployment-test
+.mxcli/deployment-test/data
+.mxcli/deployment-test/data/model-upload
+.mxcli/deployment-test/data/files
+.mxcli/deployment-test/data/tmp
+
+$ ls .mxcli/deployment-test/model
+NO model dir
+
+$ ls deployment/model          # what a real tree has
+bundles  certificates  config.json  dependencies.json  i18n  lib
+metadata.json  microflows.json  model.mdp  operations.json
+```
+
+So the runtime is pointed at a directory the build never populated, and aborts:
+
+```
+Error: local runtime: runtime admin API did not come up: runtime process exited during startup
+Exception in thread "main" java.lang.IllegalArgumentException: Path
+'/home/user/mxcli-ledger/Ledger/.mxcli/deployment-test/model/bundles' cannot be
+resolved in base path '/home/user/mxcli-ledger/Ledger/.mxcli/deployment-test'.
+```
+
+Isolated to these commits by running the same suite, on the same project, minutes
+apart:
+
+| binary | result |
+|---|---|
+| `c79a78a6` (PR 346 head) | `Total: 42  Passed: 42  Failed: 0` |
+| `86640af0` (main) | runtime exits during startup |
+
+It fails **with or without** a live app, so this is not about concurrency: the
+test command is broken for every project. This app's 42 + 17 unit tests — the
+things that check the CSV importer and the bank-format detector — cannot run.
+
+**A caveat on finding 93, stated because the temptation is to claim it fixed.**
+During the concurrent probe the running app did survive: `deployment/web/dist`
+stayed present and `dist/index.js` kept answering 200. That is *not* evidence the
+isolation works, because the test aborted before it reached the point where it
+used to do the damage. 93's status is untestable until 150 is fixed, and the
+project's standing rule — do not run `mxcli test --local` while `mxcli run` is
+live — should stay in place until it can actually be measured.
+
+**Ask:** populate the test tree from the build output, or point the test runtime
+at the tree the build actually wrote.
