@@ -7207,3 +7207,86 @@ authored image widget still takes a clean project to `CE0463 … contains: 1
 errors` under this PR too. And the four check false positives this PR fixes were
 found in its own fixtures — this project produces the same 10 warnings before and
 after, so it never reached them.
+
+## Phase 33 — PR 396, third pass (`d9c11cdd`, 2026-09-05)
+
+Seven more commits. The **datagrid-column catalog gap reported in Phase 31 is
+fixed**, and taking it apart upstream turned it into something larger than the
+widget edge this project noticed it through: a document used *only* inside a
+column template reported **zero references**, so anything deciding "unused, safe
+to delete" from reference counts would have deleted live code. This project has
+exactly such a microflow, and it is measured below.
+
+| item | status |
+|---|---|
+| widget in a datagrid column not indexed (Phase 31) | **FIXED** |
+| a document used only in a column template shows 0 refs | **FIXED** — verified on a live microflow here |
+| widget body lost by describe → exec (Phase 32) | still fixed, re-verified |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+
+Regression: 0 reference errors across 41 files and **10 warnings on both** main
+and the PR, `Total: 42 Passed: 42`, all three chart pages round-trip losslessly,
+and `mx check` stays at 0 errors afterwards.
+
+### The gap this project reported
+
+Ground truth Dashboard 2, Insights 7, Cashflow_Overview 1 — and now all three
+are indexed:
+
+```
+SELECT SourceName, TargetName FROM CATALOG.REFS
+  WHERE TargetType='WIDGET' AND TargetName LIKE '%ega%'
+
+| Ledger.Cashflow_Overview | VEGACHART |
+| Ledger.Dashboard         | VEGACHART |
+| Ledger.Insights          | VEGACHART |
+```
+
+**Measure this with the cache deleted.** The commit's own closing note says a
+stale `.mxcli/catalog.db` made the fixed binary look unfixed and cost a wrong
+conclusion; every measurement here removed it before `REFRESH CATALOG FULL`.
+Phase 32's lesson was that a growing unfiltered count looks like progress, and
+this is its mirror image — a cached result looks like regress. Neither number
+means anything without controlling what produced it.
+
+### The bigger half: a live microflow with zero references
+
+`CATALOG.REFS` is a projection of the same table, so the gap was never only about
+widgets. `Ledger.ACT_DrillCell` is wired to the click action of all twelve month
+cells in the cashflow matrix —
+
+```
+container cellM01 (
+  DynamicClasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then …',
+  Action: microflow Ledger.ACT_DrillCell("Row": $currentObject, MonthIndex: 1)
+)
+```
+
+— and does real work: retrieves the report context, calls `FMT_MonthName` and
+`GET_DrillTransactions`, counts and sums. It is the drill-down the cashflow
+screen exists to offer.
+
+Its reference count, same project, same query, caches cleared, three binaries:
+
+| binary | `ACT_DrillCell` | `ACT_ShowTransaction` | `DS_CashflowRows` |
+|---|---|---|---|
+| main `41c55d09` | **0** | 2 | 1 |
+| PR 396 `64055caa` | **0** | 2 | 1 |
+| PR 396 `d9c11cdd` | **1** | 2 | 1 |
+
+The other two were already visible because they are also referenced above column
+level; `ACT_DrillCell` is reachable *only* from inside the column template, which
+is what made it the clean case. On main it is a microflow bound to twelve
+clickable cells that any reference-count sweep would call dead.
+
+That is the failure mode worth naming: not "a query returns fewer rows" but
+"a correct-looking tool tells you to delete working code". This project would
+have been a plausible victim — `mxcli lint`'s QUAL004 rule is *orphaned /
+unreferenced elements*.
+
+### Unchanged
+
+142's `maxHeight` still writes `0` against a declared default of `250`, so one
+authored image widget still takes a clean project to `CE0463 … contains: 1
+errors`. It is now the only open finding from this project that a released mxcli
+reproduces on a clean model in one command.
