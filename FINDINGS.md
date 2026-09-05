@@ -7088,3 +7088,122 @@ The guarded form is rejected outright by main's grammar, so this is a new
 capability rather than a behaviour change. The improved error on the *unguarded*
 form is the part that will actually reach people — it names the fix in the
 message that stops them.
+
+## Phase 32 — PR 396 revisited (`64055caa`, 2026-09-05)
+
+Main is unchanged at `41c55d09`; nine new commits on PR 396, mostly describe and
+check fidelity for pluggable widgets. One of them fixes **silent data loss in the
+describe → exec round trip** — the failure class this project's whole premise
+rests on. The catalog gap reported last round is **not** fixed.
+
+| item | result |
+|---|---|
+| pluggable widget body lost by describe → exec | **FIXED** — and it is real data loss on main |
+| describe emits the widget's keyword form | **works** |
+| widget in a datagrid column not indexed (Phase 31) | **still open** |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+| four check false positives fixed in this PR | not reachable from this project |
+
+Sweep, tests and build: 0 reference errors across 41 files and **10 warnings on
+both** main and the PR — identical, so no regression — and `Total: 42 Passed: 42`.
+
+### The round trip was losing widget bodies, and this is the proof
+
+`bde10f8c` claims describe was silently dropping a pluggable widget's body. It
+was. The cleanest demonstration holds the **stored model constant** and varies
+only the binary describing it — author once with the PR, then describe with each:
+
+```
+-- authored (PR 396)
+htmlelement frame (tagName: 'div', tagContentMode: 'container') {
+  tagcontentcontainer body { dynamictext t (Content: 'inside the body', …) }
+}
+
+-- described by PR 396
+htmlelement frame (tagName: 'div', …) {
+  event event1 (…)
+  tagcontentcontainer tagcontentcontainer1 {
+    dynamictext t (Content: 'inside the body', RenderMode: paragraph)
+  }
+}
+
+-- described by main 41c55d09  ← same bytes on disk
+pluggablewidget 'com.mendix.widget.web.htmlelement.HTMLElement' frame (
+  tagName: 'div', tagNameCustom: 'div', tagUseRepeat: false,
+  tagContentMode: 'container'
+)                                        ← body gone, no warning
+```
+
+End to end on main, the loss is not hypothetical:
+
+```
+before round trip, body children in stored model: 1
+$ mxcli exec <main's own describe output>
+All specified roles already have view access on Ledger.ProbeHtml
+after main describe->exec, body children:         0
+```
+
+A successful-looking run deleted a widget's contents. For a project whose rule is
+"never hand-edit the .mpr", describe → edit → exec is the editing loop, so this is
+the worst shape a bug can take here: it destroys work and reports success.
+
+The PR's version survives the whole chain — **describes losslessly, builds, and
+renders**:
+
+```
+mx check            -> contains: 0 errors
+browser /p/probehtml -> body contains the widget body text: true
+                        pageerrors: 0
+```
+
+Worth stating plainly: **this project did not exercise the bug.** Round-tripping
+all three of its chart pages is lossless on main *and* on the PR —
+
+```
+Dashboard  before=2 after=2     Insights before=7 after=7
+Cashflow_Overview before=1 after=1     mx check: contains: 0 errors
+```
+
+— because `vegachart` declares no body containers. The bug needed a widget with a
+container property to show itself, which is why it survived until a project with
+`htmlelement` went looking.
+
+### Describe now writes the form a person would write
+
+Same widget, same model:
+
+| | |
+|---|---|
+| main | `pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOverview` |
+| PR 396 | `vegachart chartOverview` |
+
+### The datagrid-column gap is still open, and the obvious check hides it
+
+`CATALOG.REFS` now returns far more pages, and `Ledger.Cashflow_Overview` is
+among them — which reads like the Phase 31 gap is closed. It is not. Filtering
+by the widget actually asked about:
+
+```
+SELECT SourceName, TargetName FROM CATALOG.REFS
+  WHERE TargetType='WIDGET' AND TargetName LIKE '%ega%'
+
+| Ledger.Dashboard | VEGACHART |
+| Ledger.Insights  | VEGACHART |
+```
+
+Cashflow is indexed for `DATAGRID` only. The grid is found; the chart inside its
+column template is not walked, so the page that holds this project's 19
+sparklines is still missing from "which pages use VegaChart?". Ground truth is
+unchanged at Dashboard 2, Insights 7, Cashflow_Overview 1.
+
+The lesson is about the measurement, not the bug: the unfiltered list grew, and
+growth looks like progress. Only the filtered query answers the question that was
+asked.
+
+### Unchanged
+
+142's `maxHeight` still writes `0` against a declared default of `250`, so one
+authored image widget still takes a clean project to `CE0463 … contains: 1
+errors` under this PR too. And the four check false positives this PR fixes were
+found in its own fixtures — this project produces the same 10 warnings before and
+after, so it never reached them.
