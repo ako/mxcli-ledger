@@ -6944,3 +6944,266 @@ live — should stay in place until it can actually be measured.
 
 **Ask:** populate the test tree from the build output, or point the test runtime
 at the tree the build actually wrote.
+
+## Phase 31 — main `41c55d09`, plus PRs 396 and 397 (2026-09-05)
+
+133 commits on main since `86640af0`. Finding **150 is fixed**. Finding **142's
+`maxHeight` is not**, despite a commit that names this project's own diff as its
+motivation — and the failure is now broader than a layout copy. PR 396 delivers
+the widget-language work end to end on this project's own pluggable widget, with
+one gap; PR 397's enumeration guard does what it says.
+
+| item | status |
+|---|---|
+| 150 `test --local` cannot start | **FIXED** on main |
+| 142 `maxHeight` / CE0463 | **open, and wider than reported** |
+| 137 / 138 / 147 / 148 | still fixed; sweep clean on all three binaries |
+| PR 396 widget keyword + DESCRIBE WIDGET + catalog edge | works, **one gap** |
+| PR 397 enumeration idempotency guard | works |
+
+Reference sweep, all 41 source files: **0 errors on main, PR 396 and PR 397**.
+
+### 150 — fixed
+
+`2cff9ab7 fix(test): boot the local test run against the tree mxbuild writes`.
+The suite that could not start a runtime last round now runs:
+
+```
+Total: 42  Passed: 42  Failed: 0  Skipped: 0  Time: 359ms
+```
+
+The model is left clean afterwards — no `MxTest` module survives the run. One
+practical note learned the hard way: a test run *does* write to the project
+while it is in flight, so copying the working tree during one yields a torn
+copy (`mx check` then dies on a missing `.mxunit`). Copy before, or after.
+
+Finding **93 is now testable again** and should be re-measured next round;
+`0477bc60 feat(test): warn when a test run will recompile a running app's
+classes` suggests the concurrency case is handled by warning rather than by
+isolation, which is a different claim and needs its own measurement.
+
+### 142 — the fix landed, the value did not, and the blast radius is bigger
+
+`ee295467 fix(widgets): default-value a hidden property MDL cannot name` quotes
+this project's own 1480-line diff and names `maxHeight` as the property. It is
+in the built binary (`git merge-base --is-ancestor ee295467 41c55d09` → yes).
+The diff is nevertheless unchanged:
+
+```
+atlas lines: 1480  mine: 1480
+=== ONLY IN ATLAS ===  Object/Properties/21/Value/PrimitiveValue = '250'
+=== ONLY IN MINE  ===  Object/Properties/21/Value/PrimitiveValue = '0'
+```
+
+mxcli's own definition knows the answer — `mxcli widget describe Image` prints
+`maxHeight integer required default=250` and `maxHeight hidden when
+maxHeightUnit = "none"` — and it still writes `0`.
+
+**The new fact is the scope.** Last round this was a property of the layout-copy
+recipe. It is not. On a project at **0 errors**, authoring one image widget on a
+new page breaks the build:
+
+```
+baseline: contains: 0 errors
+Created page Ledger.ProbeImgPage
+after authoring ONE image widget: [error] [CE0463] … at Image 'imgProbe'
+The app contains: 1 errors.
+```
+
+Both paths write `0`; the property resolves through its `TypePointer` to
+`maxHeight` in both. So **every mxcli-authored image widget fails `mx check`**,
+which makes the image feature added two releases ago unusable without a manual
+follow-up. The follow-up is one line and clears it completely:
+
+```
+alter page Ledger.ProbeImgPage { set maxHeight = '250' on imgProbe; };
+→ contains: 0 errors
+```
+
+`mxcli widget sync` still does not help: it reports `16 property change(s) on 4
+widget(s)`, leaves `maxHeight` at `0` on the offending instance, and `mx check`
+still fails. `b9aab17e fix(widget sync): report what was compared, not what was
+concluded` improved the wording, not the reach.
+
+### PR 396 — widgets as first-class MDL, measured on this project's own widget
+
+The three headline claims all hold, tested against `vegachart`, which this
+project builds itself, so nothing here is a fixture.
+
+**`DESCRIBE WIDGET` in-language.** Reads the project `.mpk` and prints the
+properties, the dynamic rules and an example:
+
+```
+Widget: Vega Chart (vegachart)
+  ID:      ledger.widget.web.vegachart.VegaChart
+  Source:  project .mpk
+Properties (9): spec, chartData, datasetName, dataUrl, selection, onClick,
+  chartHeight, renderer, showActions
+```
+
+**The keyword form.** The emitted example is labelled "parses as written", and
+it does — and more importantly it *builds*:
+
+| | `vegachart widget1 (…)` |
+|---|---|
+| main `41c55d09` | `extraneous input ':'` — rejected |
+| PR 396 check | `Check passed!` |
+| PR 396 exec + `mx check` | `contains: 0 errors` |
+
+**The catalog edge.** `CATALOG.REFS` gains a `widget` kind, so "which pages use
+VegaChart?" is one query — the thing the proposal says is currently unanswerable.
+
+#### The gap: a widget inside a datagrid column is not indexed
+
+Ground truth on the unmodified model, by describing each page:
+
+```
+Dashboard: 2 instance(s)   Insights: 7 instance(s)   Cashflow_Overview: 1 instance(s)
+```
+
+The catalog lists **Dashboard and Insights, not Cashflow_Overview**. It is not a
+spelling difference — all three are stored identically as
+`pluggablewidget 'ledger.widget.web.vegachart.VegaChart' …`. The difference is
+nesting: Cashflow's `chartSpark` sits inside `datagrid dgMatrix` → `column
+Trend`, while the other two are at container level.
+
+So the walker does not descend into a datagrid column's cell template. That is
+worth fixing before the slice ships, because the query's value is that its answer
+is complete — a "which pages use X" that quietly omits one is worse than none,
+and the omitted case here is this project's most heavily used chart (the 19
+sparklines in the cashflow matrix).
+
+### PR 397 — the enumeration guard
+
+`alter enumeration … add value` had no idempotency guard, which matters for a
+project whose whole premise is that `mdlsource/` replays. Measured:
+
+| | run 1 | replay |
+|---|---|---|
+| main, unguarded | lands | `Error: value 'ZZProbeOne' already exists` |
+| PR 397, unguarded | lands | same error, now naming the remedy |
+| PR 397, `add value if not exists` | lands both | `already exists … — skipped`, both retained |
+
+The guarded form is rejected outright by main's grammar, so this is a new
+capability rather than a behaviour change. The improved error on the *unguarded*
+form is the part that will actually reach people — it names the fix in the
+message that stops them.
+
+## Phase 32 — PR 396 revisited (`64055caa`, 2026-09-05)
+
+Main is unchanged at `41c55d09`; nine new commits on PR 396, mostly describe and
+check fidelity for pluggable widgets. One of them fixes **silent data loss in the
+describe → exec round trip** — the failure class this project's whole premise
+rests on. The catalog gap reported last round is **not** fixed.
+
+| item | result |
+|---|---|
+| pluggable widget body lost by describe → exec | **FIXED** — and it is real data loss on main |
+| describe emits the widget's keyword form | **works** |
+| widget in a datagrid column not indexed (Phase 31) | **still open** |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+| four check false positives fixed in this PR | not reachable from this project |
+
+Sweep, tests and build: 0 reference errors across 41 files and **10 warnings on
+both** main and the PR — identical, so no regression — and `Total: 42 Passed: 42`.
+
+### The round trip was losing widget bodies, and this is the proof
+
+`bde10f8c` claims describe was silently dropping a pluggable widget's body. It
+was. The cleanest demonstration holds the **stored model constant** and varies
+only the binary describing it — author once with the PR, then describe with each:
+
+```
+-- authored (PR 396)
+htmlelement frame (tagName: 'div', tagContentMode: 'container') {
+  tagcontentcontainer body { dynamictext t (Content: 'inside the body', …) }
+}
+
+-- described by PR 396
+htmlelement frame (tagName: 'div', …) {
+  event event1 (…)
+  tagcontentcontainer tagcontentcontainer1 {
+    dynamictext t (Content: 'inside the body', RenderMode: paragraph)
+  }
+}
+
+-- described by main 41c55d09  ← same bytes on disk
+pluggablewidget 'com.mendix.widget.web.htmlelement.HTMLElement' frame (
+  tagName: 'div', tagNameCustom: 'div', tagUseRepeat: false,
+  tagContentMode: 'container'
+)                                        ← body gone, no warning
+```
+
+End to end on main, the loss is not hypothetical:
+
+```
+before round trip, body children in stored model: 1
+$ mxcli exec <main's own describe output>
+All specified roles already have view access on Ledger.ProbeHtml
+after main describe->exec, body children:         0
+```
+
+A successful-looking run deleted a widget's contents. For a project whose rule is
+"never hand-edit the .mpr", describe → edit → exec is the editing loop, so this is
+the worst shape a bug can take here: it destroys work and reports success.
+
+The PR's version survives the whole chain — **describes losslessly, builds, and
+renders**:
+
+```
+mx check            -> contains: 0 errors
+browser /p/probehtml -> body contains the widget body text: true
+                        pageerrors: 0
+```
+
+Worth stating plainly: **this project did not exercise the bug.** Round-tripping
+all three of its chart pages is lossless on main *and* on the PR —
+
+```
+Dashboard  before=2 after=2     Insights before=7 after=7
+Cashflow_Overview before=1 after=1     mx check: contains: 0 errors
+```
+
+— because `vegachart` declares no body containers. The bug needed a widget with a
+container property to show itself, which is why it survived until a project with
+`htmlelement` went looking.
+
+### Describe now writes the form a person would write
+
+Same widget, same model:
+
+| | |
+|---|---|
+| main | `pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartOverview` |
+| PR 396 | `vegachart chartOverview` |
+
+### The datagrid-column gap is still open, and the obvious check hides it
+
+`CATALOG.REFS` now returns far more pages, and `Ledger.Cashflow_Overview` is
+among them — which reads like the Phase 31 gap is closed. It is not. Filtering
+by the widget actually asked about:
+
+```
+SELECT SourceName, TargetName FROM CATALOG.REFS
+  WHERE TargetType='WIDGET' AND TargetName LIKE '%ega%'
+
+| Ledger.Dashboard | VEGACHART |
+| Ledger.Insights  | VEGACHART |
+```
+
+Cashflow is indexed for `DATAGRID` only. The grid is found; the chart inside its
+column template is not walked, so the page that holds this project's 19
+sparklines is still missing from "which pages use VegaChart?". Ground truth is
+unchanged at Dashboard 2, Insights 7, Cashflow_Overview 1.
+
+The lesson is about the measurement, not the bug: the unfiltered list grew, and
+growth looks like progress. Only the filtered query answers the question that was
+asked.
+
+### Unchanged
+
+142's `maxHeight` still writes `0` against a declared default of `250`, so one
+authored image widget still takes a clean project to `CE0463 … contains: 1
+errors` under this PR too. And the four check false positives this PR fixes were
+found in its own fixtures — this project produces the same 10 warnings before and
+after, so it never reached them.
