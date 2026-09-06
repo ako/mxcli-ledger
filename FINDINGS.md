@@ -7453,3 +7453,107 @@ two that announced themselves.
 - `cut-clips.js` resolves the raw take as `<dirname of beats.json>/raw/<video>`,
   so a second profile needs its own **directory**, not just its own filename.
   Minor, but it is the one place the shipped machinery assumes a single take.
+
+## Phase 36 — v0.21.0 (`e6a83b5d`, 2026-09-06)
+
+Two commits since `7658bbe0`: the v0.21.0 release notes and a rule renumber
+(`MDL077`, off a collision). The release is the widget work of Phases 31–35
+landed and named. Nothing regressed here — 0 reference errors across 41 files,
+10 warnings, `Total: 42 Passed: 42` — and the one substantive result is a new
+rule that is **wrong about this project**.
+
+### The generated widget docs now parse — verified on this project's own
+
+The release's headline is that a widget's definition drives the grammar, and its
+sharpest evidence is that `mxcli widget init`'s output failed on the first line of
+its own example: "16 of 46 documented constructs parsed; it is 50 of 50 now."
+
+That claim landed in this repository as a 23-file diff — the widget docs
+regenerating themselves, every slot gaining a name:
+
+```diff
+-  trigger {
++  trigger slot1 {
+     -- widgets for `trigger`
+```
+
+Both forms, put through `check` against this project:
+
+| form | result |
+|---|---|
+| `trigger { … }` — what the docs said before | `Syntax errors found` |
+| `trigger slot1 { … }` — what they say now | `Check passed!` |
+
+So the documentation this project hands an agent was, until this release,
+unparseable at the point it mattered. Worth stating because nothing here would
+have caught it: the docs are generated, committed, and never fed back through
+the parser.
+
+### MDL-WIDGET15 is a false positive here, measured
+
+The rule fires on `Ledger.Transaction_Detail`:
+
+```
+ℹ adjacent inline dynamictext widgets (RenderMode Text or Paragraph, both <span>)
+  render with no separator, so their text concatenates.
+```
+
+The structure it describes is real — `lblTxDate` and `valTxDate` are adjacent
+dynamictexts in one container. The consequence it asserts is not. Their parent is
+a flex row, and the rendered page says so:
+
+```
+.ledger-tx-row computed display: flex
+label  425 → 545  (120px)
+value  561 → 975       gap: 16px
+text:  "DATE | Monday 12 January 2026"
+```
+
+The two texts sit in separate flex tracks 16px apart. Nothing concatenates, on
+any of the eight rows this pattern builds.
+
+It is info-level, so the cost is noise rather than a blocked script — but the
+message states a rendered outcome as fact, and a static checker cannot see the
+computed layout that decides it. **Ask:** hedge the claim, or drop it where the
+widgets' parent carries a class the project styles, since "these two are adjacent
+spans" is checkable and "so their text concatenates" is not.
+
+The other two widget rules firing here look right: MDL-WIDGET10 flags a `content`
+value that its own `showContentAs` hides (harmless, but genuinely ignored), and
+MDL-WIDGET16 is informational about DataGrid 2 not storing column names.
+
+### MDL077 works, checked against a control
+
+It does not fire on this project, which is correct — all eight menu items carry an
+icon. Given the rule is new *and* was just renumbered off a collision, "silent"
+is not evidence, so a menu item with the icon removed:
+
+```
+⚠ navigation Responsive: menu item "Order lines" specifies no icon — a collapsed
+  navigation sidebar shows only the icon, so this item appears as a few
+  characters of its caption  [MDL077]
+  → add `icon Atlas_Core.Atlas.<name>` (list them with
+    `describe icon collection Atlas_Core.Atlas`)
+```
+
+Note what that rule is about: the collapsed icon rail. This project's sidebar does
+not collapse on a phone at all — §142's third loss, Phase 35 — so the state
+MDL077 protects is one Ledger cannot currently reach.
+
+### `DESCRIBE WIDGET` on a widget with a real property set
+
+Recorded because a nine-property answer for this project's own `vegachart` is
+easy to mistake for the command's ceiling. `describe widget combobox` against the
+installed `.mpk`:
+
+```
+Widget: Combo box (combobox)   Version: 2.9.0   Source: project .mpk
+Properties (58): source, optionsSourceType, attributeEnumeration, …
+                 filterType, filterInputDebounceInterval
+Dynamic property rules (20)      — 16 of 32 editor hide-rules recognized
+MDL example (parses as written)  — 18 properties, 6 omitted and named
+```
+
+58 properties, each with key, type, caption, category, required flag, default and
+enumeration values. `vegachart` reports 9 because it *has* 9 — it is this
+project's own widget, with nine properties in its definition.
