@@ -1,0 +1,107 @@
+{
+ "video": "40c9df7c7f4be970c1d159208a9f26a3.webm",
+ "viewport": {
+  "width": 1920,
+  "height": 1080
+ },
+ "video_size": {
+  "width": 1920,
+  "height": 1080
+ },
+ "zoom": 1.68,
+ "dialogs": 0,
+ "post_roll_s": 1,
+ "offset_s": 16.216,
+ "beats": [
+  {
+   "name": "01-open",
+   "t": 0.01
+  },
+  {
+   "name": "02-cashflow",
+   "t": 21.17
+  },
+  {
+   "name": "03-matrix",
+   "t": 30.37
+  },
+  {
+   "name": "04-variance",
+   "t": 44.92
+  },
+  {
+   "name": "05-drill",
+   "t": 56.54
+  },
+  {
+   "name": "06-budgets",
+   "t": 77.36
+  },
+  {
+   "name": "07-review",
+   "t": 99.47
+  },
+  {
+   "name": "08-theme",
+   "t": 124.45
+  },
+  {
+   "name": "09-end",
+   "t": 140.92
+  },
+  {
+   "name": "end",
+   "t": 140.92
+  }
+ ],
+ "assertions": [
+  {
+   "beat": "01-open",
+   "ok": true,
+   "why": "the opening screen must be the dashboard, or beat 1 films a blank frame",
+   "error": null
+  },
+  {
+   "beat": "02-cashflow",
+   "ok": true,
+   "why": "the income figure must have rendered, or the beat shows an empty card",
+   "error": null
+  },
+  {
+   "beat": "03-matrix",
+   "ok": true,
+   "why": "the sparkline column must be drawn — this beat is entirely about it",
+   "error": null
+  },
+  {
+   "beat": "04-variance",
+   "ok": true,
+   "why": "the matrix must still be populated after the mode switch",
+   "error": null
+  },
+  {
+   "beat": "05-drill",
+   "ok": true,
+   "why": "the drill panel must name the cell it opened — the caption claims payments are on screen",
+   "error": null
+  },
+  {
+   "beat": "06-budgets",
+   "ok": true,
+   "why": "the budget grid must be captioned and populated",
+   "error": null
+  },
+  {
+   "beat": "07-review",
+   "ok": true,
+   "why": "the review list is the whole point of this beat",
+   "error": null
+  },
+  {
+   "beat": "08-theme",
+   "ok": true,
+   "why": "the theme control must be on screen — the caption is entirely about it",
+   "error": null
+  }
+ ]
+}

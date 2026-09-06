@@ -1,0 +1,107 @@
+{
+  "_": [
+    "Edit list for the Ledger product film. Each clip is windowed on its OWN beat",
+    "rather than running mark-to-mark: the gaps between marks are page navigations,",
+    "and cutting mark-to-mark would put 12s of loading spinner in a 60s film.",
+    "Targets are the narration hold plus a reading tail, taken from the say() calls",
+    "in narrated-walkthrough.js \u2014 not guessed."
+  ],
+  "clips": [
+    {
+      "id": "01-open",
+      "from": {
+        "mark": "01-open",
+        "offset": 0.4
+      },
+      "to": {
+        "mark": "01-open",
+        "offset": 7.4
+      },
+      "target": 7.0
+    },
+    {
+      "id": "02-cashflow",
+      "from": {
+        "mark": "02-cashflow",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "02-cashflow",
+        "offset": 8.2
+      },
+      "target": 8.0
+    },
+    {
+      "id": "03-matrix",
+      "from": {
+        "mark": "03-matrix",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "03-matrix",
+        "offset": 7.2
+      },
+      "target": 7.0
+    },
+    {
+      "id": "04-variance",
+      "from": {
+        "mark": "04-variance",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "04-variance",
+        "offset": 6.7
+      },
+      "target": 6.5
+    },
+    {
+      "id": "05-drill",
+      "from": {
+        "mark": "05-drill",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "05-drill",
+        "offset": 7.4
+      },
+      "target": 7.2
+    },
+    {
+      "id": "06-budgets",
+      "from": {
+        "mark": "06-budgets",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "06-budgets",
+        "offset": 8.2
+      },
+      "target": 8.0
+    },
+    {
+      "id": "07-review",
+      "from": {
+        "mark": "07-review",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "07-review",
+        "offset": 8.2
+      },
+      "target": 8.0
+    },
+    {
+      "id": "08-theme",
+      "from": {
+        "mark": "08-theme",
+        "offset": 0.2
+      },
+      "to": {
+        "mark": "09-end",
+        "offset": -0.4
+      },
+      "target": 15.0
+    }
+  ]
+}
