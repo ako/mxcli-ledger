@@ -7290,3 +7290,86 @@ unreferenced elements*.
 authored image widget still takes a clean project to `CE0463 … contains: 1
 errors`. It is now the only open finding from this project that a released mxcli
 reproduces on a clean model in one command.
+
+## Phase 34 — merged main `a69c87a2`, and PR 398 (2026-09-06)
+
+PR 396 is merged, so everything Phases 31–33 chased is now on main and was
+re-verified there rather than assumed. PR 398 is a batch of stricter checks; it
+adds **no false positives on this project** and catches a defect class that this
+project's own workflow is wide open to.
+
+| item | status |
+|---|---|
+| widget in a datagrid column indexed | **FIXED on main** |
+| document used only in a column template shows 0 refs | **FIXED on main** |
+| describe emits the keyword form | **on main** |
+| PR 398 member-name resolution | **works, and catches a real gap** |
+| PR 398 unqualified CREATE | **works** |
+| PR 398 widget XPath / template params | **untested — see below** |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+
+Regression under PR 398: 0 reference errors across 41 files and **10 warnings,
+identical to main**; `Total: 42 Passed: 42`; all three chart pages round-trip
+losslessly with `mx check` at 0 errors afterwards.
+
+### PR 396's work, confirmed on merged main
+
+```
+VegaChart pages indexed:   3   (ground truth Dashboard 2, Insights 7, Cashflow 1)
+Ledger.ACT_DrillCell refs: 1   (was 0 — a live microflow reporting no callers)
+describe spelling:         vegachart chartOverview
+```
+
+### PR 398 — the member check earns its place here
+
+`check --references` resolved the document and the entity and stopped at the
+door: the attribute on the left of a `change`/`create` assignment was never
+resolved. A typo therefore passed check, passed exec, and surfaced only at build
+time. Measured end to end on this project:
+
+```
+baseline:     contains: 0 errors
+main check:   Check passed!
+main exec:    Created microflow: Ledger.ProbeBadChange
+mx check:     CE1613] "The selected attribute
+              'Ledger.Transaction.IsArchivedTypo' no longer exists
+              contains: 1 errors
+```
+
+Under PR 398 the same script is stopped at the cheap end, and the message names
+the members that do exist rather than merely asserting the one that does not:
+
+```
+Ledger.ProbeBadChange: Ledger.Transaction has no member "IsArchivedTypo"
+  (in change $Tx) — it has Amount, Description, IsMirror, Merchant,
+  SignedAmount, TxDate — mxbuild reports this as CE1613 …
+```
+
+This matters more here than the average project. Every entity in Ledger is
+authored and re-authored from `mdlsource/`, and an attribute rename is a normal
+edit; the failure mode is a `change` left pointing at the old name, which until
+now no step before `mx check` would catch. The commit's own care about a third
+"could not look" state is borne out by the sweep: 41 files, no new findings.
+
+`refuse unqualified CREATEs` also fires correctly — `create persistent entity
+UnqualifiedEntity (…)` is 2 findings under PR 398 and silent on main.
+
+### What I could not test, stated rather than glossed
+
+`3aa2ee0e feat(check): resolve member names inside widgets — XPath steps and
+template params` is **unverified**. Two probes were written and both were
+rejected for naming properties that do not exist (`Parameters` on a dynamictext,
+`XPathConstraint` on a datagrid), so they never reached the rule. This project
+does not use either construct — its XPath lives in microflows and entity access
+rules, not widget properties — so there is nothing here to exercise it against.
+Recorded as untested rather than as a pass: a probe that fails to compile proves
+nothing about the rule it was aimed at, and this is the second time this session
+that a malformed probe nearly became a finding.
+
+### 142, unchanged and now alone
+
+One authored image widget still takes a clean project from `contains: 0 errors`
+to `CE0463 … contains: 1 errors` on merged main. It remains the only open
+finding from this project that a released mxcli reproduces on a clean model in a
+single command, and the one-line workaround (`set maxHeight = '250'`) still
+clears it.
