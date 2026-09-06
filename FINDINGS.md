@@ -7373,3 +7373,83 @@ to `CE0463 … contains: 1 errors` on merged main. It remains the only open
 finding from this project that a released mxcli reproduces on a clean model in a
 single command, and the one-line workaround (`set maxHeight = '250'`) still
 clears it.
+
+## Phase 35 — main `7658bbe0`, and what filming the app found (2026-09-06)
+
+PR 398 is merged. Two results: **142's brand image is fixed** — the finding that
+has run longest — and filming the app for a demo turned 142's *third* loss, the
+silent one, from a note into a measured defect.
+
+| item | status |
+|---|---|
+| 142 brand image / `maxHeight` CE0463 | **FIXED** |
+| 142 scroll-container shrink | **open — now measured, and it costs the phone** |
+| 142 sidebar toggle | open, unchanged |
+| PR 398 member check, unqualified CREATE | merged, still clean here |
+
+Sweep: 0 reference errors across 41 files, 10 warnings.
+
+### 142's brand image, fixed after five rounds
+
+`maxHeight` is now written at its declared default, and the recipe the finding is
+named for passes:
+
+```
+property: 'maxHeight'   written value: '250'   declared default: '250'
+
+describe → rename → run of Atlas_Default:   contains: 0 errors
+one authored image widget on a clean app:   contains: 0 errors
+```
+
+No workaround, no `set maxHeight`. The layout copy is now a supported route, and
+Ledger can take its brand image back whenever the wordmark is decided.
+
+### The mobile film found what four browser passes did not
+
+`record-narrated-demo` requires the same walk at a phone profile, "nothing
+simplified for the smaller screen". At 414×896 this app is **not usable**:
+
+```
+viewport 414   sidebar 232px   content starts at x=232   → 182px for the app
+needs-review grid, 6 columns:  32, 42, 56, 32, 32, 54 px
+```
+
+At those widths merchant names render as `T.` and `B`. Every prior browser pass
+in this file ran at 1400×900 or wider and saw nothing.
+
+The manual toggle recovers most of it — `232 → 52px`, columns `42/64/85` — so the
+mechanism works; it simply never fires. And the control is what turns that from an
+impression into a finding. Same app, same viewport, same runtime, same minute:
+
+| layout | sidebar rendered | content starts |
+|---|---|---|
+| `Ledger.App_Default` — mxcli's copy of Atlas | **232px** | 232 |
+| `Atlas_Core.Atlas_Default` — untouched | **52px** | 52 |
+
+Both carry the identical inline `--sidebar-size: 232px`, so the width property is
+not the difference. What differs is the scroll-container shrink behaviour, which
+is **142's third loss**: the one that is "not in the model at all", that
+`describe` cannot flag because there is nothing there to describe, and that this
+file has carried since Phase 25 with no evidence of what it cost.
+
+This is what it cost. An app authored entirely through MDL renders at 56% chrome
+on a phone, and the only reason anyone found out is that a demo skill insisted on
+filming at 414px.
+
+**Ask:** carry the region's shrink behaviour through `describe layout`, or say in
+the describe output that it cannot be carried — the sidebar toggle's own
+`NOT re-executable` comment is the model to follow. A silent loss with no
+observable symptom on a desktop is the worst of the three, and it outlasted the
+two that announced themselves.
+
+### On the films themselves
+
+`demo/README.md` carries the detail. Two process notes worth keeping:
+
+- The contact sheet caught a beat whose caption claimed something the picture did
+  not show — the drill panel renders below the fold and the camera never scrolled
+  to it. It was also the only beat written without an `assertBeat`. Those two
+  facts are the same fact.
+- `cut-clips.js` resolves the raw take as `<dirname of beats.json>/raw/<video>`,
+  so a second profile needs its own **directory**, not just its own filename.
+  Minor, but it is the one place the shipped machinery assumes a single take.
