@@ -7636,3 +7636,56 @@ two adjacent spans.
 
 **142 parts 1 and 3** are untouched, which is expected — nothing in this range
 claims them.
+
+### Phase 37a — testing the phone-profile hypothesis
+
+A fair challenge to Phase 35: if Mendix routes on user agent, the app may render
+badly on a phone simply because this project never defined a **Phone** navigation
+profile — which would make it an omission here, not a consequence of §142.
+
+Tested rather than argued. MDL authors one, and the front half works exactly as
+documented:
+
+```
+create or replace navigation Phone …           -> Navigation profile 'Phone' created.
+SHOW NAVIGATION                                -> Responsive | Phone (2 profiles)
+mx check                                       -> contains: 0 errors
+DESCRIBE NAVIGATION Phone                      -> round-trips, Kind: Phone
+```
+
+It reaches the build: the probe label planted in the Phone menu appears in
+`deployment/model/i18n/translations.properties`.
+
+The back half does not. With the two profiles made distinguishable — the Phone
+menu's first item renamed `ZZPhoneOnlyLabel` — a real `devices['iPhone 12']`
+context renders the **Responsive** menu:
+
+| context | first menu items | phone-only label present | sidebar |
+|---|---|---|---|
+| desktop | Dashboard, Cashflow, Budgets | no | 232px |
+| iPhone 12 | Dashboard, Cashflow, Budgets | **no** | **232px** |
+
+So the phone profile is authored, built, and never routed to. Two consequences:
+
+1. **Phase 35's finding stands**, and for a better-established reason than
+   before. It is not that this project forgot to define a phone profile; defining
+   one changes nothing observable. The 232px sidebar is the layout's missing
+   shrink behaviour — §142's third loss — exactly as the Atlas control showed.
+
+2. **A new one:** `mxcli syntax navigation.create` lists `Phone` and `Tablet`
+   among "Mendix's fixed **web** kinds", and creating one is silent all the way
+   through — created, built, `mx check` 0 errors, 0 warnings about it, and it
+   round-trips through `DESCRIBE`. Nothing anywhere says the web client will not
+   route to it. Mendix deprecated the phone and tablet *web* profiles in favour
+   of Responsive, which is the likely explanation, but that is inference; what is
+   measured is that an iPhone user agent gets the Responsive profile while a
+   Phone profile sits in the model doing nothing.
+
+   **Ask:** if these kinds are legacy for web, say so where they are offered.
+   A profile that creates cleanly, builds cleanly and is never used is the
+   quietest possible way to spend an afternoon — and the syntax help currently
+   reads as a positive recommendation ("the profile is CREATED if the project does
+   not have it yet").
+
+Measured on the same app, same runtime, same minute as the table above; the
+project's own model is untouched — all of this ran on a copy.
