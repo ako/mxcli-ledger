@@ -7557,3 +7557,82 @@ MDL example (parses as written)  — 18 properties, 6 omitted and named
 58 properties, each with key, type, caption, category, required flag, default and
 enumeration values. `vegachart` reports 9 because it *has* 9 — it is this
 project's own widget, with nine properties in its definition.
+
+## Phase 37 — main `90356575` (2026-09-11)
+
+140 commits. Two of them correct things this file got wrong, and one of those is
+a **third call site of finding 146** that six phases of testing never touched.
+Sweep, tests and rules are otherwise unchanged: 0 reference errors across 41
+files, 10 warnings, `Total: 42 Passed: 42`.
+
+| item | status |
+|---|---|
+| **146 — a third gate, in `--watch`** | **FIXED**, and this file's account of it was wrong |
+| take.js filmed the desktop profile as "mobile" | fixed upstream; **§142 mobile finding re-verified and stands** |
+| MDL-WIDGET15 false positive (Phase 36) | **still open** — 8 occurrences |
+| 142 parts 1 & 3 | open |
+
+### 146 had three call sites, and this file said two
+
+`331000ee fix(run): start --watch on a Mendix 11.14 app — the second copy of the
+#146 gate`. Measured here, same project, same minute:
+
+```
+pre-fix binary:   Error: starting web client bundler: no rollup.config.mjs in
+                  …/deployment/web (run a serve Deploy build first)
+main 90356575:    Web client bundled by mxbuild; no incremental bundler needed
+                  Runtime started; app serving at http://127.0.0.1:8080/
+                  Watching model + theme source for changes (build #1)
+```
+
+The correction is the point. Phase 26 wrote that `BuildWebClient` is "called
+unconditionally at `runlocal.go:664` and `:1091`" and framed that as *both* call
+sites. Both of those are inside `BuildWebClient`. `StartWebClientWatch` carries
+its own independent `os.Stat` of the same file, so when #146 was fixed in
+`webclient.go`, plain `run --local` started working on 11.14 and `--watch` went
+on dying one call earlier on the same absent file — for six phases, because
+**every run in this file has been plain `run --local`**. The upstream commit is
+blunt about it: "Its commit message asserted 'both call sites are fatal'; the two
+it meant were both BuildWebClient's."
+
+A finding is only closed for the code paths that were exercised. This one was
+reported, fixed, verified and re-verified four times against one of two entry
+points, and the untested one stayed broken the whole time.
+
+### The mobile finding: re-verified rather than assumed
+
+`a8a87a83 fix(demo): let take.js record the mobile pass its own skill mandates`
+says `openTake` passed only `viewport` to `newContext`, while `userAgent`,
+`isMobile`, `hasTouch` and `deviceScaleFactor` are all context options — and
+**Mendix picks its navigation profile from the user agent, not the viewport**. So
+a "mobile" take filmed the desktop app in a narrow window.
+
+That is the machinery Phase 35's finding was measured through, so the finding had
+to be re-tested rather than defended. Same page, same app, two contexts:
+
+| context | UA | sidebar | review-grid columns |
+|---|---|---|---|
+| viewport only — what `take.js` did | `X11; Linux x86_64` | 232px | 32, 42, 56, 32, 32, 54 |
+| real phone — `devices['iPhone 12']` | `iPhone; CPU iPhone OS 14_` | **232px** | **32, 42, 56, 32, 32, 54** |
+
+Identical. **Phase 35's finding stands**, and the reason it survives is specific:
+this project has exactly one navigation profile (`Responsive`), so there is no
+phone profile for a user agent to route to. What is missing is the layout's
+shrink behaviour — §142's third loss — which no user agent was ever going to
+supply.
+
+Worth separating the two claims, because the upstream bug is real and would
+invalidate a mobile finding in a project that *does* define a phone profile. It
+does not invalidate this one. That is a measurement, not an argument.
+
+### Still open
+
+**MDL-WIDGET15** fires 8 times here and Phase 36's measurement is unchanged:
+the parent is a flex row with a 16px gap, so the "their text concatenates" the
+message asserts does not happen. Several widget hide-rule fixes landed in this
+range (`39436a60`, `8db3cb5c`, `d7ec1de7`) but they concern the *editor's* hide
+rules, which is a different question from what a project's own stylesheet does to
+two adjacent spans.
+
+**142 parts 1 and 3** are untouched, which is expected — nothing in this range
+claims them.
