@@ -7689,3 +7689,49 @@ So the phone profile is authored, built, and never routed to. Two consequences:
 
 Measured on the same app, same runtime, same minute as the table above; the
 project's own model is untouched — all of this ran on a copy.
+
+### Phase 37b — where the phone profile is actually lost
+
+The natural next question about 37a: perhaps the runtime never learns it is
+talking to a phone. It does. Captured off the wire, `get_session_data` is the
+first `/xas/` call the client makes:
+
+```json
+{"action":"get_session_data","params":{
+   "offline":true,"referrer":"","deviceType":"Phone","profile":"",
+   "timezoneoffset":0,"timezoneId":"UTC","preferredLanguages":["en-US"],"version":2}}
+```
+
+`deviceType` is **correct**, and it is correct on both sides of the control:
+
+| context | `deviceType` sent | response carries Phone menu | response carries Responsive menu |
+|---|---|---|---|
+| desktop | `Desktop` | no | yes |
+| iPhone 12 | **`Phone`** | **no** | **yes** |
+
+The client classifies the device properly and says so. The runtime answers with
+the Responsive profile's navigation either way — the Phone profile's own menu
+item (`ZZPhoneOnlyLabel`, planted precisely to be unmistakable) appears in
+**neither** response.
+
+So the loss is not client detection, and not the user agent failing to reach the
+server. It is the server's profile resolution: given `deviceType: "Phone"` and a
+Phone profile present in the model, the runtime returns Responsive.
+
+One detail worth recording because it is the likely mechanism: the client sends
+`"profile":""` — empty. It names a **device type**, not a profile, and leaves the
+runtime to resolve one. On 11.14 that resolution lands on Responsive regardless,
+which is consistent with the web phone/tablet profiles being legacy rather than
+with anything this project did wrong.
+
+This does not change 37a's conclusion, it locates it. The correction is to any
+reading of 37a as "the phone UA never arrives":
+
+- the UA arrives,
+- the client turns it into `deviceType: "Phone"`,
+- the runtime receives that,
+- and still serves Responsive.
+
+Which also closes the loop on §142: with the Phone profile demonstrably inert,
+nothing about navigation explains the 232px sidebar. The Atlas control from
+Phase 35 remains the only thing that does.
