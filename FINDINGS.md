@@ -7735,3 +7735,81 @@ reading of 37a as "the phone UA never arrives":
 Which also closes the loop on §142: with the Phone profile demonstrably inert,
 nothing about navigation explains the 232px sidebar. The Atlas control from
 Phase 35 remains the only thing that does.
+
+### Phase 37c — what the PWA docs say, and a correction to 37a
+
+37a inferred that Mendix had deprecated the phone and tablet **web** profiles.
+**That inference was wrong.** The PWA reference page says the opposite, and
+treats them as current:
+
+> "To create a full offline-first PWA, choose and add one of the following
+> profiles (depending on which form factor you need): Responsive Web Offline,
+> Phone Web Offline, or Tablet Web Offline."
+>
+> "When opening the app on a device or browser, Mendix automatically determines
+> the navigation profile based on the user agent and the browser capabilities."
+
+and documents an override — `?profile=PhoneOffline` — plus a selection table in
+which iOS loads **Phone Web Offline**.
+
+So the architecture answer is: profiles are **per form factor**, chosen at
+runtime from the user agent; `Responsive` is itself the adaptive one, so a single
+Responsive profile is a complete answer unless a form factor needs its own
+navigation. You do not have to author three.
+
+Re-tested against the documented mechanism, on the copy:
+
+| case | `deviceType` / `profile` sent | menu rendered | sidebar |
+|---|---|---|---|
+| iPhone, no override | `Phone` / `""` | Responsive | 232px |
+| iPhone, `?profile=Phone` | `Phone` / `Phone` | Responsive | 232px |
+| desktop, `?profile=Phone` | `Desktop` / `Phone` | Responsive | 232px |
+| iPhone, `?profile=PhoneOffline` | `Phone` / `PhoneOffline` | Responsive | 232px |
+
+The override **is** picked up — `profile` stops being empty and carries the
+requested name — and the answer is the Responsive menu every time. The profiles
+are not missing from the build either: the probe labels planted in each are in
+`deployment/model/` (`ZZPhoneOnlyLabel` in 2 files, `ZZOfflineOnlyLabel` in 8,
+the offline one in more, as offline bundling would predict).
+
+What *is* missing is the PWA serving layer:
+
+```
+GET /sw.js                  -> 404
+GET /manifest.webmanifest   -> 400
+```
+
+No service worker, no manifest. `mxcli run --local` serves the online client
+only, so the offline profile has no entry point to be loaded through, and the
+online client resolves to Responsive.
+
+**Corrected conclusion.** 37a's measurement stands — adding a Phone profile
+changes nothing observable *here* — but its explanation was wrong twice over:
+the kinds are not legacy, and the profile is not "sitting in the model doing
+nothing", since it is built. The accurate statement is narrower and about the
+harness, not about Mendix:
+
+> Under `mxcli run --local` on 11.14, a Phone or PhoneOffline profile is
+> authored, built and shipped into `deployment/model/`, but never served: there
+> is no service worker or manifest, and both automatic and forced profile
+> selection return Responsive.
+
+Whether a packaged deployment routes correctly is **untested here** and should
+not be inferred from this.
+
+One genuine incidental, worth its own line because it will bite anyone adding a
+PWA profile to an Atlas app: doing so makes every page reachable through it
+subject to offline capability, and Atlas' own layout fails the check —
+
+```
+[CE9269] Custom widget 'Feedback' is not offline capable and cannot be used on
+pages that are accessible through an offline-based navigation profile.
+  — at Atlas_Core / Snippet 'FeedbackWidget' / Feedback 'feedback1'
+```
+
+The build goes from 0 errors to 1 on adding the profile alone. Dropping the
+Feedback snippet from the layout returns it to 0. That is a real cost of the
+PWA route and nothing warns before you take it.
+
+And the §142 conclusion is unaffected: with no profile mechanism reaching the
+client at all, nothing about navigation explains the 232px sidebar.
