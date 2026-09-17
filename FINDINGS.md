@@ -7813,3 +7813,78 @@ PWA route and nothing warns before you take it.
 
 And the §142 conclusion is unaffected: with no profile mechanism reaching the
 client at all, nothing about navigation explains the 232px sidebar.
+
+## Phase 38 — main `5228405d`, and PR 496 (2026-09-17)
+
+205 commits on main since the Phase 37 baseline; **nothing changed for this
+project** — 0 reference errors across 41 files, 10 warnings, and the same five
+rules firing in the same counts. MDL-WIDGET15 still fires 8 times, so Phase 36's
+false positive is unchanged.
+
+PR 496 restores a capability rather than fixing a defect here, and this project
+turns out not to exercise it — but the guard around it is worth recording,
+because it is the shape a silent drop would otherwise take.
+
+| item | result |
+|---|---|
+| main `5228405d` vs Phase 37 | identical for this project |
+| MDL-WIDGET15 false positive | still open |
+| PR 496 named datasource keys | works; **no effect on this project** |
+| PR 496 regression | clean — round trips lossless, `Total: 42 Passed: 42` |
+
+### PR 496 does nothing here, and the reason is the useful part
+
+The PR lets a pluggable widget's datasource-typed properties be addressed by
+their own schema key, so a widget with several can be given each. Measured
+against this project: the sweep is identical on both binaries (0 errors, 10
+warnings), and `DESCRIBE PAGE Ledger.Insights` is **byte-identical**.
+
+Two reasons, both worth knowing:
+
+- `vegachart` has no datasource-typed property at all. Its `chartData` is an
+  **attribute** (`chartData: StreamData`), so the chart-series work in this PR —
+  which is about Mendix's own chart widgets binding a series to its own
+  datasource — has nothing to bind here.
+- The comboboxes use the generic single-datasource spelling, which is what
+  `describe` emits and what the project's source carries:
+  `DataSource: database from Ledger.Category`.
+
+So the capability is real and this project is simply not the shape it addresses.
+
+### The capability, verified on this project's own entities
+
+Written as the named key, against `Ledger.Category`:
+
+| | `optionsSourceAssociationDataSource: database from Ledger.Category` |
+|---|---|
+| main `5228405d` | **✗ MDL-WIDGET05** — "is datasource-typed — provide it via the widget `datasource:` clause … a value written as `optionsSourceAssociationDataSource: …` is not persisted" |
+| PR 496 | `Check passed!` |
+
+and it persists rather than parsing-then-vanishing, which is the half worth
+checking given what the PR replaces: `exec` creates the page, `mx check` reports
+**0 errors**, and the value describes back (as the `DataSource:` alias, which is
+the canonical spelling for a widget with one datasource set).
+
+### The drop that is announced rather than silent
+
+Setting **two** datasources on one combobox is where this could have gone wrong,
+since #643's original defect was a silent drop. It does not:
+
+```
+⚠ page Ledger.ProbeDs2: widget `cbTwo` (combobox) property
+  `optionsSourceDatabaseDataSource` is recognized but not yet persisted by mxcli
+  — a non-default value will be dropped; set it in Studio Pro if needed
+  [MDL-WIDGET06]
+```
+
+`describe` then emits one datasource, not two — exactly as the warning said it
+would. Recorded because the observable behaviour (write two, get one back) is
+indistinguishable from the old defect *except* for the warning, and the warning
+is the whole difference. Reading it is what stopped this becoming a false
+finding.
+
+### Regression
+
+All three chart pages round-trip losslessly under PR 496 (Dashboard 2, Insights
+7, Cashflow_Overview 1, unchanged), `mx check` stays at 0 errors after three
+consecutive round trips, and the suite passes 42/42.
