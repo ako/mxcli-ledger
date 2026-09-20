@@ -7888,3 +7888,72 @@ finding.
 All three chart pages round-trip losslessly under PR 496 (Dashboard 2, Insights
 7, Cashflow_Overview 1, unchanged), `mx check` stays at 0 errors after three
 consecutive round trips, and the suite passes 42/42.
+
+## Phase 39 — main `064fa4c7` (2026-09-20)
+
+113 commits. One new rule **breaks this project's pre-flight check** on a page
+Mendix passes and that demonstrably works in a browser — the same class as
+finding 147, at the same severity, three rounds after 147 was fixed.
+
+| item | status |
+|---|---|
+| **151 MDL-PAGEARG01 false positive (new)** | **new — `mxcli check` exits 1** |
+| MDL-WIDGET15 false positive (Phase 36) | still open, 8 occurrences |
+| 142 parts 1 & 3 | open |
+| tests / round trips | clean, `Total: 42 Passed: 42` |
+
+### 151. MDL-PAGEARG01 does not know a DataGrid 2 supplies its own row
+
+New on this build, at **error** severity, twice in `05-pages-foundation.mdl`:
+
+```
+✗ page Ledger.Transaction_Overview: show_page Ledger.Transaction_Edit:
+  argument Tx: $currentObject cannot be stored — widget `dgNeedsReview` is not
+  inside a data view, list view or grid row, so there is no context object at
+  all, and a widget's page argument is always that object. The page would be
+  opened with no argument, which mxbuild reports as CE1571 "No argument has
+  been selected for parameter 'Tx'"                          [MDL-PAGEARG01]
+```
+
+The premise is checkable and wrong. The `onClick` is on the **DataGrid 2
+itself**, which is Mendix's row-click:
+
+```
+datagrid dgNeedsReview (
+  onClick: show_page Ledger.Transaction_Edit(Tx: $currentObject),
+```
+
+A grid's own `onClick` runs per row with the row as context. The rule walks the
+grid's *ancestry* looking for a data container and finds none, which is true and
+irrelevant — the context comes from the grid's own iteration, not from above it.
+
+Three independent contradictions of "the page would be opened with no argument":
+
+| check | verdict |
+|---|---|
+| `mx check Ledger.mpr` — Studio Pro's own checker | **contains: 0 errors**, no CE1571 |
+| the app builds and runs | yes |
+| clicking a row in the browser | opens `Transaction_Edit` **with the transaction loaded** — heading `€ 115.40`, form present, 0 page errors |
+
+**Impact is not cosmetic.** `mxcli check … --references` exits **1** with
+`11 issues: 2 errors, …` on a file that is correct, so the project's own
+pre-flight step fails and has to be told to ignore an error — which is exactly
+what finding 147 cost, and 147 was an error-severity false positive on the same
+page-argument machinery.
+
+The rule is right in concept. The genuine case is still caught: a bare
+`actionbutton` with `SHOW_PAGE Ledger.Transaction_Edit(Tx: $currentObject)` and
+no enclosing data widget errors correctly. So this is a missing case, not a
+broken rule.
+
+**Ask:** treat a DataGrid 2's (and a gallery's) own `onClick` as supplying the
+row object, the way the CE1571 fix in PR 398 learned to treat an enclosing data
+container as supplying a microflow datasource argument. The two rules are the
+same shape and this is the second time the shape has shipped without it.
+
+### Everything else is unchanged
+
+0 reference errors elsewhere, 10 warnings, the same rule mix, and the suite
+passes 42/42. MDL-WIDGET15 still fires 8 times with Phase 36's measurement
+unchanged: the parent is a flex row with a 16px gap, so the "their text
+concatenates" the message asserts still does not happen.
