@@ -7957,3 +7957,89 @@ same shape and this is the second time the shape has shipped without it.
 passes 42/42. MDL-WIDGET15 still fires 8 times with Phase 36's measurement
 unchanged: the parent is a flex row with a 16px gap, so the "their text
 concatenates" the message asserts still does not happen.
+
+## Phase 40 — main `4ce2098b`, and PR 615 (2026-09-22)
+
+**Finding 151 is fixed** one round after it was reported. PR 615 adds
+`--page-check`, and testing it turned up a defect in **this project** that
+every browser pass in this file has been blind to — including all of Phase 35's
+mobile work.
+
+| item | status |
+|---|---|
+| 151 MDL-PAGEARG01 false positive | **FIXED** |
+| PR 615 `--page-check` | works, and **caught something this file's method could not** |
+| **152 a redundant CDN font import (new, this app)** | **new** |
+| MDL-WIDGET15 false positive (Phase 36) | still open, 8 occurrences |
+
+Sweep back to 0 errors / 10 warnings, `Total: 42 Passed: 42`.
+
+### 151, fixed and correctly scoped
+
+`fa289ccb fix(pages): judge a list widget's own row action in the context it
+creates`. The file that failed pre-flight at exit 1 with 2 errors:
+
+```
+$ mxcli check mdlsource/05-pages-foundation.mdl -p Ledger.mpr --references
+Check passed!                                              exit code: 0
+```
+
+and the genuine case is still caught — a bare `actionbutton` carrying
+`SHOW_PAGE …(Tx: $currentObject)` with no enclosing data widget still reports
+MDL-PAGEARG01. Fixed without being muted, which is the pair that matters.
+
+### 152. The app fetches fonts from a CDN it already ships locally
+
+`--page-check` prints a verdict per page instead of a screenshot. On this
+project:
+
+```
+page /p/dashboard     title="Mendix - Dashboard"     h="Dashboard"     rows=1   text=904   console-errors=1
+page /p/cashflow      title="Mendix - Cashflow"      h="Cashflow"      rows=21  text=2202  console-errors=1
+page /p/transactions  title="Mendix - Transactions"  h="Transactions"  rows=37  text=2940  console-errors=1
+page /p/budgets       title="Mendix - Budgets"       h="Budgets"       rows=14  text=1745  console-errors=1
+```
+
+The row and text counts match what this file has measured by hand for months.
+`console-errors=1` does not: **every browser pass recorded in FINDINGS has said
+"0 page errors"**, including the Phase 35 mobile work and the Phase 39 row-click
+verification.
+
+Both are true, and the gap is the instrument. Those passes listened for
+`pageerror` — uncaught exceptions. A `console.error` is a different event, and
+nothing here ever subscribed to it. Chasing it down:
+
+```
+requestfailed: net::ERR_CERT_AUTHORITY_INVALID
+  <- https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&…
+```
+
+which is this project's own line, not Atlas' — Atlas leaves it `false`:
+
+```
+theme/web/custom-variables.scss:39
+  $font-family-import: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans…'
+```
+
+**The app renders correctly anyway**, and that is worth stating rather than
+implying a worse bug: `document.fonts.check('16px "IBM Plex Sans"')` is `true`
+and several Plex faces report `loaded`, because mxcli's theme system vendors
+them — 21 `.woff2` files under `theme/mxcli-themes/*/files/theme/web/mxcli-fonts/`.
+So the import is **redundant**: a request that fails on every page load, for
+fonts the app already has on disk.
+
+In this container it fails on the proxy's CA; air-gapped it would fail too, which
+is precisely the case the vendored fonts exist to cover. One line to delete, and
+the app is unchanged by it — I have left it alone rather than edit the app during
+a verification round.
+
+**The honest lesson is about this file's method, not the app.** Forty phases of
+browser verification used the narrower of two available signals, and a
+one-line-per-page text verdict found it immediately. `--page-check` earns its
+place here on that alone; the token argument in its commit message is the lesser
+half.
+
+### Unchanged
+
+MDL-WIDGET15 still fires 8 times, Phase 36's measurement intact: the parent is a
+flex row with a 16px gap, so the asserted concatenation still does not happen.
