@@ -53,3 +53,5 @@ Ledger/theme-cache/
 # .mpk *is* committed, because nobody can fetch a project's own widget from the
 # Marketplace (see FINDINGS 82).
 widgets-src/*/dist/
+demo/capture/raw*/
+demo/capture/mobile/raw/

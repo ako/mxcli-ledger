@@ -7207,3 +7207,953 @@ authored image widget still takes a clean project to `CE0463 … contains: 1
 errors` under this PR too. And the four check false positives this PR fixes were
 found in its own fixtures — this project produces the same 10 warnings before and
 after, so it never reached them.
+
+## Phase 33 — PR 396, third pass (`d9c11cdd`, 2026-09-05)
+
+Seven more commits. The **datagrid-column catalog gap reported in Phase 31 is
+fixed**, and taking it apart upstream turned it into something larger than the
+widget edge this project noticed it through: a document used *only* inside a
+column template reported **zero references**, so anything deciding "unused, safe
+to delete" from reference counts would have deleted live code. This project has
+exactly such a microflow, and it is measured below.
+
+| item | status |
+|---|---|
+| widget in a datagrid column not indexed (Phase 31) | **FIXED** |
+| a document used only in a column template shows 0 refs | **FIXED** — verified on a live microflow here |
+| widget body lost by describe → exec (Phase 32) | still fixed, re-verified |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+
+Regression: 0 reference errors across 41 files and **10 warnings on both** main
+and the PR, `Total: 42 Passed: 42`, all three chart pages round-trip losslessly,
+and `mx check` stays at 0 errors afterwards.
+
+### The gap this project reported
+
+Ground truth Dashboard 2, Insights 7, Cashflow_Overview 1 — and now all three
+are indexed:
+
+```
+SELECT SourceName, TargetName FROM CATALOG.REFS
+  WHERE TargetType='WIDGET' AND TargetName LIKE '%ega%'
+
+| Ledger.Cashflow_Overview | VEGACHART |
+| Ledger.Dashboard         | VEGACHART |
+| Ledger.Insights          | VEGACHART |
+```
+
+**Measure this with the cache deleted.** The commit's own closing note says a
+stale `.mxcli/catalog.db` made the fixed binary look unfixed and cost a wrong
+conclusion; every measurement here removed it before `REFRESH CATALOG FULL`.
+Phase 32's lesson was that a growing unfiltered count looks like progress, and
+this is its mirror image — a cached result looks like regress. Neither number
+means anything without controlling what produced it.
+
+### The bigger half: a live microflow with zero references
+
+`CATALOG.REFS` is a projection of the same table, so the gap was never only about
+widgets. `Ledger.ACT_DrillCell` is wired to the click action of all twelve month
+cells in the cashflow matrix —
+
+```
+container cellM01 (
+  DynamicClasses: 'if $currentObject/RowKind = Ledger.RowKind.Category then …',
+  Action: microflow Ledger.ACT_DrillCell("Row": $currentObject, MonthIndex: 1)
+)
+```
+
+— and does real work: retrieves the report context, calls `FMT_MonthName` and
+`GET_DrillTransactions`, counts and sums. It is the drill-down the cashflow
+screen exists to offer.
+
+Its reference count, same project, same query, caches cleared, three binaries:
+
+| binary | `ACT_DrillCell` | `ACT_ShowTransaction` | `DS_CashflowRows` |
+|---|---|---|---|
+| main `41c55d09` | **0** | 2 | 1 |
+| PR 396 `64055caa` | **0** | 2 | 1 |
+| PR 396 `d9c11cdd` | **1** | 2 | 1 |
+
+The other two were already visible because they are also referenced above column
+level; `ACT_DrillCell` is reachable *only* from inside the column template, which
+is what made it the clean case. On main it is a microflow bound to twelve
+clickable cells that any reference-count sweep would call dead.
+
+That is the failure mode worth naming: not "a query returns fewer rows" but
+"a correct-looking tool tells you to delete working code". This project would
+have been a plausible victim — `mxcli lint`'s QUAL004 rule is *orphaned /
+unreferenced elements*.
+
+### Unchanged
+
+142's `maxHeight` still writes `0` against a declared default of `250`, so one
+authored image widget still takes a clean project to `CE0463 … contains: 1
+errors`. It is now the only open finding from this project that a released mxcli
+reproduces on a clean model in one command.
+
+## Phase 34 — merged main `a69c87a2`, and PR 398 (2026-09-06)
+
+PR 396 is merged, so everything Phases 31–33 chased is now on main and was
+re-verified there rather than assumed. PR 398 is a batch of stricter checks; it
+adds **no false positives on this project** and catches a defect class that this
+project's own workflow is wide open to.
+
+| item | status |
+|---|---|
+| widget in a datagrid column indexed | **FIXED on main** |
+| document used only in a column template shows 0 refs | **FIXED on main** |
+| describe emits the keyword form | **on main** |
+| PR 398 member-name resolution | **works, and catches a real gap** |
+| PR 398 unqualified CREATE | **works** |
+| PR 398 widget XPath / template params | **untested — see below** |
+| 142 `maxHeight` / CE0463 | still open, unchanged |
+
+Regression under PR 398: 0 reference errors across 41 files and **10 warnings,
+identical to main**; `Total: 42 Passed: 42`; all three chart pages round-trip
+losslessly with `mx check` at 0 errors afterwards.
+
+### PR 396's work, confirmed on merged main
+
+```
+VegaChart pages indexed:   3   (ground truth Dashboard 2, Insights 7, Cashflow 1)
+Ledger.ACT_DrillCell refs: 1   (was 0 — a live microflow reporting no callers)
+describe spelling:         vegachart chartOverview
+```
+
+### PR 398 — the member check earns its place here
+
+`check --references` resolved the document and the entity and stopped at the
+door: the attribute on the left of a `change`/`create` assignment was never
+resolved. A typo therefore passed check, passed exec, and surfaced only at build
+time. Measured end to end on this project:
+
+```
+baseline:     contains: 0 errors
+main check:   Check passed!
+main exec:    Created microflow: Ledger.ProbeBadChange
+mx check:     CE1613] "The selected attribute
+              'Ledger.Transaction.IsArchivedTypo' no longer exists
+              contains: 1 errors
+```
+
+Under PR 398 the same script is stopped at the cheap end, and the message names
+the members that do exist rather than merely asserting the one that does not:
+
+```
+Ledger.ProbeBadChange: Ledger.Transaction has no member "IsArchivedTypo"
+  (in change $Tx) — it has Amount, Description, IsMirror, Merchant,
+  SignedAmount, TxDate — mxbuild reports this as CE1613 …
+```
+
+This matters more here than the average project. Every entity in Ledger is
+authored and re-authored from `mdlsource/`, and an attribute rename is a normal
+edit; the failure mode is a `change` left pointing at the old name, which until
+now no step before `mx check` would catch. The commit's own care about a third
+"could not look" state is borne out by the sweep: 41 files, no new findings.
+
+`refuse unqualified CREATEs` also fires correctly — `create persistent entity
+UnqualifiedEntity (…)` is 2 findings under PR 398 and silent on main.
+
+### What I could not test, stated rather than glossed
+
+`3aa2ee0e feat(check): resolve member names inside widgets — XPath steps and
+template params` is **unverified**. Two probes were written and both were
+rejected for naming properties that do not exist (`Parameters` on a dynamictext,
+`XPathConstraint` on a datagrid), so they never reached the rule. This project
+does not use either construct — its XPath lives in microflows and entity access
+rules, not widget properties — so there is nothing here to exercise it against.
+Recorded as untested rather than as a pass: a probe that fails to compile proves
+nothing about the rule it was aimed at, and this is the second time this session
+that a malformed probe nearly became a finding.
+
+### 142, unchanged and now alone
+
+One authored image widget still takes a clean project from `contains: 0 errors`
+to `CE0463 … contains: 1 errors` on merged main. It remains the only open
+finding from this project that a released mxcli reproduces on a clean model in a
+single command, and the one-line workaround (`set maxHeight = '250'`) still
+clears it.
+
+## Phase 35 — main `7658bbe0`, and what filming the app found (2026-09-06)
+
+PR 398 is merged. Two results: **142's brand image is fixed** — the finding that
+has run longest — and filming the app for a demo turned 142's *third* loss, the
+silent one, from a note into a measured defect.
+
+| item | status |
+|---|---|
+| 142 brand image / `maxHeight` CE0463 | **FIXED** |
+| 142 scroll-container shrink | **open — now measured, and it costs the phone** |
+| 142 sidebar toggle | open, unchanged |
+| PR 398 member check, unqualified CREATE | merged, still clean here |
+
+Sweep: 0 reference errors across 41 files, 10 warnings.
+
+### 142's brand image, fixed after five rounds
+
+`maxHeight` is now written at its declared default, and the recipe the finding is
+named for passes:
+
+```
+property: 'maxHeight'   written value: '250'   declared default: '250'
+
+describe → rename → run of Atlas_Default:   contains: 0 errors
+one authored image widget on a clean app:   contains: 0 errors
+```
+
+No workaround, no `set maxHeight`. The layout copy is now a supported route, and
+Ledger can take its brand image back whenever the wordmark is decided.
+
+### The mobile film found what four browser passes did not
+
+`record-narrated-demo` requires the same walk at a phone profile, "nothing
+simplified for the smaller screen". At 414×896 this app is **not usable**:
+
+```
+viewport 414   sidebar 232px   content starts at x=232   → 182px for the app
+needs-review grid, 6 columns:  32, 42, 56, 32, 32, 54 px
+```
+
+At those widths merchant names render as `T.` and `B`. Every prior browser pass
+in this file ran at 1400×900 or wider and saw nothing.
+
+The manual toggle recovers most of it — `232 → 52px`, columns `42/64/85` — so the
+mechanism works; it simply never fires. And the control is what turns that from an
+impression into a finding. Same app, same viewport, same runtime, same minute:
+
+| layout | sidebar rendered | content starts |
+|---|---|---|
+| `Ledger.App_Default` — mxcli's copy of Atlas | **232px** | 232 |
+| `Atlas_Core.Atlas_Default` — untouched | **52px** | 52 |
+
+Both carry the identical inline `--sidebar-size: 232px`, so the width property is
+not the difference. What differs is the scroll-container shrink behaviour, which
+is **142's third loss**: the one that is "not in the model at all", that
+`describe` cannot flag because there is nothing there to describe, and that this
+file has carried since Phase 25 with no evidence of what it cost.
+
+This is what it cost. An app authored entirely through MDL renders at 56% chrome
+on a phone, and the only reason anyone found out is that a demo skill insisted on
+filming at 414px.
+
+**Ask:** carry the region's shrink behaviour through `describe layout`, or say in
+the describe output that it cannot be carried — the sidebar toggle's own
+`NOT re-executable` comment is the model to follow. A silent loss with no
+observable symptom on a desktop is the worst of the three, and it outlasted the
+two that announced themselves.
+
+### On the films themselves
+
+`demo/README.md` carries the detail. Two process notes worth keeping:
+
+- The contact sheet caught a beat whose caption claimed something the picture did
+  not show — the drill panel renders below the fold and the camera never scrolled
+  to it. It was also the only beat written without an `assertBeat`. Those two
+  facts are the same fact.
+- `cut-clips.js` resolves the raw take as `<dirname of beats.json>/raw/<video>`,
+  so a second profile needs its own **directory**, not just its own filename.
+  Minor, but it is the one place the shipped machinery assumes a single take.
+
+## Phase 36 — v0.21.0 (`e6a83b5d`, 2026-09-06)
+
+Two commits since `7658bbe0`: the v0.21.0 release notes and a rule renumber
+(`MDL077`, off a collision). The release is the widget work of Phases 31–35
+landed and named. Nothing regressed here — 0 reference errors across 41 files,
+10 warnings, `Total: 42 Passed: 42` — and the one substantive result is a new
+rule that is **wrong about this project**.
+
+### The generated widget docs now parse — verified on this project's own
+
+The release's headline is that a widget's definition drives the grammar, and its
+sharpest evidence is that `mxcli widget init`'s output failed on the first line of
+its own example: "16 of 46 documented constructs parsed; it is 50 of 50 now."
+
+That claim landed in this repository as a 23-file diff — the widget docs
+regenerating themselves, every slot gaining a name:
+
+```diff
+-  trigger {
++  trigger slot1 {
+     -- widgets for `trigger`
+```
+
+Both forms, put through `check` against this project:
+
+| form | result |
+|---|---|
+| `trigger { … }` — what the docs said before | `Syntax errors found` |
+| `trigger slot1 { … }` — what they say now | `Check passed!` |
+
+So the documentation this project hands an agent was, until this release,
+unparseable at the point it mattered. Worth stating because nothing here would
+have caught it: the docs are generated, committed, and never fed back through
+the parser.
+
+### MDL-WIDGET15 is a false positive here, measured
+
+The rule fires on `Ledger.Transaction_Detail`:
+
+```
+ℹ adjacent inline dynamictext widgets (RenderMode Text or Paragraph, both <span>)
+  render with no separator, so their text concatenates.
+```
+
+The structure it describes is real — `lblTxDate` and `valTxDate` are adjacent
+dynamictexts in one container. The consequence it asserts is not. Their parent is
+a flex row, and the rendered page says so:
+
+```
+.ledger-tx-row computed display: flex
+label  425 → 545  (120px)
+value  561 → 975       gap: 16px
+text:  "DATE | Monday 12 January 2026"
+```
+
+The two texts sit in separate flex tracks 16px apart. Nothing concatenates, on
+any of the eight rows this pattern builds.
+
+It is info-level, so the cost is noise rather than a blocked script — but the
+message states a rendered outcome as fact, and a static checker cannot see the
+computed layout that decides it. **Ask:** hedge the claim, or drop it where the
+widgets' parent carries a class the project styles, since "these two are adjacent
+spans" is checkable and "so their text concatenates" is not.
+
+The other two widget rules firing here look right: MDL-WIDGET10 flags a `content`
+value that its own `showContentAs` hides (harmless, but genuinely ignored), and
+MDL-WIDGET16 is informational about DataGrid 2 not storing column names.
+
+### MDL077 works, checked against a control
+
+It does not fire on this project, which is correct — all eight menu items carry an
+icon. Given the rule is new *and* was just renumbered off a collision, "silent"
+is not evidence, so a menu item with the icon removed:
+
+```
+⚠ navigation Responsive: menu item "Order lines" specifies no icon — a collapsed
+  navigation sidebar shows only the icon, so this item appears as a few
+  characters of its caption  [MDL077]
+  → add `icon Atlas_Core.Atlas.<name>` (list them with
+    `describe icon collection Atlas_Core.Atlas`)
+```
+
+Note what that rule is about: the collapsed icon rail. This project's sidebar does
+not collapse on a phone at all — §142's third loss, Phase 35 — so the state
+MDL077 protects is one Ledger cannot currently reach.
+
+### `DESCRIBE WIDGET` on a widget with a real property set
+
+Recorded because a nine-property answer for this project's own `vegachart` is
+easy to mistake for the command's ceiling. `describe widget combobox` against the
+installed `.mpk`:
+
+```
+Widget: Combo box (combobox)   Version: 2.9.0   Source: project .mpk
+Properties (58): source, optionsSourceType, attributeEnumeration, …
+                 filterType, filterInputDebounceInterval
+Dynamic property rules (20)      — 16 of 32 editor hide-rules recognized
+MDL example (parses as written)  — 18 properties, 6 omitted and named
+```
+
+58 properties, each with key, type, caption, category, required flag, default and
+enumeration values. `vegachart` reports 9 because it *has* 9 — it is this
+project's own widget, with nine properties in its definition.
+
+## Phase 37 — main `90356575` (2026-09-11)
+
+140 commits. Two of them correct things this file got wrong, and one of those is
+a **third call site of finding 146** that six phases of testing never touched.
+Sweep, tests and rules are otherwise unchanged: 0 reference errors across 41
+files, 10 warnings, `Total: 42 Passed: 42`.
+
+| item | status |
+|---|---|
+| **146 — a third gate, in `--watch`** | **FIXED**, and this file's account of it was wrong |
+| take.js filmed the desktop profile as "mobile" | fixed upstream; **§142 mobile finding re-verified and stands** |
+| MDL-WIDGET15 false positive (Phase 36) | **still open** — 8 occurrences |
+| 142 parts 1 & 3 | open |
+
+### 146 had three call sites, and this file said two
+
+`331000ee fix(run): start --watch on a Mendix 11.14 app — the second copy of the
+#146 gate`. Measured here, same project, same minute:
+
+```
+pre-fix binary:   Error: starting web client bundler: no rollup.config.mjs in
+                  …/deployment/web (run a serve Deploy build first)
+main 90356575:    Web client bundled by mxbuild; no incremental bundler needed
+                  Runtime started; app serving at http://127.0.0.1:8080/
+                  Watching model + theme source for changes (build #1)
+```
+
+The correction is the point. Phase 26 wrote that `BuildWebClient` is "called
+unconditionally at `runlocal.go:664` and `:1091`" and framed that as *both* call
+sites. Both of those are inside `BuildWebClient`. `StartWebClientWatch` carries
+its own independent `os.Stat` of the same file, so when #146 was fixed in
+`webclient.go`, plain `run --local` started working on 11.14 and `--watch` went
+on dying one call earlier on the same absent file — for six phases, because
+**every run in this file has been plain `run --local`**. The upstream commit is
+blunt about it: "Its commit message asserted 'both call sites are fatal'; the two
+it meant were both BuildWebClient's."
+
+A finding is only closed for the code paths that were exercised. This one was
+reported, fixed, verified and re-verified four times against one of two entry
+points, and the untested one stayed broken the whole time.
+
+### The mobile finding: re-verified rather than assumed
+
+`a8a87a83 fix(demo): let take.js record the mobile pass its own skill mandates`
+says `openTake` passed only `viewport` to `newContext`, while `userAgent`,
+`isMobile`, `hasTouch` and `deviceScaleFactor` are all context options — and
+**Mendix picks its navigation profile from the user agent, not the viewport**. So
+a "mobile" take filmed the desktop app in a narrow window.
+
+That is the machinery Phase 35's finding was measured through, so the finding had
+to be re-tested rather than defended. Same page, same app, two contexts:
+
+| context | UA | sidebar | review-grid columns |
+|---|---|---|---|
+| viewport only — what `take.js` did | `X11; Linux x86_64` | 232px | 32, 42, 56, 32, 32, 54 |
+| real phone — `devices['iPhone 12']` | `iPhone; CPU iPhone OS 14_` | **232px** | **32, 42, 56, 32, 32, 54** |
+
+Identical. **Phase 35's finding stands**, and the reason it survives is specific:
+this project has exactly one navigation profile (`Responsive`), so there is no
+phone profile for a user agent to route to. What is missing is the layout's
+shrink behaviour — §142's third loss — which no user agent was ever going to
+supply.
+
+Worth separating the two claims, because the upstream bug is real and would
+invalidate a mobile finding in a project that *does* define a phone profile. It
+does not invalidate this one. That is a measurement, not an argument.
+
+### Still open
+
+**MDL-WIDGET15** fires 8 times here and Phase 36's measurement is unchanged:
+the parent is a flex row with a 16px gap, so the "their text concatenates" the
+message asserts does not happen. Several widget hide-rule fixes landed in this
+range (`39436a60`, `8db3cb5c`, `d7ec1de7`) but they concern the *editor's* hide
+rules, which is a different question from what a project's own stylesheet does to
+two adjacent spans.
+
+**142 parts 1 and 3** are untouched, which is expected — nothing in this range
+claims them.
+
+### Phase 37a — testing the phone-profile hypothesis
+
+A fair challenge to Phase 35: if Mendix routes on user agent, the app may render
+badly on a phone simply because this project never defined a **Phone** navigation
+profile — which would make it an omission here, not a consequence of §142.
+
+Tested rather than argued. MDL authors one, and the front half works exactly as
+documented:
+
+```
+create or replace navigation Phone …           -> Navigation profile 'Phone' created.
+SHOW NAVIGATION                                -> Responsive | Phone (2 profiles)
+mx check                                       -> contains: 0 errors
+DESCRIBE NAVIGATION Phone                      -> round-trips, Kind: Phone
+```
+
+It reaches the build: the probe label planted in the Phone menu appears in
+`deployment/model/i18n/translations.properties`.
+
+The back half does not. With the two profiles made distinguishable — the Phone
+menu's first item renamed `ZZPhoneOnlyLabel` — a real `devices['iPhone 12']`
+context renders the **Responsive** menu:
+
+| context | first menu items | phone-only label present | sidebar |
+|---|---|---|---|
+| desktop | Dashboard, Cashflow, Budgets | no | 232px |
+| iPhone 12 | Dashboard, Cashflow, Budgets | **no** | **232px** |
+
+So the phone profile is authored, built, and never routed to. Two consequences:
+
+1. **Phase 35's finding stands**, and for a better-established reason than
+   before. It is not that this project forgot to define a phone profile; defining
+   one changes nothing observable. The 232px sidebar is the layout's missing
+   shrink behaviour — §142's third loss — exactly as the Atlas control showed.
+
+2. **A new one:** `mxcli syntax navigation.create` lists `Phone` and `Tablet`
+   among "Mendix's fixed **web** kinds", and creating one is silent all the way
+   through — created, built, `mx check` 0 errors, 0 warnings about it, and it
+   round-trips through `DESCRIBE`. Nothing anywhere says the web client will not
+   route to it. Mendix deprecated the phone and tablet *web* profiles in favour
+   of Responsive, which is the likely explanation, but that is inference; what is
+   measured is that an iPhone user agent gets the Responsive profile while a
+   Phone profile sits in the model doing nothing.
+
+   **Ask:** if these kinds are legacy for web, say so where they are offered.
+   A profile that creates cleanly, builds cleanly and is never used is the
+   quietest possible way to spend an afternoon — and the syntax help currently
+   reads as a positive recommendation ("the profile is CREATED if the project does
+   not have it yet").
+
+Measured on the same app, same runtime, same minute as the table above; the
+project's own model is untouched — all of this ran on a copy.
+
+### Phase 37b — where the phone profile is actually lost
+
+The natural next question about 37a: perhaps the runtime never learns it is
+talking to a phone. It does. Captured off the wire, `get_session_data` is the
+first `/xas/` call the client makes:
+
+```json
+{"action":"get_session_data","params":{
+   "offline":true,"referrer":"","deviceType":"Phone","profile":"",
+   "timezoneoffset":0,"timezoneId":"UTC","preferredLanguages":["en-US"],"version":2}}
+```
+
+`deviceType` is **correct**, and it is correct on both sides of the control:
+
+| context | `deviceType` sent | response carries Phone menu | response carries Responsive menu |
+|---|---|---|---|
+| desktop | `Desktop` | no | yes |
+| iPhone 12 | **`Phone`** | **no** | **yes** |
+
+The client classifies the device properly and says so. The runtime answers with
+the Responsive profile's navigation either way — the Phone profile's own menu
+item (`ZZPhoneOnlyLabel`, planted precisely to be unmistakable) appears in
+**neither** response.
+
+So the loss is not client detection, and not the user agent failing to reach the
+server. It is the server's profile resolution: given `deviceType: "Phone"` and a
+Phone profile present in the model, the runtime returns Responsive.
+
+One detail worth recording because it is the likely mechanism: the client sends
+`"profile":""` — empty. It names a **device type**, not a profile, and leaves the
+runtime to resolve one. On 11.14 that resolution lands on Responsive regardless,
+which is consistent with the web phone/tablet profiles being legacy rather than
+with anything this project did wrong.
+
+This does not change 37a's conclusion, it locates it. The correction is to any
+reading of 37a as "the phone UA never arrives":
+
+- the UA arrives,
+- the client turns it into `deviceType: "Phone"`,
+- the runtime receives that,
+- and still serves Responsive.
+
+Which also closes the loop on §142: with the Phone profile demonstrably inert,
+nothing about navigation explains the 232px sidebar. The Atlas control from
+Phase 35 remains the only thing that does.
+
+### Phase 37c — what the PWA docs say, and a correction to 37a
+
+37a inferred that Mendix had deprecated the phone and tablet **web** profiles.
+**That inference was wrong.** The PWA reference page says the opposite, and
+treats them as current:
+
+> "To create a full offline-first PWA, choose and add one of the following
+> profiles (depending on which form factor you need): Responsive Web Offline,
+> Phone Web Offline, or Tablet Web Offline."
+>
+> "When opening the app on a device or browser, Mendix automatically determines
+> the navigation profile based on the user agent and the browser capabilities."
+
+and documents an override — `?profile=PhoneOffline` — plus a selection table in
+which iOS loads **Phone Web Offline**.
+
+So the architecture answer is: profiles are **per form factor**, chosen at
+runtime from the user agent; `Responsive` is itself the adaptive one, so a single
+Responsive profile is a complete answer unless a form factor needs its own
+navigation. You do not have to author three.
+
+Re-tested against the documented mechanism, on the copy:
+
+| case | `deviceType` / `profile` sent | menu rendered | sidebar |
+|---|---|---|---|
+| iPhone, no override | `Phone` / `""` | Responsive | 232px |
+| iPhone, `?profile=Phone` | `Phone` / `Phone` | Responsive | 232px |
+| desktop, `?profile=Phone` | `Desktop` / `Phone` | Responsive | 232px |
+| iPhone, `?profile=PhoneOffline` | `Phone` / `PhoneOffline` | Responsive | 232px |
+
+The override **is** picked up — `profile` stops being empty and carries the
+requested name — and the answer is the Responsive menu every time. The profiles
+are not missing from the build either: the probe labels planted in each are in
+`deployment/model/` (`ZZPhoneOnlyLabel` in 2 files, `ZZOfflineOnlyLabel` in 8,
+the offline one in more, as offline bundling would predict).
+
+What *is* missing is the PWA serving layer:
+
+```
+GET /sw.js                  -> 404
+GET /manifest.webmanifest   -> 400
+```
+
+No service worker, no manifest. `mxcli run --local` serves the online client
+only, so the offline profile has no entry point to be loaded through, and the
+online client resolves to Responsive.
+
+**Corrected conclusion.** 37a's measurement stands — adding a Phone profile
+changes nothing observable *here* — but its explanation was wrong twice over:
+the kinds are not legacy, and the profile is not "sitting in the model doing
+nothing", since it is built. The accurate statement is narrower and about the
+harness, not about Mendix:
+
+> Under `mxcli run --local` on 11.14, a Phone or PhoneOffline profile is
+> authored, built and shipped into `deployment/model/`, but never served: there
+> is no service worker or manifest, and both automatic and forced profile
+> selection return Responsive.
+
+Whether a packaged deployment routes correctly is **untested here** and should
+not be inferred from this.
+
+One genuine incidental, worth its own line because it will bite anyone adding a
+PWA profile to an Atlas app: doing so makes every page reachable through it
+subject to offline capability, and Atlas' own layout fails the check —
+
+```
+[CE9269] Custom widget 'Feedback' is not offline capable and cannot be used on
+pages that are accessible through an offline-based navigation profile.
+  — at Atlas_Core / Snippet 'FeedbackWidget' / Feedback 'feedback1'
+```
+
+The build goes from 0 errors to 1 on adding the profile alone. Dropping the
+Feedback snippet from the layout returns it to 0. That is a real cost of the
+PWA route and nothing warns before you take it.
+
+And the §142 conclusion is unaffected: with no profile mechanism reaching the
+client at all, nothing about navigation explains the 232px sidebar.
+
+## Phase 38 — main `5228405d`, and PR 496 (2026-09-17)
+
+205 commits on main since the Phase 37 baseline; **nothing changed for this
+project** — 0 reference errors across 41 files, 10 warnings, and the same five
+rules firing in the same counts. MDL-WIDGET15 still fires 8 times, so Phase 36's
+false positive is unchanged.
+
+PR 496 restores a capability rather than fixing a defect here, and this project
+turns out not to exercise it — but the guard around it is worth recording,
+because it is the shape a silent drop would otherwise take.
+
+| item | result |
+|---|---|
+| main `5228405d` vs Phase 37 | identical for this project |
+| MDL-WIDGET15 false positive | still open |
+| PR 496 named datasource keys | works; **no effect on this project** |
+| PR 496 regression | clean — round trips lossless, `Total: 42 Passed: 42` |
+
+### PR 496 does nothing here, and the reason is the useful part
+
+The PR lets a pluggable widget's datasource-typed properties be addressed by
+their own schema key, so a widget with several can be given each. Measured
+against this project: the sweep is identical on both binaries (0 errors, 10
+warnings), and `DESCRIBE PAGE Ledger.Insights` is **byte-identical**.
+
+Two reasons, both worth knowing:
+
+- `vegachart` has no datasource-typed property at all. Its `chartData` is an
+  **attribute** (`chartData: StreamData`), so the chart-series work in this PR —
+  which is about Mendix's own chart widgets binding a series to its own
+  datasource — has nothing to bind here.
+- The comboboxes use the generic single-datasource spelling, which is what
+  `describe` emits and what the project's source carries:
+  `DataSource: database from Ledger.Category`.
+
+So the capability is real and this project is simply not the shape it addresses.
+
+### The capability, verified on this project's own entities
+
+Written as the named key, against `Ledger.Category`:
+
+| | `optionsSourceAssociationDataSource: database from Ledger.Category` |
+|---|---|
+| main `5228405d` | **✗ MDL-WIDGET05** — "is datasource-typed — provide it via the widget `datasource:` clause … a value written as `optionsSourceAssociationDataSource: …` is not persisted" |
+| PR 496 | `Check passed!` |
+
+and it persists rather than parsing-then-vanishing, which is the half worth
+checking given what the PR replaces: `exec` creates the page, `mx check` reports
+**0 errors**, and the value describes back (as the `DataSource:` alias, which is
+the canonical spelling for a widget with one datasource set).
+
+### The drop that is announced rather than silent
+
+Setting **two** datasources on one combobox is where this could have gone wrong,
+since #643's original defect was a silent drop. It does not:
+
+```
+⚠ page Ledger.ProbeDs2: widget `cbTwo` (combobox) property
+  `optionsSourceDatabaseDataSource` is recognized but not yet persisted by mxcli
+  — a non-default value will be dropped; set it in Studio Pro if needed
+  [MDL-WIDGET06]
+```
+
+`describe` then emits one datasource, not two — exactly as the warning said it
+would. Recorded because the observable behaviour (write two, get one back) is
+indistinguishable from the old defect *except* for the warning, and the warning
+is the whole difference. Reading it is what stopped this becoming a false
+finding.
+
+### Regression
+
+All three chart pages round-trip losslessly under PR 496 (Dashboard 2, Insights
+7, Cashflow_Overview 1, unchanged), `mx check` stays at 0 errors after three
+consecutive round trips, and the suite passes 42/42.
+
+## Phase 39 — main `064fa4c7` (2026-09-20)
+
+113 commits. One new rule **breaks this project's pre-flight check** on a page
+Mendix passes and that demonstrably works in a browser — the same class as
+finding 147, at the same severity, three rounds after 147 was fixed.
+
+| item | status |
+|---|---|
+| **151 MDL-PAGEARG01 false positive (new)** | **new — `mxcli check` exits 1** |
+| MDL-WIDGET15 false positive (Phase 36) | still open, 8 occurrences |
+| 142 parts 1 & 3 | open |
+| tests / round trips | clean, `Total: 42 Passed: 42` |
+
+### 151. MDL-PAGEARG01 does not know a DataGrid 2 supplies its own row
+
+New on this build, at **error** severity, twice in `05-pages-foundation.mdl`:
+
+```
+✗ page Ledger.Transaction_Overview: show_page Ledger.Transaction_Edit:
+  argument Tx: $currentObject cannot be stored — widget `dgNeedsReview` is not
+  inside a data view, list view or grid row, so there is no context object at
+  all, and a widget's page argument is always that object. The page would be
+  opened with no argument, which mxbuild reports as CE1571 "No argument has
+  been selected for parameter 'Tx'"                          [MDL-PAGEARG01]
+```
+
+The premise is checkable and wrong. The `onClick` is on the **DataGrid 2
+itself**, which is Mendix's row-click:
+
+```
+datagrid dgNeedsReview (
+  onClick: show_page Ledger.Transaction_Edit(Tx: $currentObject),
+```
+
+A grid's own `onClick` runs per row with the row as context. The rule walks the
+grid's *ancestry* looking for a data container and finds none, which is true and
+irrelevant — the context comes from the grid's own iteration, not from above it.
+
+Three independent contradictions of "the page would be opened with no argument":
+
+| check | verdict |
+|---|---|
+| `mx check Ledger.mpr` — Studio Pro's own checker | **contains: 0 errors**, no CE1571 |
+| the app builds and runs | yes |
+| clicking a row in the browser | opens `Transaction_Edit` **with the transaction loaded** — heading `€ 115.40`, form present, 0 page errors |
+
+**Impact is not cosmetic.** `mxcli check … --references` exits **1** with
+`11 issues: 2 errors, …` on a file that is correct, so the project's own
+pre-flight step fails and has to be told to ignore an error — which is exactly
+what finding 147 cost, and 147 was an error-severity false positive on the same
+page-argument machinery.
+
+The rule is right in concept. The genuine case is still caught: a bare
+`actionbutton` with `SHOW_PAGE Ledger.Transaction_Edit(Tx: $currentObject)` and
+no enclosing data widget errors correctly. So this is a missing case, not a
+broken rule.
+
+**Ask:** treat a DataGrid 2's (and a gallery's) own `onClick` as supplying the
+row object, the way the CE1571 fix in PR 398 learned to treat an enclosing data
+container as supplying a microflow datasource argument. The two rules are the
+same shape and this is the second time the shape has shipped without it.
+
+### Everything else is unchanged
+
+0 reference errors elsewhere, 10 warnings, the same rule mix, and the suite
+passes 42/42. MDL-WIDGET15 still fires 8 times with Phase 36's measurement
+unchanged: the parent is a flex row with a 16px gap, so the "their text
+concatenates" the message asserts still does not happen.
+
+## Phase 40 — main `4ce2098b`, and PR 615 (2026-09-22)
+
+**Finding 151 is fixed** one round after it was reported. PR 615 adds
+`--page-check`, and testing it turned up a defect in **this project** that
+every browser pass in this file has been blind to — including all of Phase 35's
+mobile work.
+
+| item | status |
+|---|---|
+| 151 MDL-PAGEARG01 false positive | **FIXED** |
+| PR 615 `--page-check` | works, and **caught something this file's method could not** |
+| **152 a redundant CDN font import (new, this app)** | **new** |
+| MDL-WIDGET15 false positive (Phase 36) | still open, 8 occurrences |
+
+Sweep back to 0 errors / 10 warnings, `Total: 42 Passed: 42`.
+
+### 151, fixed and correctly scoped
+
+`fa289ccb fix(pages): judge a list widget's own row action in the context it
+creates`. The file that failed pre-flight at exit 1 with 2 errors:
+
+```
+$ mxcli check mdlsource/05-pages-foundation.mdl -p Ledger.mpr --references
+Check passed!                                              exit code: 0
+```
+
+and the genuine case is still caught — a bare `actionbutton` carrying
+`SHOW_PAGE …(Tx: $currentObject)` with no enclosing data widget still reports
+MDL-PAGEARG01. Fixed without being muted, which is the pair that matters.
+
+### 152. The app fetches fonts from a CDN it already ships locally
+
+`--page-check` prints a verdict per page instead of a screenshot. On this
+project:
+
+```
+page /p/dashboard     title="Mendix - Dashboard"     h="Dashboard"     rows=1   text=904   console-errors=1
+page /p/cashflow      title="Mendix - Cashflow"      h="Cashflow"      rows=21  text=2202  console-errors=1
+page /p/transactions  title="Mendix - Transactions"  h="Transactions"  rows=37  text=2940  console-errors=1
+page /p/budgets       title="Mendix - Budgets"       h="Budgets"       rows=14  text=1745  console-errors=1
+```
+
+The row and text counts match what this file has measured by hand for months.
+`console-errors=1` does not: **every browser pass recorded in FINDINGS has said
+"0 page errors"**, including the Phase 35 mobile work and the Phase 39 row-click
+verification.
+
+Both are true, and the gap is the instrument. Those passes listened for
+`pageerror` — uncaught exceptions. A `console.error` is a different event, and
+nothing here ever subscribed to it. Chasing it down:
+
+```
+requestfailed: net::ERR_CERT_AUTHORITY_INVALID
+  <- https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&…
+```
+
+which is this project's own line, not Atlas' — Atlas leaves it `false`:
+
+```
+theme/web/custom-variables.scss:39
+  $font-family-import: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans…'
+```
+
+**The app renders correctly anyway**, and that is worth stating rather than
+implying a worse bug: `document.fonts.check('16px "IBM Plex Sans"')` is `true`
+and several Plex faces report `loaded`, because mxcli's theme system vendors
+them — 21 `.woff2` files under `theme/mxcli-themes/*/files/theme/web/mxcli-fonts/`.
+So the import is **redundant**: a request that fails on every page load, for
+fonts the app already has on disk.
+
+In this container it fails on the proxy's CA; air-gapped it would fail too, which
+is precisely the case the vendored fonts exist to cover. One line to delete, and
+the app is unchanged by it — I have left it alone rather than edit the app during
+a verification round.
+
+**The honest lesson is about this file's method, not the app.** Forty phases of
+browser verification used the narrower of two available signals, and a
+one-line-per-page text verdict found it immediately. `--page-check` earns its
+place here on that alone; the token argument in its commit message is the lesser
+half.
+
+### Unchanged
+
+MDL-WIDGET15 still fires 8 times, Phase 36's measurement intact: the parent is a
+flex row with a 16px gap, so the asserted concatenation still does not happen.
+
+## Phase 41 — `mxcli diag loop-report`, and what testing it turned up (2026-09-22)
+
+The report works, and is accurate for what it counts. It does **not** report
+token usage, and says so itself. Testing its one inferred claim found a blind
+spot; testing the blind spot found a worse defect one layer down.
+
+| item | status |
+|---|---|
+| `diag loop-report` call accounting | **works** — exact under a controlled increment |
+| token usage | **out of scope**, stated in the output |
+| **153 an early failure is invisible to the report (new)** | **new** |
+| **154 `check` passes, and `exec` applies, a file of zero recognised statements (new)** | **new** |
+
+### It works, and the counting is exact
+
+On this project's own logs:
+
+```
+mxcli invocations: 301   (2026-09-17T03:21:27Z .. 2026-09-22T18:24:18Z)
+Wall time in mxcli: 76.1s across the runs that closed
+
+  COMMAND                 CALLS UNCLOSED      TOTAL    MEDIAN
+  check                     250        0      56.4s      174ms
+  -c (one-shot)              40        3       5.5s      142ms
+  exec                       11        0      14.3s      506ms
+```
+
+Verified by moving it rather than reading it: 7 `check` calls took invocations
+306 → 313 and `check` 255 → 262; one `-c` took invocations 313 → 314 with
+`check` unchanged. Exact, and attributed to the right verb. `loop-report` does
+not count itself, which is what you want.
+
+**On the question asked: it does not do tokens.** Its own closing section is the
+honest answer —
+
+```
+What this cannot tell you:
+  - model calls. … This counts mxcli processes.
+  - output size. Nothing records how many bytes a command printed, which
+    is the other half of the bill.
+```
+
+So it answers "which mxcli command dominates my loop", not "what did the loop
+cost". For this project the answer is stark and useful anyway: **250 of 301
+invocations are `check`**, at a 174ms median — the sweep, run over and over.
+
+### 153. A command that fails early is not in the report at all
+
+The report infers: *"Did not close: 3 … very likely non-zero exits"*. That
+inference holds for a failure **after** the session record is written, and not
+at all for one before it:
+
+| probe | exit | invocations | unclosed |
+|---|---|---|---|
+| `-c` against a missing `.mpr` | 1 | **+1** | **+1** |
+| `check` against a missing file | 1 | **+0** | **+0** |
+| `check` on a real file | 0 | +1 | +0 |
+
+So a failing `-c` is visible as unclosed, and a failing `check` is invisible —
+not counted as an invocation, not counted as a failure. The report's `failed`
+field stayed `0` throughout while real non-zero exits happened.
+
+That matters because of what it hides. Burning calls on wrong paths and missing
+files is a *characteristic* agent failure, and it is the exact thing you would
+open this report to see. **Ask:** add it to the "what this cannot tell you"
+list, or write the record before the argument check.
+
+### 154. `check` passes a file it understood nothing of, and `exec` applies it
+
+Found while building probes for 153. A file whose content does not begin with a
+recognised keyword is parsed as **zero statements** and reported as a success:
+
+```
+$ cat bad.mdl
+this is not valid mdl at all;
+/
+
+$ mxcli check bad.mdl
+✓ Expression types OK, no unstated member drops
+
+Check passed!                    exit 0
+```
+
+It is not a lenient parser — a *malformed* statement that starts with a keyword
+is still caught (`create or modify microflow Ledger.ProbeY ( begin end;` →
+`Syntax errors found`). The failure is specific to text the grammar cannot begin
+to parse, which becomes an empty script rather than an error:
+
+| file | verdict |
+|---|---|
+| garbage, with or without `;` or `/` | `0 statements` · **Check passed!** |
+| empty file | `0 statements` · Check passed (correct) |
+| valid statement | `1 statements` · Check passed |
+| malformed statement | **Syntax errors found** |
+
+And `exec` completes the pattern:
+
+```
+$ mxcli exec bad.mdl -p Ledger.mpr
+Connected to: Ledger.mpr (Mendix 11.14.0)
+                                 exit 0 — nothing applied, nothing said
+```
+
+So a truncated file, a lost heredoc, a wrong path that resolved to the wrong
+kind of file, or a script mangled in transit passes both gates and changes
+nothing, silently. For a project whose premise is that `mdlsource/` replays,
+that is the worst available outcome: the replay reports success and the model
+does not move.
+
+**Ask:** a script that yields zero statements from non-empty input is a
+different thing from an empty script, and should say so — at minimum a warning
+naming the first unparseable line, since `0 statements` is already computed and
+already printed.

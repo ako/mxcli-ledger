@@ -8,13 +8,13 @@
 
 ```sql
 PLUGGABLEWIDGET 'com.mendix.widget.web.datagrid.Datagrid' widget1 {
-  controlbar {
+  controlbar slot1 {
     -- widgets for `filtersPlaceholder`
   }
-  custompagination {
+  custompagination slot2 {
     -- widgets for `customPagination`
   }
-  emptyplaceholder {
+  emptyplaceholder slot3 {
     -- widgets for `emptyPlaceholder`
   }
   column item1   -- one entry of `columns`

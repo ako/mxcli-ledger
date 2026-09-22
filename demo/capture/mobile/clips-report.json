@@ -1,0 +1,63 @@
+{
+ "source": "be7f7474fe8b4eb47d2b0c3f9d416e5b.webm",
+ "offset_s": 15.976,
+ "clock_scale": 1.0956,
+ "clips": [
+  {
+   "id": "01-open",
+   "from": 16.44,
+   "source_s": 7.67,
+   "frozen_s": 0,
+   "out_s": 7
+  },
+  {
+   "id": "02-cashflow",
+   "from": 39.32,
+   "source_s": 8.76,
+   "frozen_s": 0,
+   "out_s": 7.97
+  },
+  {
+   "id": "03-matrix",
+   "from": 49.31,
+   "source_s": 7.67,
+   "frozen_s": 0,
+   "out_s": 7
+  },
+  {
+   "id": "04-variance",
+   "from": 65.19,
+   "source_s": 7.12,
+   "frozen_s": 0,
+   "out_s": 6.5
+  },
+  {
+   "id": "05-drill",
+   "from": 77.56,
+   "source_s": 7.89,
+   "frozen_s": 0,
+   "out_s": 7.2
+  },
+  {
+   "id": "06-budgets",
+   "from": 100.5,
+   "source_s": 8.76,
+   "frozen_s": 0,
+   "out_s": 7.97
+  },
+  {
+   "id": "07-review",
+   "from": 124.49,
+   "source_s": 8.76,
+   "frozen_s": 0,
+   "out_s": 7.97
+  },
+  {
+   "id": "08-theme",
+   "from": 151.64,
+   "source_s": 17.15,
+   "frozen_s": 0,
+   "out_s": 14.97
+  }
+ ]
+}
