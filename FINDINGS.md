@@ -8157,3 +8157,93 @@ does not move.
 different thing from an empty script, and should say so — at minimum a warning
 naming the first unparseable line, since `0 statements` is already computed and
 already printed.
+
+## Phase 42 — PR 619: findings 153 and 154 fixed (2026-09-22)
+
+Both Phase 41 findings fixed one round later, and **153 was wider than this file
+reported** — the upstream commit says so and the measurement here confirms it.
+
+| finding | status |
+|---|---|
+| 153 loop-report misses invocations | **FIXED**, and it was worse than reported |
+| 154 `check`/`exec` accept a file of zero recognised statements | **FIXED** |
+| regression | clean — 41 source files, 10 warnings, `Total: 42 Passed: 42` |
+
+### 153, and the part this file got wrong
+
+Phase 41 reported that a command failing **early** is invisible. True, but
+incomplete. `69828484` found the hole is not about failure at all — it is that
+only 14 of 53 commands built a logged executor, and for `check`
+`newLoggedExecutor` sat inside the `if checkRefs` block. So a **successful**
+check without `-p` was never recorded either. Measured here on main, from a
+directory with no `.mpr`:
+
+```
+check on a REAL file, no -p, exit 0    ->  invocations 325 -> 325   (+0)
+```
+
+**That undermines Phase 41's own headline.** "250 of 301 invocations are
+`check`" was computed from logs that silently omitted an unknown number of runs.
+It happened to be roughly right for this project — the sweep always passes
+`-p … --references`, so those calls *were* logged, and Phase 41's increment test
+ran from the project directory where `-p` is auto-resolved — but the ratio was
+not measuring what it claimed, and I could not have known from the numbers alone.
+The lesson is the one this file keeps relearning: an instrument that silently
+omits cases reports a plausible number, and plausible is not measured.
+
+Under PR 619 every case lands:
+
+| probe | exit | invocations | unclosed |
+|---|---|---|---|
+| ok `check`, no `-p` | 0 | **+1** | +0 |
+| `check` on a missing file | 1 | **+1** | **+1** |
+| failing `-c` | 1 | +1 | +1 |
+
+and the corrected picture for this project is materially different from Phase
+41's — 442 invocations rather than 301 over the same window, with `check` at 372
+and **10 unclosed** where it previously showed 0:
+
+```
+mxcli invocations: 442   (2026-09-17T03:21:27Z .. 2026-09-22T19:22:12Z)
+  check                     372       10      92.8s      185ms
+  -c (one-shot)              42        4       5.6s      142ms
+  exec                       18        2      19.9s      410ms
+```
+
+One field still does nothing: `failed` stayed `0` throughout while real non-zero
+exits happened. Failures remain visible only as `unclosed`, which the report
+explains, but the field reads as though it were populated.
+
+### 154, fixed with the controls intact
+
+A non-empty file the parser cannot begin is now refused by **both** gates, and
+the message names the causes:
+
+```
+Error: bad.mdl produced no statements, but it is not empty.
+  The parser could not begin reading it, so there is nothing to check or apply.
+  First line that did not parse: this is not valid mdl at all;
+  A truncated file, a lost heredoc, or the wrong path looks exactly like this.
+```
+
+`check` exits 1, and `exec` exits 1 having applied nothing — where main reported
+`Check passed!` and a clean exec. The distinction Phase 41 asked for is kept:
+
+| file | main | PR 619 |
+|---|---|---|
+| garbage, non-empty | `Check passed!` · exit 0 | **refused** · exit 1 |
+| **empty file** | `0 statements` | `0 statements` · **exit 0** |
+| **comment-only file** | `0 statements` | `0 statements` · **exit 0** |
+| valid source | 21 statements | 21 statements |
+
+Empty and comment-only still pass, which is the control that matters — a
+comment-only file yields no statements legitimately.
+
+### One non-finding, checked rather than filed
+
+Sweeping `tests/*.test.mdl` as well as `mdlsource/` shows 42 reference errors per
+file, `module not found: MxTest`, **identically on both binaries**. Not a
+regression and not a defect: `mxcli test` creates the `MxTest` module at run
+time, so `check --references` is the wrong instrument for a test file. Recorded
+because the output looks alarming and the sweep in this file has only ever
+covered `mdlsource/`.
