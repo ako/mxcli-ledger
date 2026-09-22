@@ -8043,3 +8043,117 @@ half.
 
 MDL-WIDGET15 still fires 8 times, Phase 36's measurement intact: the parent is a
 flex row with a 16px gap, so the asserted concatenation still does not happen.
+
+## Phase 41 — `mxcli diag loop-report`, and what testing it turned up (2026-09-22)
+
+The report works, and is accurate for what it counts. It does **not** report
+token usage, and says so itself. Testing its one inferred claim found a blind
+spot; testing the blind spot found a worse defect one layer down.
+
+| item | status |
+|---|---|
+| `diag loop-report` call accounting | **works** — exact under a controlled increment |
+| token usage | **out of scope**, stated in the output |
+| **153 an early failure is invisible to the report (new)** | **new** |
+| **154 `check` passes, and `exec` applies, a file of zero recognised statements (new)** | **new** |
+
+### It works, and the counting is exact
+
+On this project's own logs:
+
+```
+mxcli invocations: 301   (2026-09-17T03:21:27Z .. 2026-09-22T18:24:18Z)
+Wall time in mxcli: 76.1s across the runs that closed
+
+  COMMAND                 CALLS UNCLOSED      TOTAL    MEDIAN
+  check                     250        0      56.4s      174ms
+  -c (one-shot)              40        3       5.5s      142ms
+  exec                       11        0      14.3s      506ms
+```
+
+Verified by moving it rather than reading it: 7 `check` calls took invocations
+306 → 313 and `check` 255 → 262; one `-c` took invocations 313 → 314 with
+`check` unchanged. Exact, and attributed to the right verb. `loop-report` does
+not count itself, which is what you want.
+
+**On the question asked: it does not do tokens.** Its own closing section is the
+honest answer —
+
+```
+What this cannot tell you:
+  - model calls. … This counts mxcli processes.
+  - output size. Nothing records how many bytes a command printed, which
+    is the other half of the bill.
+```
+
+So it answers "which mxcli command dominates my loop", not "what did the loop
+cost". For this project the answer is stark and useful anyway: **250 of 301
+invocations are `check`**, at a 174ms median — the sweep, run over and over.
+
+### 153. A command that fails early is not in the report at all
+
+The report infers: *"Did not close: 3 … very likely non-zero exits"*. That
+inference holds for a failure **after** the session record is written, and not
+at all for one before it:
+
+| probe | exit | invocations | unclosed |
+|---|---|---|---|
+| `-c` against a missing `.mpr` | 1 | **+1** | **+1** |
+| `check` against a missing file | 1 | **+0** | **+0** |
+| `check` on a real file | 0 | +1 | +0 |
+
+So a failing `-c` is visible as unclosed, and a failing `check` is invisible —
+not counted as an invocation, not counted as a failure. The report's `failed`
+field stayed `0` throughout while real non-zero exits happened.
+
+That matters because of what it hides. Burning calls on wrong paths and missing
+files is a *characteristic* agent failure, and it is the exact thing you would
+open this report to see. **Ask:** add it to the "what this cannot tell you"
+list, or write the record before the argument check.
+
+### 154. `check` passes a file it understood nothing of, and `exec` applies it
+
+Found while building probes for 153. A file whose content does not begin with a
+recognised keyword is parsed as **zero statements** and reported as a success:
+
+```
+$ cat bad.mdl
+this is not valid mdl at all;
+/
+
+$ mxcli check bad.mdl
+✓ Expression types OK, no unstated member drops
+
+Check passed!                    exit 0
+```
+
+It is not a lenient parser — a *malformed* statement that starts with a keyword
+is still caught (`create or modify microflow Ledger.ProbeY ( begin end;` →
+`Syntax errors found`). The failure is specific to text the grammar cannot begin
+to parse, which becomes an empty script rather than an error:
+
+| file | verdict |
+|---|---|
+| garbage, with or without `;` or `/` | `0 statements` · **Check passed!** |
+| empty file | `0 statements` · Check passed (correct) |
+| valid statement | `1 statements` · Check passed |
+| malformed statement | **Syntax errors found** |
+
+And `exec` completes the pattern:
+
+```
+$ mxcli exec bad.mdl -p Ledger.mpr
+Connected to: Ledger.mpr (Mendix 11.14.0)
+                                 exit 0 — nothing applied, nothing said
+```
+
+So a truncated file, a lost heredoc, a wrong path that resolved to the wrong
+kind of file, or a script mangled in transit passes both gates and changes
+nothing, silently. For a project whose premise is that `mdlsource/` replays,
+that is the worst available outcome: the replay reports success and the model
+does not move.
+
+**Ask:** a script that yields zero statements from non-empty input is a
+different thing from an empty script, and should say so — at minimum a warning
+naming the first unparseable line, since `0 statements` is already computed and
+already printed.
