@@ -8247,3 +8247,93 @@ regression and not a defect: `mxcli test` creates the `MxTest` module at run
 time, so `check --references` is the wrong instrument for a test file. Recorded
 because the output looks alarming and the sweep in this file has only ever
 covered `mdlsource/`.
+
+## Phase 43 — main `b13a324` (2026-09-25)
+
+203 commits. A deliberate syntax change means **this project's committed
+`mdlsource/` no longer replays** — two files fail at exit 1 with 42 errors — and
+the guard that stops it is the only thing between a replay and silently broken
+pages. Warnings rose 10 → 17 on two new rules, both true positives.
+
+| item | status |
+|---|---|
+| **`DynamicCellClass` / `DynamicClasses` now take expressions** | **this project's source is stale — 42 errors, migration needed** |
+| MDL-PERF01 commit-inside-a-loop | new, **true positive**, 7 occurrences |
+| stored model, build, tests | unaffected — `mx check` 0 errors, `Total: 42 Passed: 42` |
+| MDL-WIDGET15 false positive (Phase 36) | still open, 8 occurrences |
+
+### The property changed type, and the old spelling is now an error
+
+`713c5d7d feat(pages): write DynamicClasses and DynamicCellClass as expressions`.
+MDL-WIDGET33 fires 42 times across `11-cashflow-page.mdl` and
+`16-budgets-page.mdl`, at **error** severity:
+
+```
+✗ page Ledger.Cashflow_Overview: widget `colLabel` property `DynamicCellClass`
+  is a quoted string holding an expression — DynamicCellClass now takes the
+  expression itself, so this would store the text as a class name [MDL-WIDGET33]
+  → write the expression without the outer quotes and the doubled ones:
+    DynamicCellClass: if $currentObject/RowKind = Ledger.RowKind.Group
+                      then 'cf-group' else if … else 'cf-cat'
+```
+
+The **stored model is fine** — `mx check` reports 0 errors and the app is
+untouched — and `describe` already emits the new form, so the model and the
+current grammar agree. It is this project's *source* that is stale.
+
+**The guard is doing real work.** Both gates refuse the stale file:
+
+```
+$ mxcli check mdlsource/11-cashflow-page.mdl -p Ledger.mpr --references   exit 1
+$ mxcli exec  mdlsource/11-cashflow-page.mdl -p Ledger.mpr                exit 1
+  exec applies statements one at a time and cannot roll back, so a script
+  with a known error would leave the model partly updated.
+  Fix them, or re-run with --no-check to apply the script anyway.
+```
+
+Forced past it on a throwaway copy, the warning's claim is exactly right — the
+expression text becomes the class name, and a literal class name gains a layer
+of quotes:
+
+```
+DynamicCellClass: 'if $currentObject/RowKind = Ledger.RowKind.Group then ''cf-…'
+DynamicCellClass: '''cf-spark'''
+```
+
+and **`mx check` then reports 0 errors**. Mendix does not catch it: the page
+builds, renders, and is styled by a class named after an `if` expression. So
+without MDL-WIDGET33 this change would have reached the app as "the cashflow
+matrix lost all its colour", with every gate green — the failure mode this file
+has hit more than any other.
+
+**Consequence for this project, stated plainly:** the invariant that
+`mdlsource/` replays the app is **currently false**. 42 occurrences across two
+files need rewriting to the unquoted form before a replay works. Nothing is
+broken today because nothing has been replayed; the next replay is where it
+would bite. Left unmigrated here rather than rewriting 42 expressions during a
+verification round.
+
+### MDL-PERF01, a true positive
+
+```
+⚠ commit of $O is inside a loop, so it runs one database round trip per
+  iteration (`lint` reports this as CONV011)    at Ledger.ACT_SaveBudget
+  → Add $O to a list inside the loop and commit the list once after it
+```
+
+Checked rather than assumed — `ACT_SaveBudget` really does commit per iteration:
+
+```
+36:  loop $O in $Candidates
+54:        commit $O without events;
+57:  end loop;
+```
+
+Seven occurrences, all in seeding and save paths. The advice is correct and the
+cross-reference to `lint`'s CONV011 is the useful part: the same finding was
+already reachable, from a command nothing in this project's loop runs.
+
+### Unchanged
+
+MDL-WIDGET15 still fires 8 times with Phase 36's measurement intact, and the
+build, stored model and suite are all unaffected by this release.
