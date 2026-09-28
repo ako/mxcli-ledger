@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 13 - Budgets: cell formatting, row building, and saving
 -- ============================================================================
@@ -51,7 +52,6 @@ begin
   if $MonthIndex = 12 then change $Row (M12Text = $Text, M12IsOverride = $IsOverride); end if;
   return $Done;
 end;
-/
 
 /**
  * Resolves and formats one row's twelve monthly budgets.
@@ -86,7 +86,7 @@ begin
 
   set $Baseline = $Row/Ledger.BudgetRow_Category/BaselineBudget;
 
-  @annotation 'Every override, not just this year\'s: the match below is on the full YYYY-MM key, so a key from another year simply never matches. Constraining the retrieve would need an XPath on a computed prefix, and the table is small enough that reading it whole is cheaper than being clever.'
+  @annotation 'Every override, not just this year''s: the match below is on the full YYYY-MM key, so a key from another year simply never matches. Constraining the retrieve would need an XPath on a computed prefix, and the table is small enough that reading it whole is cheaper than being clever.'
   retrieve $Overrides from Ledger.BudgetOverride;
 
   while $M <= 12
@@ -127,7 +127,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Saves an edited budget cell, then refreshes its row.
@@ -184,7 +183,6 @@ begin
   close page;
   return $Done;
 end;
-/
 
 /**
  * Drops the override for this cell, returning it to the category baseline,
@@ -213,4 +211,3 @@ begin
   close page;
   return $Done;
 end;
-/

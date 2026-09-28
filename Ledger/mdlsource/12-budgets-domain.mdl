@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 12 - Budgets screen scaffolding
 -- ============================================================================
@@ -51,7 +52,6 @@ create or modify non-persistent entity Ledger.BudgetRow (
   M11Text: string(24), M11IsOverride: boolean default false,
   M12Text: string(24), M12IsOverride: boolean default false
 );
-/
 
 /**
  * Which year the Budgets grid is showing.
@@ -80,10 +80,8 @@ create or modify non-persistent entity Ledger.BudgetContext (
   IsFirst: boolean default false,
   IsLast: boolean default false
 );
-/
 
-grant Ledger.User on Ledger.BudgetContext (create, delete, read *, write *);
-/
+grant create, delete, read *, write * on entity Ledger.BudgetContext to Ledger.User;
 
 /**
  * The years transactions exist in, one row each.
@@ -102,10 +100,8 @@ create or modify view entity Ledger.VTransactionYear (
   from Ledger.Transaction as t
   group by datepart(YEAR, t.TxDate)
 );
-/
 
-grant Ledger.User on Ledger.VTransactionYear (read *);
-/
+grant read * on entity Ledger.VTransactionYear to Ledger.User;
 
 /**
  * The object behind the edit popup for a single budget cell.
@@ -128,7 +124,6 @@ create or modify non-persistent entity Ledger.BudgetEdit (
   /** True when a BudgetOverride already exists for this cell */
   IsOverridden: boolean default false
 );
-/
 
 /** The row's category, so an edit can write a BudgetOverride against it. */
 create or modify association Ledger.BudgetRow_Category
@@ -136,8 +131,7 @@ create or modify association Ledger.BudgetRow_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;
 
 /**
  * The grid row the edit came from.
@@ -151,8 +145,7 @@ create or modify association Ledger.BudgetEdit_Row
   to Ledger.BudgetRow
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;
 
 /** The category whose budget is being edited. */
 create or modify association Ledger.BudgetEdit_Category
@@ -160,5 +153,4 @@ create or modify association Ledger.BudgetEdit_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;

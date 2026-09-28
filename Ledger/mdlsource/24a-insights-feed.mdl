@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 24a - The scatter's data, as a published feed
 -- ============================================================================
@@ -71,10 +72,8 @@ create or modify view entity Ledger.VScatterFeed (
   where t.IsMirror = false
     and cast(g.GroupType as string) = 'Expense'
 );
-/
 
-grant Ledger.User on Ledger.VScatterFeed (read *);
-/
+grant read * on entity Ledger.VScatterFeed to Ledger.User;
 
 /**
  * The feed the scatter fetches.
@@ -101,7 +100,7 @@ grant Ledger.User on Ledger.VScatterFeed (read *);
  * anonymous request succeeds: whatever is true about access control here, it
  * was not established by testing it here.
  */
-create or modify odata service Ledger.InsightsFeed (
+create or modify published odata service Ledger.InsightsFeed (
   path: 'odata/insights/v1/',
   version: '1.0.0',
   ODataVersion: OData4,
@@ -128,7 +127,5 @@ authentication session
     AccountName as 'AccountName' (Filterable, Sortable)
   );
 };
-/
 
-grant access on odata service Ledger.InsightsFeed to Ledger.User;
-/
+grant access on published odata service Ledger.InsightsFeed to Ledger.User;

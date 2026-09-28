@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 10a - Cashflow inspector
 -- ============================================================================
@@ -63,7 +64,6 @@ begin
 
   return $Txs;
 end;
-/
 
 -- DS_DrillLines is gone. The inspector list is now an XPath-constrained
 -- database datasource over VTransactionLine (11-cashflow-page.mdl), which is
@@ -116,12 +116,12 @@ begin
 
     $Txs = call microflow Ledger.GET_DrillTransactions (Context = $Context);
     @annotation 'count() and sum() declare their own outputs — see FINDINGS 47'
-    $Count = count($Txs);
-    $Actual = sum($Txs.Amount);
+    $Count = count $Txs;
+    $Actual = sum $Txs by Amount;
 
     @annotation 'The budget comes off the same view the matrix reads, found by id rather than by walking an association to a Category'
     retrieve $Budgets from Ledger.VCategoryBudget;
-    $BRow = find($Budgets, CategoryId = $Row/CategoryIdText);
+    $BRow = find $Budgets by CategoryId = $Row/CategoryIdText;
     if $BRow != empty then
       $B = call microflow Ledger.GET_ViewBudget (B = $BRow, MonthIndex = $MonthIndex);
       set $Budget = $B;
@@ -144,4 +144,3 @@ begin
 
   return $Selected;
 end;
-/

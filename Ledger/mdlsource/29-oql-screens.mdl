@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 29 - Screens for the OQL statement work
 -- ============================================================================
@@ -32,10 +33,8 @@ create or modify non-persistent entity Ledger.ImportContext (
   /** One character, the word 'tab', or empty to detect it from the first line */
   Delimiter: string(10)
 );
-/
 
-grant Ledger.User on Ledger.ImportContext (create, delete, read *, write *);
-/
+grant create, delete, read *, write * on entity Ledger.ImportContext to Ledger.User;
 
 /** Screen state for the budget copy. */
 create or modify non-persistent entity Ledger.BudgetCopyContext (
@@ -43,10 +42,8 @@ create or modify non-persistent entity Ledger.BudgetCopyContext (
   ToYear: integer default 2027,
   Status: string(200)
 );
-/
 
-grant Ledger.User on Ledger.BudgetCopyContext (create, delete, read *, write *);
-/
+grant create, delete, read *, write * on entity Ledger.BudgetCopyContext to Ledger.User;
 
 /**
  * Recount a batch and write the counts onto the context.
@@ -80,7 +77,6 @@ begin
   commit $Context refresh;
   return $Done;
 end;
-/
 
 /**
  * The loader screen's context.
@@ -98,7 +94,6 @@ begin
     Context = $Context, Status = 'Nothing landed yet.');
   return $Context;
 end;
-/
 
 /**
  * Land a sample batch, so the screen can be used without a file upload.
@@ -152,7 +147,6 @@ begin
     Context = $Context, Status = 'Landed 6 rows. Validate them next.');
   return $Done;
 end;
-/
 
 /**
  * Land the pasted CSV text.
@@ -199,7 +193,6 @@ begin
     Context = $Context, Status = $Status);
   return $Done;
 end;
-/
 
 /**
  * Validate the landed batch.
@@ -226,7 +219,6 @@ begin
     Context = $Context, Status = $Status);
   return $Done;
 end;
-/
 
 /**
  * Promote the valid rows into Transaction.
@@ -251,7 +243,6 @@ begin
     Context = $Context, Status = $Status);
   return $Done;
 end;
-/
 
 /**
  * Throw the batch away, rejects and all.
@@ -276,7 +267,6 @@ begin
     Context = $Context, Status = 'Discarded ' + toString($Deleted) + ' row(s).');
   return $Done;
 end;
-/
 
 /**
  * The loader screen.
@@ -285,17 +275,16 @@ end;
  * the rows visible in each. The grid is the reject list after validation, which
  * is the reason for having a loader table at all.
  */
-create or replace page Ledger.Import_Overview
+create or modify page Ledger.Import_Overview folder 'Ledger'
 (
   title: 'Import',
   layout: Atlas_Core.Atlas_Default,
-  url: 'import',
-  folder: 'Ledger'
+  url: 'import'
 )
 {
   layoutgrid lgImport {
-    row rowMain {
-      column colBody (desktopwidth: 12) {
+    row {
+      column (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Import', rendermode: H2)
         dynamictext txtSub (
           content: 'Rows land here first. They are checked where they landed, and only the ones that pass are written into Transactions — each check is one statement over the whole batch.',
@@ -307,21 +296,21 @@ create or replace page Ledger.Import_Overview
             container ctnImportFigures (class: 'ledger-rules-figures') {
               dynamictext txtCounts (
                 content: '{1} row(s) landed · {2} rejected',
-                contentparams: [{1} = RowCount, {2} = InvalidCount],
+                contentparams: ({1} = RowCount, {2} = InvalidCount),
                 rendermode: H5)
               dynamictext txtStatus (attribute: Status, class: 'ledger-rules-status')
             }
             container ctnImportActions (class: 'ledger-rules-actions') {
               actionbutton btnValidate (
                 caption: 'Validate',
-                action: microflow Ledger.ACT_ImportValidate(Context: $currentObject))
+                action: call microflow Ledger.ACT_ImportValidate(Context = $currentObject))
               actionbutton btnPromote (
                 caption: 'Promote valid rows',
-                action: microflow Ledger.ACT_ImportPromote(Context: $currentObject),
+                action: call microflow Ledger.ACT_ImportPromote(Context = $currentObject),
                 buttonstyle: primary)
               actionbutton btnDiscard (
                 caption: 'Discard batch',
-                action: microflow Ledger.ACT_ImportDiscard(Context: $currentObject))
+                action: call microflow Ledger.ACT_ImportDiscard(Context = $currentObject))
             }
           }
 
@@ -354,11 +343,11 @@ create or replace page Ledger.Import_Overview
                 class: 'ledger-paste-delim')
               actionbutton btnPaste (
                 caption: 'Land pasted rows',
-                action: microflow Ledger.ACT_ImportPaste(Context: $currentObject),
+                action: call microflow Ledger.ACT_ImportPaste(Context = $currentObject),
                 buttonstyle: primary)
               actionbutton btnSample (
                 caption: 'Use a sample instead',
-                action: microflow Ledger.ACT_ImportSample(Context: $currentObject))
+                action: call microflow Ledger.ACT_ImportSample(Context = $currentObject))
             }
           }
 
@@ -371,62 +360,51 @@ create or replace page Ledger.Import_Overview
               sort by RowNo asc,
             PageSize: 25
           ) {
-            column colImpRow (
+            column (
               attribute: RowNo, caption: '#', Alignment: right,
               ColumnWidth: manual, Size: 1)
-            column colImpDate (
+            column (
               attribute: TxDateText, caption: 'Date',
               ColumnWidth: manual, Size: 2)
-            column colImpMerchant (
+            column (
               attribute: Merchant, caption: 'Merchant',
               ColumnWidth: manual, Size: 3
             ) {
               filter fltImpMerchant { textfilter ftImpMerchant (attribute: Merchant) }
             }
-            column colImpAmount (
+            column (
               attribute: Amount, caption: 'Amount', Alignment: right,
               ColumnWidth: manual, Size: 2,
               ShowContentAs: dynamicText,
               Content: '{1}',
-              ContentParams: [{1} = Amount format (decimalPrecision: 2, groupDigits: true)])
-            column colImpAccount (
+              ContentParams: ({1} = Amount format (decimalPrecision: 2, groupDigits: true)))
+            column (
               attribute: AccountName, caption: 'Account',
               ColumnWidth: manual, Size: 3)
-            column colImpCategory (
+            column (
               attribute: CategoryName, caption: 'Category',
               ColumnWidth: manual, Size: 2)
-            column colImpProblem (
+            column (
               attribute: Problem, caption: 'Problem',
               ColumnWidth: manual, Size: 4,
-              DynamicCellClass: 'if $currentObject/IsValid then '''' else ''ledger-import-bad''')
+              DynamicCellClass: if $currentObject/IsValid then '' else 'ledger-import-bad')
           }
         }
       }
     }
   }
-}
-/
+};
 
 grant view on page Ledger.Import_Overview to Ledger.User;
-/
 grant execute on microflow Ledger.DS_ImportContext to Ledger.User;
-/
 grant execute on microflow Ledger.REFRESH_ImportContext to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ImportSample to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ImportPaste to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ImportValidate to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ImportPromote to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ImportDiscard to Ledger.User;
-/
 grant execute on microflow Ledger.VALIDATE_ImportBatch to Ledger.User;
-/
 grant execute on microflow Ledger.PROMOTE_ImportBatch to Ledger.User;
-/
 
 -- ============================================================================
 -- Budgets: copy a year
@@ -447,7 +425,6 @@ begin
     Status = 'Copies every override of one year into the same months of another.');
   return $Context;
 end;
-/
 
 /**
  * Copy the overrides and report.
@@ -480,11 +457,7 @@ begin
   commit $Context refresh;
   return $Done;
 end;
-/
 
 grant execute on microflow Ledger.DS_BudgetCopyContext to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_CopyBudgets to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_CopyBudgetYear to Ledger.User;
-/

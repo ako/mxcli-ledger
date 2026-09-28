@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 10 - Cashflow actuals view
 -- ============================================================================
@@ -129,7 +130,6 @@ create or modify view entity Ledger.VMatrixActual (
   inner join t3/Ledger.Transaction_Category/Ledger.Category as c3
   inner join c3/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g3
 );
-/
 
 /**
  * Budget per category per month, with overrides resolved.
@@ -212,7 +212,6 @@ create or modify view entity Ledger.VCategoryBudget (
   left join c/Ledger.BudgetOverride_Category/Ledger.BudgetOverride as o
   group by g.SortOrder, c.SortOrder, c.Name, c.BaselineBudget, g.GroupType, c.id
 );
-/
 
 -- ============================================================================
 -- Accessors
@@ -247,7 +246,6 @@ begin
   if $MonthIndex = 12 then set $Value = $V/M12Actual; end if;
   return $Value;
 end;
-/
 
 /**
  * Budget for one month of a category, overrides already resolved.
@@ -275,7 +273,6 @@ begin
   if $MonthIndex = 12 then set $Value = $B/M12Budget; end if;
   return $Value;
 end;
-/
 
 /**
  * The last month the report can honestly speak about.
@@ -339,7 +336,6 @@ begin
 
   return $Through;
 end;
-/
 
 /**
  * Builds the report context: mode, subheading and the four headline figures.
@@ -391,7 +387,7 @@ begin
       set $IsIncome = $V/GroupTypeName = 'Income';
 
       @annotation 'Key lookup, not aggregation — MDL001 advises find() over a nested loop'
-      $KB = find($KpiBudgets, SortKey = $V/SortKey);
+      $KB = find $KpiBudgets by SortKey = $V/SortKey;
 
       if $KB != empty then
         set $M = 1;
@@ -438,7 +434,6 @@ begin
 
   return $Context;
 end;
-/
 
 /**
  * Builds every row of the cashflow matrix for the context's mode.
@@ -657,4 +652,3 @@ begin
 
   return $Rows;
 end;
-/

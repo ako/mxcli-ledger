@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 03 - Demo data: transactions
 -- ============================================================================
@@ -198,7 +199,6 @@ begin
 
   return $Created;
 end;
-/
 
 /**
  * Creates the backlog of uncategorised transactions shown as 'needs review'.
@@ -273,4 +273,3 @@ begin
 
   return $Created;
 end;
-/

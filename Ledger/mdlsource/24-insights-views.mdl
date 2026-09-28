@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 24 - Insights: the aggregate views
 -- ============================================================================
@@ -97,7 +98,6 @@ create or modify view entity Ledger.VMonthCategory (
            datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate),
            c.Name, g.Name, cast(g.GroupType as string), g.ColorHex, a.Name
 );
-/
 
 /**
  * Spend per calendar day.
@@ -129,7 +129,6 @@ create or modify view entity Ledger.VDaySpend (
   where t.IsMirror = false and cast(g.GroupType as string) = 'Expense'
   group by t.TxDate, datepart(YEAR, t.TxDate), c.Name, a.Name
 );
-/
 
 /**
  * Spend per merchant per month.
@@ -181,7 +180,6 @@ create or modify view entity Ledger.VMerchantMonth (
            datepart(YEAR, t.TxDate), datepart(MONTH, t.TxDate),
            datepart(YEAR, t.TxDate) * 100 + datepart(MONTH, t.TxDate), a.Name
 );
-/
 
 /**
  * Each category's total for the same months of this year and last, side by side.
@@ -292,4 +290,3 @@ create or modify view entity Ledger.VYoY (
                (select max(datepart(YEAR, ty.TxDate)) from Ledger.Transaction as ty))
   group by c.Name, g.Name, cast(g.GroupType as string), a.Name
 );
-/

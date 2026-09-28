@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 32 - The theme switcher, on every page
 -- ============================================================================
@@ -58,7 +59,6 @@ begin
   @position(520, 200)
   return $Skin;
 end;
-/
 
 create or modify nanoflow Ledger.ACT_SkinIng ()
 returns String
@@ -68,7 +68,6 @@ begin
   @position(520, 200)
   return $Skin;
 end;
-/
 
 create or modify nanoflow Ledger.ACT_SkinRabobank ()
 returns String
@@ -78,7 +77,6 @@ begin
   @position(520, 200)
   return $Skin;
 end;
-/
 
 /**
  * The theme bar.
@@ -87,7 +85,7 @@ end;
  * entirely in the client, so this snippet can go on any page regardless of
  * what that page's data view holds.
  */
-create or replace snippet Ledger.SNIPPET_ThemeBar
+create or modify snippet Ledger.SNIPPET_ThemeBar
 {
   container ctnThemeBar (Class: 'ledger-themebar') {
     dynamictext txtThemeLabel (
@@ -97,19 +95,18 @@ create or replace snippet Ledger.SNIPPET_ThemeBar
     )
     actionbutton btnSkinPaper (
       Caption: 'Ledger Paper',
-      Action: nanoflow Ledger.ACT_SkinLedgerPaper,
+      Action: call nanoflow Ledger.ACT_SkinLedgerPaper,
       Class: 'ledger-themebar-btn'
     )
     actionbutton btnSkinIng (
       Caption: 'ING',
-      Action: nanoflow Ledger.ACT_SkinIng,
+      Action: call nanoflow Ledger.ACT_SkinIng,
       Class: 'ledger-themebar-btn'
     )
     actionbutton btnSkinRabo (
       Caption: 'Rabobank',
-      Action: nanoflow Ledger.ACT_SkinRabobank,
+      Action: call nanoflow Ledger.ACT_SkinRabobank,
       Class: 'ledger-themebar-btn'
     )
   }
-}
-/
+};

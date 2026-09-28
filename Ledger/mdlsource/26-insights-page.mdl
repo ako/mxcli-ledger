@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 26 - Insights page
 -- ============================================================================
@@ -12,13 +13,13 @@
 -- transform, not a pipeline.
 -- ============================================================================
 
-create or replace page Ledger.Insights (
+create or modify page Ledger.Insights (
   Title: 'Insights',
   Layout: Atlas_Core.Atlas_Default
 ) {
   layoutgrid lgInsights {
-    row rowInsHead {
-      column colInsHead (desktopwidth: 12) {
+    row {
+      column (desktopwidth: 12) {
         dataview dvIns (datasource: microflow Ledger.DS_InsightsContext) {
           dynamictext txtInsHeading (content: 'Insights', rendermode: H2)
           dynamictext txtInsWindow (attribute: WindowText, rendermode: paragraph, class: 'text-muted')
@@ -30,14 +31,14 @@ create or replace page Ledger.Insights (
           -- ------------------------------------------------------------------
           container ctnFilter (class: 'card ledger-card ledger-filter') {
             layoutgrid lgFilter {
-              row rowFilter {
-                column colFrom (desktopwidth: 3) {
+              row {
+                column (desktopwidth: 3) {
                   datepicker dpFrom (label: 'From', attribute: FromDate)
                 }
-                column colTo (desktopwidth: 3) {
+                column (desktopwidth: 3) {
                   datepicker dpTo (label: 'To', attribute: ToDate)
                 }
-                column colCat (desktopwidth: 3) {
+                column (desktopwidth: 3) {
                   combobox cbCategory (
                     label: 'Category',
                     attribute: Ledger.InsightsContext_Category,
@@ -50,7 +51,7 @@ create or replace page Ledger.Insights (
                     -- all four anyway.
                     CaptionAttribute: Name)
                 }
-                column colAcc (desktopwidth: 3) {
+                column (desktopwidth: 3) {
                   combobox cbAccount (
                     label: 'Account',
                     attribute: Ledger.InsightsContext_Account,
@@ -58,16 +59,16 @@ create or replace page Ledger.Insights (
                     CaptionAttribute: Name)
                 }
               }
-              row rowFilterActions {
-                column colFilterActions (desktopwidth: 12) {
+              row {
+                column (desktopwidth: 12) {
                   container ctnFilterButtons (class: 'ledger-modes') {
                     actionbutton btnApply (
                       caption: 'Apply',
                       buttonstyle: Primary,
-                      action: microflow Ledger.ACT_ApplyInsightsFilter(Context: $currentObject))
+                      action: call microflow Ledger.ACT_ApplyInsightsFilter(Context = $currentObject))
                     actionbutton btnReset (
                       caption: 'Reset',
-                      action: microflow Ledger.ACT_ResetInsightsFilter(Context: $currentObject))
+                      action: call microflow Ledger.ACT_ResetInsightsFilter(Context = $currentObject))
                   }
                   dynamictext txtFilterState (attribute: FilterText, rendermode: paragraph, class: 'text-muted')
                 }
@@ -104,7 +105,7 @@ create or replace page Ledger.Insights (
   "layer": [
     {
       "description": "Stacked bands. Detail by category keeps each one its own band while the colour stays at group level - thirteen hues would be a colour puzzle, five is a legend you can hold in your head.",
-      "markNote": "Linear, not monotone. Monotone smooths each band on its own, so the curve fitted to a band\'s top and the curve fitted to the next band\'s bottom - the same numbers - come out as two different curves between data points, and the background shows through the gap. With thirteen thin bands stacked inside Daily living it reads as white slivers cutting through the colour. A stacked area has to be interpolated identically on both edges, and linear is the only interpolation that guarantees it.",
+      "markNote": "Linear, not monotone. Monotone smooths each band on its own, so the curve fitted to a band''s top and the curve fitted to the next band''s bottom - the same numbers - come out as two different curves between data points, and the background shows through the gap. With thirteen thin bands stacked inside Daily living it reads as white slivers cutting through the colour. A stacked area has to be interpolated identically on both edges, and linear is the only interpolation that guarantees it.",
       "mark": {"type": "area", "interpolate": "linear", "opacity": 0.85},
       "encoding": {
         "y": {"field": "v", "type": "quantitative", "aggregate": "sum", "stack": "zero",
@@ -251,7 +252,7 @@ create or replace page Ledger.Insights (
               -- and a total; which merchants made up that total is not in the
               -- payload at all, so this is the case a brush cannot answer.
               selection: SelectedPoint,
-              onClick: microflow Ledger.ACT_SelectInsightDay(Context: $currentObject),
+              onClick: call microflow Ledger.ACT_SelectInsightDay(Context = $currentObject),
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "table"},
@@ -271,7 +272,7 @@ create or replace page Ledger.Insights (
     "description": "Week-of-year across, day-of-week down. Both are timeUnits off the date itself - deriving ISO week numbers in the model would be a bug farm for no gain.",
     "mark": {"type": "rect", "cornerRadius": 1, "stroke": "#FFFFFF", "strokeWidth": 1.5},
     "encoding": {
-      "x": {"field": "d", "timeUnit": "week", "type": "ordinal", "title": null, "axis": {"labelExpr": "\'\'"}},
+      "x": {"field": "d", "timeUnit": "week", "type": "ordinal", "title": null, "axis": {"labelExpr": "''''"}},
       "y": {"field": "d", "timeUnit": "day", "type": "ordinal", "title": null,
             "axis": {"labelExpr": "datum.label[0]"}},
       "color": {"field": "v", "type": "quantitative", "aggregate": "sum", "title": "EUR",
@@ -306,7 +307,7 @@ create or replace page Ledger.Insights (
             }
             actionbutton btnClearDay (
               caption: 'Clear',
-              action: microflow Ledger.ACT_ClearInsightDay(Context: $currentObject))
+              action: call microflow Ledger.ACT_ClearInsightDay(Context = $currentObject))
             pluggablewidget 'ledger.widget.web.vegachart.VegaChart' chartDayDetail (
               chartData: DetailData,
               datasetName: 'table',
@@ -441,7 +442,7 @@ create or replace page Ledger.Insights (
   "transform": [
     {
       "description": "Favourable is direction-dependent: more income is good, more spend is not. Savings transfer is neither - it is booked as an expense because the money leaves the current account, but putting more aside is not a cost that grew, so it is left grey rather than being called a loss.",
-      "calculate": "datum.cat === \'Savings transfer\' ? \'neutral\' : (datum.kind === \'Income\' ? (datum.delta >= 0 ? \'better\' : \'worse\') : (datum.delta <= 0 ? \'better\' : \'worse\'))",
+      "calculate": "datum.cat === ''Savings transfer'' ? ''neutral'' : (datum.kind === ''Income'' ? (datum.delta >= 0 ? ''better'' : ''worse'') : (datum.delta <= 0 ? ''better'' : ''worse''))",
       "as": "direction"
     }
   ],
@@ -582,8 +583,6 @@ create or replace page Ledger.Insights (
       }
     }
   }
-}
-/
+};
 
 grant view on page Ledger.Insights to Ledger.User;
-/

@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 08 - Cashflow datasources
 -- ============================================================================
@@ -33,7 +34,6 @@ begin
   end if;
   return $Through;
 end;
-/
 
 
 -- DS_CashflowRows now lives in 10-cashflow-view.mdl, rewritten on top of the
@@ -56,7 +56,6 @@ begin
     refresh;
   return $Done;
 end;
-/
 
 /**
  * Switches the report to Budget and refreshes the matrix.
@@ -75,7 +74,6 @@ begin
     refresh;
   return $Done;
 end;
-/
 
 /**
  * Switches the report to Variance and refreshes the matrix.
@@ -94,7 +92,6 @@ begin
     refresh;
   return $Done;
 end;
-/
 
 -- DS_ReportContext moved to 10-cashflow-view.mdl: it now reads VMatrixActual
 -- and VCategoryBudget instead of aggregating per cell, so it has to be defined

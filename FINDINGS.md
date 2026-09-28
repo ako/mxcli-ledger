@@ -8531,3 +8531,192 @@ why Phase 44's suite figure could not have been real: the command never ran.
 Under `mdl 0` the **app** is unchanged and provably so; the **source** still
 fails on four files for non-dialect reasons; and the **test command** is
 separately broken by an after-startup microflow.
+
+## Phase 46 — the source moves to `mdl 1` (2026-09-28)
+
+Asked to upgrade rather than to verify, so this phase **changes the app**. All 41
+files under `Ledger/mdlsource/` now begin `mdl 1;`. Phase 44's four-step plan was
+executed in full, step 4 included.
+
+| | before | after |
+|---|---|---|
+| warnings across the 41 files | 711 | **149** |
+| files the conformance gate rejects | 4 | **0** |
+| `mx check` | 0 errors | **0 errors** |
+| unit tests | 59 / 59 | **59 / 59** |
+| source diff | | 41 files, **+440 / −622** |
+
+### The four steps, and what each cost
+
+1. **`mxcli fmt --upgrade`** — 334 `MDL-DEPR*` sites, 23 files. Mechanical.
+2. **`date` → `DateTime`** — 2 sites in `01-domain-model.mdl`, the silent
+   substitution Phase 44's gate surfaced.
+3. **MDL-WIDGET33** — 42 `DynamicCellClass` / `DynamicClasses` quoted strings
+   rewritten as expressions, across three page files.
+4. **`mxcli fmt --upgrade --header`** — 242 `MDL-V1-*` sites, 41 files.
+
+Step 4 was the one Phase 44 called optional and expected to be expensive: 24
+`retrieve … limit 1` sites whose *meaning* changes under `mdl 1`. It turned out
+to be nearly free, because `--header` rewrites them itself — `limit 1` → `first`
+— rather than leaving them to be found by hand.
+
+### `--header` refuses per file, and names the line
+
+It declined exactly one file of 41, and said why:
+
+```
+15-budgets-builder.mdl: cannot add the `mdl 1;` header: 2 construct(s) would
+change meaning under it and have no mechanical rewrite, so the script is left at mdl 0:
+  line 62: MDL-V1-LIST: the operand is not a variable (a nested call or an
+           expression), and one activity takes a variable
+  line 63: MDL-V1-LIST: …
+```
+
+It wrote nothing to that file and upgraded the other 40. That is the right
+shape: a migration tool that stops at the file it cannot prove, naming the line,
+rather than one that half-writes or guesses. Two hand edits closed it —
+`$MinYear = min($Years.Yr);` → `$MinYear = minimum $Years by Yr;` — and the
+rebuilt flow is byte-identical to the one before it (`describe` diff empty).
+
+### Every one of the 149 remaining warnings is accounted for
+
+| rule | before | after | why |
+|---|---|---|---|
+| `MDL-DEPR*` (18 rules) | 334 | **0** | step 1 |
+| `MDL-V1-*` (5 rules) | 242 | **0** | step 4 |
+| MDL-WIDGET33 | 42 | **0** | step 3 |
+| MDL-WIDGET07 | 58 | 58 | unchanged — pluggable chart properties |
+| MDL067 | 14 | 14 | unchanged |
+| MDL-WIDGET15 | 8 | 8 | unchanged — the known false positive |
+| MDL-PERF01 | 7 | 7 | unchanged |
+| MDL001 | 3 | 3 | unchanged |
+| MDL-ENUMDOC01 | 3 | **18** | `01-domain-model.mdl` now parses, so its 15 are reported for the first time |
+| MDL-LANG01 | 0 | **41** | *"mdl 1 is a preview"* — one banner per file |
+
+The ENUMDOC01 rise is the interesting one: it is not new breakage but the gate
+finally being able to read a file it used to reject.
+
+### The app is unchanged, measured three ways
+
+Against a pristine baseline copy booted from the same binary:
+
+| page | baseline | `mdl 1` |
+|---|---|---|
+| /p/dashboard | rows=1 text=904 | rows=1 text=904 |
+| /p/cashflow | rows=21 text=2290 | rows=21 text=2290 |
+| /p/budgets | rows=14 text=1745 | rows=14 text=1745 |
+| /p/transactions | rows=37 text=2968 | rows=37 text=2968 |
+
+Second, the cashflow cell classes — the thing MDL-WIDGET33 was *about*. 228
+cells, 15 distinct class strings, and the **distribution is identical**:
+
+```
+td align-column-right cf-cell            72     under-1 22   over-1 32
+td align-column-right cf-cell under-2    24     under-2 25   over-2 26
+td align-column-right cf-cell over-1     32     under-3 15   over-3  3
+…                                               under-4  8   over-4  2
+                                                under-5  6   over-5 10
+```
+
+Worth recording how nearly this was mis-read: a first probe aggregated on
+`/cf-[a-z0-9-]+/` and reported *"only `cf-cell`, no band classes"*. The band
+classes are spelled `under-2`, `over-1` — the regex never could have matched
+them. The colouring was right the whole time and the instrument was wrong.
+
+Third, Insights, which has no direct URL and so cannot be page-checked: reached
+through the menu it draws **7 Vega embeds, 2648 marks**.
+
+And the suite, run on both sides with `AfterStartupMicroflow` cleared per
+finding 155: **59 / 59 before, 59 / 59 after**. (The `.test.mdl` files are still
+`mdl 0` — finding 156 is why they could not come along.)
+
+### The migration is two-stage, and the middle stage is not optional
+
+Replaying the `mdl 1` set onto a model built by the *pre-migration* scripts
+fails four files with splice refusals. Replaying it onto a model built by the
+**steps 1–3** scripts fails one. So the recipe is: apply steps 1–3, execute,
+then add the header and execute again — not both at once.
+
+### 156. `mxcli fmt --upgrade` cannot read a test file that `mxcli check` accepts
+
+Same file, two parsers, opposite verdicts:
+
+```
+mxcli check tests/csv-import.test.mdl    →  ✓ Syntax OK (42 statements)
+mxcli fmt --upgrade tests/csv-import.test.mdl
+    →  Error: line 44:0 no viable alternative at input
+       '/**\n * @test Comma is the default when nothing else is more frequent
+        \n * @expect $row/Amount = 61.20\n */$n'
+```
+
+`fmt` does not know the `@test` / `@expect` doc-comment form that `check` reads
+and the runner executes. It costs nothing here — the test files carry only
+`MDL-V1-*`, no deprecations — but it means **the migration tool cannot reach the
+test suite at all**, so a project whose tests do use a deprecated spelling has
+no mechanical path for them.
+
+### 157. `--header` declines over `min(` when `minimum(` is the spelling it already writes
+
+The two constructs that blocked `15-budgets-builder.mdl` were
+`min($Years.Yr)` / `max($Years.Yr)`. Under `mdl 1`:
+
+```
+$R = min($Years.Yr);        →  Syntax errors found
+$R = minimum($Years.Yr);    →  ✓ Syntax OK (1 statements)
+```
+
+`minimum(…)` is a first-class Aggregate-list statement in the grammar, and it is
+*what `mxcli describe` emits for that activity* — feed it `min(`, and the model
+round-trips as `minimum(`. So the rewrite `min(` → `minimum(` is one token, is
+provably meaning-preserving, and mxcli performs it internally already. The
+deprecation registry does not have it, so `--header` reports "no mechanical
+rewrite" and stops. This is the whole distance between 40 of 41 files and 41.
+
+### 158. The `mdl 1;` header alone makes `create or modify microflow` refuse a splice it would rebuild identically
+
+The sharpest one. Two files, **byte-identical except for the first line**:
+
+```
+$ mxcli exec mf-n.mdl -p Ledger.mpr      # no header
+OK
+
+$ mxcli exec mf-h.mdl -p Ledger.mpr      # mdl 1;
+Error: create or modify microflow Ledger.ACT_ApplyInsightsFilter: this change
+cannot be spliced into the stored flow: the Retrieve dropped at (680, 595)
+carries an annotation, which would be left behind unattached. Nothing was
+written…
+```
+
+Nothing is dropped. Build the flow from scratch from each variant and `describe`
+both — the outputs are **identical**, 8 annotations and 5 retrieves either way,
+and both differ from the stored flow only by the doc comment the extract left
+behind. The splice path reaches a different conclusion about the same model from
+the same bytes, on the strength of a language-version line, and refuses.
+
+This is what costs the migration its four files on a pre-migration model, and it
+is why the two-stage recipe above exists. The refusal is safe — *"Nothing was
+written"* is true, and the model is left intact — but it is a refusal with no
+underlying difference to justify it.
+
+### 159. `mxcli diff` reports "unchanged" for the change `exec` then refuses
+
+Same pair of files, same project, in the same minute:
+
+```
+$ mxcli diff mf-n.mdl -p Ledger.mpr   →  Summary: 0 new, 0 modified, 1 unchanged
+$ mxcli diff mf-h.mdl -p Ledger.mpr   →  Summary: 0 new, 0 modified, 1 unchanged
+$ mxcli exec mf-h.mdl -p Ledger.mpr   →  Error: cannot be spliced…
+```
+
+`diff` is the command you would reach for to find out *whether* a script has
+anything to apply, and here it says no for a script that then fails to apply.
+Both readings cannot be right. Taken with 158 this is a third pair of
+disagreeing parsers in one phase — `check` vs `fmt` (156), and now `diff` vs
+`exec` — which suggests the dialect gate is not applied uniformly across the
+command set.
+
+### Answer, in one line
+
+The source is on `mdl 1`, the gate is clean for the first time, the app is
+unchanged on every measurement available, and the four defects the upgrade
+surfaced are all in the tooling rather than the app.

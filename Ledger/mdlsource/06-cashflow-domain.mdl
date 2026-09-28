@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 06 - Cashflow report scaffolding (non-persistent)
 -- ============================================================================
@@ -26,7 +27,6 @@ create or modify enumeration Ledger.RowKind (
   /** The net cashflow line */
   Net 'Net'
 );
-/
 
 /**
  * One row of the cashflow matrix.
@@ -88,7 +88,6 @@ create or modify non-persistent entity Ledger.CashflowRow (
    */
   SparkData: string
 );
-/
 
 /**
  * Screen state for the cashflow report: which mode is showing, plus the
@@ -126,7 +125,6 @@ create or modify non-persistent entity Ledger.ReportContext (
    */
   DrillCategoryId: string(200)
 );
-/
 
 -- DrillLine is gone: it held a preformatted copy of a Transaction for the old
 -- sunburst drilldown list. The cashflow inspector formats its own lines
@@ -147,5 +145,4 @@ create or modify association Ledger.CashflowRow_Context
   to Ledger.ReportContext
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;

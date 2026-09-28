@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 01 - Domain model
 -- ============================================================================
@@ -21,7 +22,6 @@ create or modify enumeration Ledger.AccountType (
   /** Credit card */
   Credit 'Credit'
 );
-/
 
 /**
  * Whether a category group counts as money in or money out.
@@ -33,7 +33,6 @@ create or modify enumeration Ledger.GroupType (
   /** Money out */
   Expense 'Expense'
 );
-/
 
 /** Which number the cashflow matrix shows in each cell. */
 create or modify enumeration Ledger.ReportMode (
@@ -44,7 +43,6 @@ create or modify enumeration Ledger.ReportMode (
   /** Budget minus actual, sign-corrected per group type */
   Variance 'Variance'
 );
-/
 
 /** Transaction field a categorisation rule inspects. */
 create or modify enumeration Ledger.RuleField (
@@ -55,7 +53,6 @@ create or modify enumeration Ledger.RuleField (
   /** Transaction amount */
   Amount 'Amount'
 );
-/
 
 /**
  * How a rule compares its value against the field.
@@ -71,7 +68,6 @@ create or modify enumeration Ledger.RuleOperator (
   /** Field equals the value exactly */
   Equals 'equals'
 );
-/
 
 -- MARK: Reference data
 
@@ -82,7 +78,7 @@ create or modify enumeration Ledger.RuleOperator (
 @position(100, 100)
 create or modify persistent entity Ledger.Account (
   /** Display name, e.g. 'ING Betaalrekening' */
-  Name: string(100) not null error 'Account name is required',
+  Name: string(100) not null error message 'Account name is required',
   /** IBAN, or a masked card number for credit accounts */
   IBAN: string(50),
   /** Checking / Savings / Credit */
@@ -92,11 +88,10 @@ create or modify persistent entity Ledger.Account (
   /** Change over the current month, shown on the account card */
   MonthDelta: decimal default 0,
   /** Date of the most recent successful import */
-  LastImport: date,
+  LastImport: DateTime,
   /** Display order on the Accounts screen */
   SortOrder: integer default 0
 );
-/
 
 /**
  * Top level of the two-level taxonomy, e.g. Housing, Daily living.
@@ -105,7 +100,7 @@ create or modify persistent entity Ledger.Account (
 @position(100, 320)
 create or modify persistent entity Ledger.CategoryGroup (
   /** Display name */
-  Name: string(50) not null error 'Group name is required',
+  Name: string(50) not null error message 'Group name is required',
   /** Income or Expense */
   GroupType: enumeration(Ledger.GroupType) not null,
   /** Accent colour, e.g. '#1B4D4B' */
@@ -113,7 +108,6 @@ create or modify persistent entity Ledger.CategoryGroup (
   /** Display order */
   SortOrder: integer default 0
 );
-/
 
 /**
  * Second level of the taxonomy. BaselineBudget is the default monthly amount;
@@ -122,13 +116,12 @@ create or modify persistent entity Ledger.CategoryGroup (
 @position(380, 320)
 create or modify persistent entity Ledger.Category (
   /** Display name */
-  Name: string(100) not null error 'Category name is required',
+  Name: string(100) not null error message 'Category name is required',
   /** Default monthly budget, used when no override exists */
   BaselineBudget: decimal default 0,
   /** Display order within the group */
   SortOrder: integer default 0
 );
-/
 
 /**
  * Per-category, per-month budget that replaces the category baseline.
@@ -140,11 +133,10 @@ create or modify persistent entity Ledger.Category (
 @position(660, 320)
 create or modify persistent entity Ledger.BudgetOverride (
   /** Month this override applies to, format YYYY-MM */
-  MonthKey: string(7) not null error 'Month is required',
+  MonthKey: string(7) not null error message 'Month is required',
   /** Budget amount for this category in this month */
   Amount: decimal default 0
 );
-/
 
 /**
  * A known counterparty belonging to a category, e.g. 'Albert Heijn' under
@@ -158,11 +150,10 @@ create or modify persistent entity Ledger.BudgetOverride (
 @position(940, 320)
 create or modify persistent entity Ledger.Merchant (
   /** Counterparty name as it appears on statements */
-  Name: string(200) not null error 'Merchant name is required',
+  Name: string(200) not null error message 'Merchant name is required',
   /** Display / pick order within the category */
   SortOrder: integer default 0
 );
-/
 
 -- MARK: Transactions
 
@@ -185,7 +176,7 @@ create or modify persistent entity Ledger.Merchant (
 @position(380, 100)
 create or modify persistent entity Ledger.Transaction (
   /** Booking date */
-  TxDate: date not null error 'Transaction date is required',
+  TxDate: DateTime not null error message 'Transaction date is required',
   /** Counterparty name as it appeared on the statement */
   Merchant: string(200) not null,
   /** Payment reference / description */
@@ -198,7 +189,6 @@ create or modify persistent entity Ledger.Transaction (
   IsMirror: boolean default false
 )
 index (TxDate);
-/
 
 -- MARK: Rules and import
 
@@ -230,7 +220,6 @@ create or modify persistent entity Ledger.CategoryRule (
   /** Running count of transactions this rule has categorised */
   MatchCount: integer default 0
 );
-/
 
 /** One CSV import run against one account. */
 @position(940, 100)
@@ -244,7 +233,6 @@ create or modify persistent entity Ledger.ImportBatch (
   /** Rows skipped as duplicates */
   DupeCount: integer default 0
 );
-/
 
 -- MARK: Associations
 --
@@ -260,8 +248,7 @@ create or modify association Ledger.Category_CategoryGroup
   to Ledger.CategoryGroup
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;
 
 /** An override belongs to one category. */
 create or modify association Ledger.BudgetOverride_Category
@@ -269,8 +256,7 @@ create or modify association Ledger.BudgetOverride_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;
 
 /** Each known merchant belongs to one category. */
 create or modify association Ledger.Merchant_Category
@@ -278,8 +264,7 @@ create or modify association Ledger.Merchant_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;
 
 /** Every transaction sits on exactly one account. */
 create or modify association Ledger.Transaction_Account
@@ -287,8 +272,7 @@ create or modify association Ledger.Transaction_Account
   to Ledger.Account
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;
 
 /** A transaction may be uncategorised — an empty reference means 'needs review'. */
 create or modify association Ledger.Transaction_Category
@@ -296,8 +280,7 @@ create or modify association Ledger.Transaction_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;
 
 /** A rule assigns one category. */
 create or modify association Ledger.CategoryRule_Category
@@ -305,8 +288,7 @@ create or modify association Ledger.CategoryRule_Category
   to Ledger.Category
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;
 
 /** An import batch targets one account. */
 create or modify association Ledger.ImportBatch_Account
@@ -314,5 +296,4 @@ create or modify association Ledger.ImportBatch_Account
   to Ledger.Account
   type reference
   owner default
-  delete_behavior CASCADE;
-/
+  on delete cascade;

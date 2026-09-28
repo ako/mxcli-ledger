@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 17 - Rules engine
 -- ============================================================================
@@ -36,8 +37,7 @@ create or modify association Ledger.Transaction_CategoryRule
   to Ledger.CategoryRule
   type reference
   owner default
-  delete_behavior DELETE_BUT_KEEP_REFERENCES;
-/
+  on delete set null;
 
 /**
  * Screen state for the rules panel: what is waiting, and what the last action
@@ -51,7 +51,6 @@ create or modify non-persistent entity Ledger.RulesContext (
   /** Outcome of the last run, empty before the first one */
   StatusText: string(200)
 );
-/
 
 /**
  * Does this rule match this transaction?
@@ -132,7 +131,6 @@ begin
 
   return $Match;
 end;
-/
 
 /**
  * Recomputes every rule's MatchCount from the transactions it categorised.
@@ -152,14 +150,13 @@ begin
   loop $R in $Rules
   begin
     retrieve $Hits from Ledger.Transaction where Ledger.Transaction_CategoryRule = $R;
-    $N = count($Hits);
+    $N = count $Hits;
     change $R (MatchCount = $N);
     commit $R;
   end loop;
 
   return $Done;
 end;
-/
 
 /**
  * How many of the transactions awaiting review the current rules would catch.
@@ -199,7 +196,6 @@ begin
 
   return $Would;
 end;
-/
 
 /**
  * Screen state for the rules panel.
@@ -215,7 +211,7 @@ begin
 
   retrieve $Pending from Ledger.Transaction
     where [not(Ledger.Transaction_Category/Ledger.Category)];
-  $Waiting = count($Pending);
+  $Waiting = count $Pending;
 
   $Would = call microflow Ledger.CALC_RulePreview ();
 
@@ -234,7 +230,6 @@ begin
 
   return $Context;
 end;
-/
 
 /**
  * Refreshes the panel's figures in place.
@@ -260,7 +255,7 @@ begin
 
   retrieve $Pending from Ledger.Transaction
     where [not(Ledger.Transaction_Category/Ledger.Category)];
-  $Waiting = count($Pending);
+  $Waiting = count $Pending;
 
   $Would = call microflow Ledger.CALC_RulePreview ();
 
@@ -280,7 +275,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Runs the rules over every transaction that has no category.
@@ -341,7 +335,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Undoes every categorisation the rules made, leaving hand-assigned ones alone.
@@ -384,7 +377,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Moves a rule one place earlier, swapping SortOrder with its neighbour.
@@ -408,7 +400,7 @@ begin
   retrieve $Above from Ledger.CategoryRule
     where SortOrder < $Mine
     sort by SortOrder desc
-    limit 1;
+    first;
 
   if $Above != empty then
     change $Rule (SortOrder = $Above/SortOrder);
@@ -421,7 +413,6 @@ begin
 
   return $Moved;
 end;
-/
 
 /**
  * Moves a rule one place later, swapping SortOrder with its neighbour.
@@ -441,7 +432,7 @@ begin
   retrieve $Below from Ledger.CategoryRule
     where SortOrder > $Mine
     sort by SortOrder asc
-    limit 1;
+    first;
 
   if $Below != empty then
     change $Rule (SortOrder = $Below/SortOrder);
@@ -454,7 +445,6 @@ begin
 
   return $Moved;
 end;
-/
 
 /**
  * Creates a rule at the end of the list and opens it for editing.
@@ -470,7 +460,7 @@ folder 'Rules'
 begin
   declare $Next integer = 1;
 
-  retrieve $Last from Ledger.CategoryRule sort by SortOrder desc limit 1;
+  retrieve $Last from Ledger.CategoryRule sort by SortOrder desc first;
   if $Last != empty then
     set $Next = $Last/SortOrder + 1;
   end if;
@@ -484,4 +474,3 @@ begin
 
   return $Rule;
 end;
-/

@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 33 - The app's own layout, so the theme selector can sit in the topbar
 -- ============================================================================
@@ -102,7 +103,6 @@ as $$
 	}
 	return Promise.resolve(collapsed);
 $$;
-/
 
 create or modify nanoflow Ledger.ACT_ToggleSidebar ()
 returns Boolean
@@ -112,7 +112,6 @@ begin
   @position(520, 200)
   return $Open;
 end;
-/
 
 /**
  * Ledger's layout: Atlas_Default, copied, with the theme bar in the topbar.
@@ -122,7 +121,7 @@ end;
  * project's own SCSS both key off `layout-atlas`, so renaming it would silently
  * unstyle the whole app.
  */
-create or replace layout Ledger.App_Default (
+create or modify layout Ledger.App_Default (
   layouttype: 'Responsive',
   class: 'layout-atlas layout-atlas-responsive-default'
 ) {
@@ -131,15 +130,15 @@ create or replace layout Ledger.App_Default (
       snippetcall snippetCall1 (Snippet: Atlas_Core.FeedbackWidget)
       container container1 (
         Class: 'topbar-content',
-        DesignProperties: ['Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center']
+        DesignProperties: ('Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center')
       ) {
         actionbutton btnSidebarToggle (
           Caption: '',
-          Action: nanoflow Ledger.ACT_ToggleSidebar,
+          Action: call nanoflow Ledger.ACT_ToggleSidebar,
           Class: 'ledger-sidebar-toggle'
         )
         container container2 (
-          DesignProperties: ['Flex container': 'Horizontal (row)', 'Align items X': 'Space between (only for horizontal containers)', 'Disable row wrap': on, 'Align items Y': 'Center', 'Grow / shrink (self)': '1 (auto)']
+          DesignProperties: ('Flex container': 'Horizontal (row)', 'Align items X': 'Space between (only for horizontal containers)', 'Disable row wrap': on, 'Align items Y': 'Center', 'Grow / shrink (self)': '1 (auto)')
         ) {
           -- Atlas' brand image is NOT in this copy, and it is the second thing
           -- the describe does not carry. Unlike the sidebar toggle, this one is
@@ -156,7 +155,7 @@ create or replace layout Ledger.App_Default (
           -- slot empty is not a design decision, it is an unfinished one.
           container ctnBrand (
             Class: 'navbar-brand',
-            DesignProperties: ['Grow / shrink (self)': 'Hug content (only shrink)']
+            DesignProperties: ('Grow / shrink (self)': 'Hug content (only shrink)')
           ) {
             dynamictext txtWordmark (
               Content: 'Ledger',
@@ -165,7 +164,7 @@ create or replace layout Ledger.App_Default (
             )
           }
           container ctnTopbarControls (
-            DesignProperties: ['Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center']
+            DesignProperties: ('Flex container': 'Horizontal (row)', 'Disable row wrap': on, 'Align items Y': 'Center')
           ) {
             snippetcall scThemeBar (Snippet: Ledger.SNIPPET_ThemeBar)
             snippetcall snippetCall2 (Snippet: Atlas_Core.LanguageSelectorWidget)
@@ -180,8 +179,7 @@ create or replace layout Ledger.App_Default (
       placeholder Main
     }
   }
-}
-/
+};
 
 -- Every page moves at once. The MAP clause is unnecessary here because the
 -- placeholder is called Main in both, which is the only reason this is a
@@ -195,4 +193,3 @@ create or replace layout Ledger.App_Default (
 -- about, traded for a repoint that is idempotent and costs one line.
 alter pages in Ledger set layout = Ledger.App_Default
   where layout = Atlas_Core.Atlas_Default;
-/
