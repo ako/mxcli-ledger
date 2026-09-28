@@ -8337,3 +8337,102 @@ already reachable, from a command nothing in this project's loop runs.
 
 MDL-WIDGET15 still fires 8 times with Phase 36's measurement intact, and the
 build, stored model and suite are all unaffected by this release.
+
+## Phase 44 — main `ddeb6c85`: MDL becomes a versioned language (2026-09-28)
+
+350 commits, **1880 files, +69,548 / −12,020**. MDL now has *dialects* — `mdl 0`
+(implicit, today), `mdl 1`, `mdl 2` — with a deprecation registry behind them and
+a conformance gate over the docs, skills and examples. This project is a large
+real corpus of `mdl 0`, so the measurement is what such a corpus costs to move.
+
+| item | before | after |
+|---|---|---|
+| warnings across 41 source files | 17 | **596** |
+| files rejected | 2 | **4** |
+| after `mxcli fmt --upgrade` | — | **262 warnings**, still 4 rejected |
+
+Stored model, build and suite are untouched: `mx check` 0 errors,
+`Total: 42 Passed: 42`.
+
+### What the dialects mean
+
+Each deprecation names its replacement and its deadline — *"Refused from
+`mdl 2`"*:
+
+| rule | old | canonical |
+|---|---|---|
+| MDL-DEPR001 | `create or replace …` | `create or modify …` |
+| MDL-DEPR005 | `row row1 { … }` / `column Name (…)` | `row { … }` / `column (…)` |
+| MDL-DEPR007 | `show page M.P(Param: expr)` | `show page M.P(Param = expr)` |
+| MDL-DEPR020 | `show_page`, `microflow M.F` | `show page`, `call microflow M.F` |
+
+and the `MDL-V1-*` family is a different thing again — not deprecation but a
+**meaning change** you opt into with `mdl 1;`:
+
+- `MDL-V1-SLASH` (192): `/` as a terminator is accepted under `mdl 0`, an error under `mdl 1`.
+- `MDL-V1-SEMI` (15): a statement without `;` likewise.
+- `MDL-V1-LIMIT1` (24): **the one that matters.** `retrieve … limit 1` binds a
+  *single object* under `mdl 0` and *a list of one* under `mdl 1`. Opting into
+  the dialect without rewriting these to `first` silently changes what 24 sites
+  mean — and the message says so, naming the CE0100/CE0097 a loop or `count()`
+  over the changed binding would then raise.
+
+### `mxcli fmt --upgrade` does the mechanical half, and is neutral
+
+It exists, it is the migration path, and it works: **596 → 262 warnings** across
+**23 files rewritten**, clearing every DEPR rule. What it leaves is exactly what
+it documents leaving — *"a deprecated use that has no mechanical rewrite is
+reported on stderr and left in place"*.
+
+Neutrality is the property worth testing rather than assuming, so: replay an
+upgraded file and diff the model. Four lines move, and **neither is the
+upgrade's doing**:
+
+```
+-  Layout: Ledger.App_Default,          +  Layout: Atlas_Core.Atlas_Default,
+-  column (DesktopWidth: AutoFill) {    +  column (DesktopWidth: 12) {
+```
+
+- the **layout** reverts because `33-layout.mdl` repoints pages and runs *after*
+  `05`; replaying one file out of its sequence is expected to do this, and this
+  project's own `33-layout.mdl` says so.
+- the **width** is my source's own `desktopwidth: 12` overwriting a model a later
+  file had set to `AutoFill` — same cause.
+
+The only change `--upgrade` made to those columns was dropping the name
+(`column colBody (…)` → `column (…)`), and the describe shows the model
+**unnamed both before and after**, which is DEPR005's claim — Mendix stores no
+name there — confirmed rather than taken on trust.
+
+### A real defect in this project's domain model, surfaced by the gate
+
+`01-domain-model.mdl` is now **rejected**, and for a good reason:
+
+```
+line 95:14: type `date` is not supported — Mendix has no date-only type;
+            mxcli silently stored it as DateTime.  Write `DateTime` instead.
+```
+
+Two attributes have been declared `date` since the beginning and silently stored
+as `DateTime`. Nothing ever said so. It is benign — `DateTime` is what the app
+wants — but it is exactly the class of silent substitution this file exists to
+catch, and it took a conformance gate to surface it. `--upgrade` reports it on
+stderr and leaves it, correctly: changing a stored type is not a mechanical
+rewrite.
+
+### Where this project stands
+
+The other three rejections are Phase 43's MDL-WIDGET33 (`DynamicCellClass`
+expressions), unchanged and still without a mechanical rewrite. So the migration
+for this project is:
+
+1. `mxcli fmt --upgrade` — mechanical, verified neutral, 23 files.
+2. `date` → `DateTime`, 2 sites in `01-domain-model.mdl`.
+3. MDL-WIDGET33, 42 sites across three page files.
+4. *Optionally* `mdl 1;`, which requires rewriting 24 `limit 1` sites to `first`
+   first, or their meaning changes.
+
+Steps 1–3 restore the replay invariant Phase 43 recorded as broken. Step 4 is a
+choice, not a deadline — `mdl 2` is where the deprecations become errors. None of
+it is applied here: this was a verification round, and a 23-file rewrite plus a
+type change is a change of its own.
