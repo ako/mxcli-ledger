@@ -8436,3 +8436,98 @@ Steps 1–3 restore the replay invariant Phase 43 recorded as broken. Step 4 is 
 choice, not a deadline — `mdl 2` is where the deprecations become errors. None of
 it is applied here: this was a verification round, and a 23-file rewrite plus a
 type change is a change of its own.
+
+## Phase 45 — does it still work under `mdl 0`? (2026-09-28)
+
+Asked directly, so measured directly. **The app does. The source does not fully
+replay, and `mxcli test --local` is broken for this project independently of the
+dialect.**
+
+**First, a correction.** Phase 44 recorded "Stored model, build and suite are
+untouched: `mx check` 0 errors, `Total: 42 Passed: 42`". The build figure was
+measured; **the suite figure was not** — it was carried over from Phase 43's
+run on `b13a324` rather than run on `ddeb6c85`. It is false on this build: the
+suite does not start at all. Phase 44's table should read *build untouched,
+suite not run*.
+
+### The app: yes, unchanged
+
+37 of the 41 source files replay cleanly under `mdl 0`; the deprecations are
+warnings, not errors. After replaying all 37 onto a copy:
+
+```
+mx check after replaying 37 files:   contains: 0 errors
+```
+
+and the running app is **byte-identical** to a pristine control — same binary,
+same minute, four pages each:
+
+| page | pristine | after replaying 37 |
+|---|---|---|
+| /p/dashboard | rows=1 text=904 | rows=1 text=904 |
+| /p/cashflow | rows=21 text=2290 | rows=21 text=2290 |
+| /p/budgets | rows=14 text=1745 | rows=14 text=1745 |
+| /p/transactions | rows=37 text=2968 | rows=37 text=2968 |
+
+The control matters: these text counts differ slightly from Phase 40's, and the
+pristine run shows that is the *build*, not the replay. Without it the deltas
+would have read as replay damage.
+
+### The source: no, four files are refused
+
+Unchanged from Phase 44, and **neither cause is dialect-related** — no
+`MDL-DEPR` or `MDL-V1` rule is involved:
+
+- `01-domain-model.mdl` — `date` is not a Mendix type (2 sites)
+- `11-cashflow-page.mdl`, `16-budgets-page.mdl`, `29-oql-screens.mdl` —
+  MDL-WIDGET33, `DynamicCellClass` as a quoted string (42 sites)
+
+So staying on `mdl 0` buys time on the deprecations and nothing on these. The
+replay invariant stays broken until they are fixed, exactly as Phase 43 said.
+
+### 155. `mxcli test --local` cannot inject its endpoint when the project has an after-startup microflow
+
+Found by running the suite rather than assuming it. On a **pristine** copy:
+
+```
+Injecting test endpoint into project...
+Parse error: line 203:51 token recognition error at: ''Ledger.ASU_Startup();
+  RETURN $Registered;
+END;
+  A string literal is not terminated before the end of the line —
+…
+ERROR: cleanup failed — the project has been left modified
+Error: injecting test endpoint: exit status 1
+```
+
+The generated endpoint script wraps the project's existing after-startup
+microflow and emits its name as an **unterminated string literal**. The cause is
+isolated, not inferred — clearing the setting on a copy and changing nothing
+else:
+
+| `AfterStartupMicroflow` | result |
+|---|---|
+| `'Ledger.ASU_Startup'` | parse error, endpoint injection fails, no tests run |
+| *(cleared)* | **`Total: 42 Passed: 42`** |
+
+Two details worth having:
+
+- **The cleanup it attempts is itself malformed**, and quotes the key into the
+  value: `ALTER SETTINGS RUNTIME (AfterStartupMicroflow: 'AfterStartupMicroflow:
+  ''Ledger.ASU_Startup')`. That is the same doubled-quoting shape as the parse
+  error, one layer out.
+- **It warns worse than it does.** "the project has been left modified" is
+  printed, but on inspection both copies were intact — setting correct, no
+  `MxTest` module left behind, `mx check` 0 errors. The restore failed *safely*,
+  leaving the original value. The warning is the right default, and it is worth
+  knowing it overstated here rather than treating the copies as damaged.
+
+An after-startup microflow is ordinary — this project has had one since the
+first phase — so this blocks the suite for any project that uses one. It is also
+why Phase 44's suite figure could not have been real: the command never ran.
+
+### Answer, in one line
+
+Under `mdl 0` the **app** is unchanged and provably so; the **source** still
+fails on four files for non-dialect reasons; and the **test command** is
+separately broken by an after-startup microflow.
