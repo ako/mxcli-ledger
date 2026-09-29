@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 15 - Budgets: builder and cell opener
 -- ============================================================================
@@ -34,7 +35,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * The Budgets screen's year context, opened on the reference year.
@@ -59,8 +59,8 @@ begin
   retrieve $Years from Ledger.VTransactionYear sort by Yr asc;
 
   @annotation 'An aggregate declares its own variable rather than assigning to one (CE0111 otherwise), so it cannot go inside the branch that guards it. It runs unconditionally and the guard picks whether to use it.'
-  $MinYear = min($Years.Yr);
-  $MaxYear = max($Years.Yr);
+  $MinYear = minimum $Years by Yr;
+  $MaxYear = maximum $Years by Yr;
 
   if $Years != empty then
     set $First = $MinYear;
@@ -79,7 +79,7 @@ begin
   set $Last = $Last + 1;
 
   @annotation 'An override copied further ahead than that would otherwise be unreachable — its year would exist in the database with no way to steer to it. MonthKey is YYYY-MM, so the latest key sorts last and comparing it as text needs no parsing. The guard is there because a while loop over data is a while loop over data.'
-  retrieve $Latest from Ledger.BudgetOverride sort by MonthKey desc limit 1;
+  retrieve $Latest from Ledger.BudgetOverride sort by MonthKey desc first;
   if $Latest != empty then
     while toString($Last) + '-12' < $Latest/MonthKey and $Guard < 50
     begin
@@ -97,7 +97,6 @@ begin
 
   return $Context;
 end;
-/
 
 /**
  * Steps the Budgets grid back a year.
@@ -122,7 +121,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Steps the Budgets grid forward a year.
@@ -144,7 +142,6 @@ begin
 
   return $Done;
 end;
-/
 
 -- MARK: The matrix
 
@@ -178,7 +175,6 @@ begin
 
   return $Rows;
 end;
-/
 
 /**
  * Prepares and opens the edit popup for one budget cell.
@@ -227,7 +223,6 @@ begin
     Ledger.BudgetEdit_Category = $Row/Ledger.BudgetRow_Category,
     Ledger.BudgetEdit_Row = $Row);
 
-  show page Ledger.BudgetCell_Edit ($Edit = $Edit);
+  show page Ledger.BudgetCell_Edit (Edit = $Edit);
   return $Done;
 end;
-/

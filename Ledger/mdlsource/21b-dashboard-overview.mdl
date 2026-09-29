@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 21b - Dashboard: the overview table
 -- ============================================================================
@@ -65,7 +66,6 @@ create or modify non-persistent entity Ledger.OverviewContext (
   /** e.g. '77 transactions · € 4,484' */
   DetailMeta: string(140)
 );
-/
 
 /**
  * How much of each category is standing cost.
@@ -142,7 +142,6 @@ begin
 
   return $Result;
 end;
-/
 
 /**
  * Reads one value back out of CALC_RecurringByCategory's delimited list.
@@ -183,7 +182,6 @@ begin
   set $Value = parseDecimal($Rest);
   return $Value;
 end;
-/
 
 /**
  * This year's total per category, as a delimited list.
@@ -231,7 +229,6 @@ begin
 
   return $Result;
 end;
-/
 
 /**
  * Builds the whole table: monthly rows, then one summary row per category.
@@ -396,7 +393,6 @@ begin
 
   return $Context;
 end;
-/
 
 /**
  * Handles a click on a category row: lists that category's transactions.
@@ -450,15 +446,9 @@ begin
 
   return $Done;
 end;
-/
 
 grant execute on microflow Ledger.CALC_CurrentByCategory to Ledger.User;
-/
 grant execute on microflow Ledger.CALC_RecurringByCategory to Ledger.User;
-/
 grant execute on microflow Ledger.GET_DelimitedValue to Ledger.User;
-/
 grant execute on microflow Ledger.DS_OverviewContext to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_SelectOverviewCategory to Ledger.User;
-/

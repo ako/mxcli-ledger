@@ -493,6 +493,11 @@ finding 74.
 The set is **re-applied from scratch** rather than patched, so the numbering is
 the build order and every file is idempotent (`create or modify` throughout).
 
+All 41 files are written in **`mdl 1`** — each begins `mdl 1;`. The `.test.mdl`
+files under `tests/` are still `mdl 0`, because `mxcli fmt --upgrade` cannot
+parse the `@test` doc-comment form (finding 156). See Phase 46 for the
+migration and what it cost.
+
 ```bash
 cd Ledger
 mxcli widget init -p Ledger.mpr                          # required first — see below

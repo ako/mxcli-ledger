@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 25 - Insights: the payloads
 -- ============================================================================
@@ -69,17 +70,14 @@ create or modify non-persistent entity Ledger.InsightsContext (
   /** e.g. '7 transactions · € 143.20' */
   DetailMeta: string(120)
 );
-/
 
 create or modify association Ledger.InsightsContext_Category
   from Ledger.InsightsContext to Ledger.Category
   type Reference;
-/
 
 create or modify association Ledger.InsightsContext_Account
   from Ledger.InsightsContext to Ledger.Account
   type Reference;
-/
 
 /**
  * Signed monthly totals: income positive, expense negative.
@@ -123,7 +121,6 @@ begin
 
   return '[' + $Json + ']';
 end;
-/
 
 /**
  * The address the scatter fetches, with the reader's filter encoded into it.
@@ -177,7 +174,6 @@ begin
 
   return $Url;
 end;
-/
 
 /**
  * Spend per calendar day.
@@ -207,7 +203,6 @@ begin
 
   return '[' + $Json + ']';
 end;
-/
 
 /**
  * Recurring merchants, with what they cost over a year.
@@ -300,7 +295,6 @@ begin
 
   return '[' + $Json + ']';
 end;
-/
 
 /**
  * Each category against the same months of last year.
@@ -341,7 +335,6 @@ begin
 
   return '[' + $Json + ']';
 end;
-/
 
 /**
  * Recomputes every payload from the filter currently on the context.
@@ -470,7 +463,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * The Insights page's single datasource.
@@ -502,7 +494,6 @@ begin
 
   return $Context;
 end;
-/
 
 /**
  * Clears the filter back to everything.
@@ -528,21 +519,12 @@ begin
 
   return $Done;
 end;
-/
 
 grant execute on microflow Ledger.BUILD_StreamData to Ledger.User;
-/
 grant execute on microflow Ledger.BUILD_ScatterUrl to Ledger.User;
-/
 grant execute on microflow Ledger.BUILD_CalendarData to Ledger.User;
-/
 grant execute on microflow Ledger.BUILD_SavingsData to Ledger.User;
-/
 grant execute on microflow Ledger.BUILD_YoYData to Ledger.User;
-/
 grant execute on microflow Ledger.DS_InsightsContext to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ApplyInsightsFilter to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ResetInsightsFilter to Ledger.User;
-/

@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 28a - CSV paste, into the loader table
 -- ============================================================================
@@ -59,7 +60,7 @@
  * @param Delimiter One character, the word 'tab', or empty to detect it
  * @returns Rows landed, including the ones flagged as unparseable
  */
-create or replace java action Ledger.CSV_LandImportRows (
+create or modify java action Ledger.CSV_LandImportRows (
   Csv: string,
   Batch: string,
   Delimiter: string
@@ -437,4 +438,3 @@ com.mendix.core.Core.getLogger("Import").info(
 
 return Long.valueOf(landed.size());
 $$;
-/

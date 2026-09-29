@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 30 - The seven languages
 -- ============================================================================
@@ -22,21 +23,15 @@
 -- ============================================================================
 
 alter settings LANGUAGE add or modify 'nl_NL';
-/
 alter settings LANGUAGE add or modify 'de_DE';
-/
 alter settings LANGUAGE add or modify 'fr_FR';
-/
 alter settings LANGUAGE add or modify 'cs_CZ';
-/
 alter settings LANGUAGE add or modify 'es_ES';
-/
 alter settings LANGUAGE add or modify 'it_IT';
-/
 
 -- Re-stated rather than assumed: `add or modify` on a language that is already
 -- present leaves the default alone, but the default is what every untranslated
 -- string falls back to, so it is worth being explicit about which one it is.
-alter settings LANGUAGE
-  DefaultLanguageCode = 'en_US';
-/
+alter settings LANGUAGE (
+  DefaultLanguageCode: 'en_US'
+);

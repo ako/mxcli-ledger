@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 18 - Rule editor
 -- ============================================================================
@@ -39,7 +40,6 @@ begin
 
   return $Saved;
 end;
-/
 
 /**
  * Create or edit one categorisation rule.
@@ -47,15 +47,14 @@ end;
  * @param $Rule The rule being edited; new ones arrive uncommitted from
  *        NEW_CategoryRule
  */
-create or replace page Ledger.CategoryRule_Edit
+create or modify page Ledger.CategoryRule_Edit folder 'Ledger'
 (
-  params: {
+  params: (
     $Rule: Ledger.CategoryRule
-  },
+  ),
   title: 'Rule',
   layout: Atlas_Core.PopupLayout,
-  PopupWidth: 560,
-  folder: 'Ledger'
+  PopupWidth: 560
 )
 {
   -- The form fields sit inside a layoutgrid, one per full-width row. Without a
@@ -71,18 +70,18 @@ create or replace page Ledger.CategoryRule_Edit
       class: 'text-muted')
 
     layoutgrid lgRule {
-      row rowRuleField {
-        column colRuleField (desktopwidth: 12) {
+      row {
+        column (desktopwidth: 12) {
           combobox cbRuleField (label: 'Field', attribute: RuleField)
         }
       }
-      row rowRuleOperator {
-        column colRuleOperator (desktopwidth: 12) {
+      row {
+        column (desktopwidth: 12) {
           combobox cbRuleOperator (label: 'Operator', attribute: RuleOperator)
         }
       }
-      row rowRuleValue {
-        column colRuleValue (desktopwidth: 12) {
+      row {
+        column (desktopwidth: 12) {
           textbox txtRuleValue (
             label: 'Value',
             attribute: MatchValue,
@@ -93,8 +92,8 @@ create or replace page Ledger.CategoryRule_Edit
             class: 'text-muted')
         }
       }
-      row rowRuleCategory {
-        column colRuleCategoryCol (desktopwidth: 12) {
+      row {
+        column (desktopwidth: 12) {
           combobox cbRuleCategory (
             label: 'Assign category',
             attribute: Ledger.CategoryRule_Category,
@@ -102,8 +101,8 @@ create or replace page Ledger.CategoryRule_Edit
             CaptionAttribute: Name)
         }
       }
-      row rowRuleOrder {
-        column colRuleOrderCol (desktopwidth: 12) {
+      row {
+        column (desktopwidth: 12) {
           textbox txtRuleOrder (label: 'Order', attribute: SortOrder)
         }
       }
@@ -112,15 +111,14 @@ create or replace page Ledger.CategoryRule_Edit
     footer footRule {
       actionbutton btnRuleSave (
         caption: 'Save',
-        action: microflow Ledger.ACT_SaveRule(Rule: $currentObject),
+        action: call microflow Ledger.ACT_SaveRule(Rule = $currentObject),
         buttonstyle: primary)
       actionbutton btnRuleCancel (
         caption: 'Cancel',
-        action: cancel_changes)
+        action: cancel changes)
     }
   }
-}
-/
+};
 
 /**
  * Opens the editor for a brand-new rule.
@@ -134,11 +132,10 @@ begin
   declare $Done boolean = true;
 
   $Rule = call microflow Ledger.NEW_CategoryRule ();
-  show page Ledger.CategoryRule_Edit ($Rule = $Rule);
+  show page Ledger.CategoryRule_Edit (Rule = $Rule);
 
   return $Done;
 end;
-/
 
 /**
  * Deletes a rule and re-derives the counts.
@@ -165,4 +162,3 @@ begin
 
   return $Done;
 end;
-/

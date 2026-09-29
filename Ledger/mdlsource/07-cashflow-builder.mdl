@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 07 - Cashflow matrix builder
 -- ============================================================================
@@ -37,7 +38,6 @@ begin
   end if;
   return $Key;
 end;
-/
 
 /**
  * Month name, for captions.
@@ -64,7 +64,6 @@ begin
   if $MonthIndex = 12 then set $Name = 'December'; end if;
   return $Name;
 end;
-/
 
 /**
  * Amount as a euro string. Whole euros — the matrix is a scanning view and
@@ -85,7 +84,6 @@ begin
   end if;
   return $Text;
 end;
-/
 
 /**
  * Amount as a euro string with cents, for lists of individual transactions.
@@ -110,7 +108,6 @@ begin
   end if;
   return $Text;
 end;
-/
 
 /**
  * Variance as a signed euro string. Positive is favourable — under budget on
@@ -135,7 +132,6 @@ begin
   end if;
   return $Text;
 end;
-/
 
 -- MARK: Figures
 
@@ -205,7 +201,6 @@ begin
   end if;
   return $Band;
 end;
-/
 
 -- MARK: Cell rendering
 
@@ -257,7 +252,6 @@ begin
   end if;
   return $Text;
 end;
-/
 
 /**
  * The heatmap band a cell shows, for the current mode.
@@ -298,7 +292,6 @@ begin
   set $Band = $Computed;
   return $Band;
 end;
-/
 
 /**
  * Writes a computed cell into the right month attribute.
@@ -337,4 +330,3 @@ begin
   if $MonthIndex = 12 then change $Row (M12Text = $Text, M12Band = $Band); end if;
   return $Done;
 end;
-/

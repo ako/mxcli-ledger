@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 22 - Dashboard page
 -- ============================================================================
@@ -45,29 +46,28 @@
 /**
  * Dashboard: everything at once, one row per category.
  */
-create or replace page Ledger.Dashboard
+create or modify page Ledger.Dashboard folder 'Ledger'
 (
   title: 'Dashboard',
   layout: Atlas_Core.Atlas_Default,
-  url: 'dashboard',
-  folder: 'Ledger'
+  url: 'dashboard'
 )
 {
   layoutgrid lgDash {
-    row rowDashMain {
-      column colDashBody (desktopwidth: 12) {
+    row {
+      column (desktopwidth: 12) {
         dataview dvDash (datasource: microflow Ledger.DS_OverviewContext) {
           dynamictext txtDashHeading (content: 'Dashboard', rendermode: H2)
           dynamictext txtDashSub (attribute: SubText, rendermode: paragraph, class: 'text-muted')
 
           layoutgrid lgDashSplit {
-            row rowDashSplit {
+            row {
               -- The chart, and beside it the transactions behind whatever row is
               -- selected. Same arrangement as the Cashflow screen, for the same
               -- reason: the figure and the rows that make it up belong on one
               -- screen, and a click that only redraws a chart leaves you asking
               -- "which ones?".
-              column colDashChart (desktopwidth: 9) {
+              column (desktopwidth: 9) {
           container ctnOverviewCard (class: 'card ledger-card') {
             -- Counted, not written down. This read 'Twenty months, thirteen
             -- categories' as a literal until a fourteenth and a fifteenth were
@@ -75,7 +75,7 @@ create or replace page Ledger.Dashboard
             -- correctly said '15 categories' and contradicted it.
             dynamictext lblOverview (
               content: '{1} months, {2} categories. Line is the month, band is the range that category usually sits in, red is a month outside it. Click a row to list what is behind it.',
-              contentparams: [{1} = MonthSpan, {2} = CategoryCount],
+              contentparams: ({1} = MonthSpan, {2} = CategoryCount),
               rendermode: paragraph,
               class: 'text-muted')
 
@@ -91,7 +91,7 @@ create or replace page Ledger.Dashboard
               renderer: 'svg',
               showActions: false,
               selection: SelectedPoint,
-              onClick: microflow Ledger.ACT_SelectOverviewCategory(Context: $currentObject),
+              onClick: call microflow Ledger.ACT_SelectOverviewCategory(Context = $currentObject),
               spec: '{
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "table"},
@@ -116,14 +116,14 @@ create or replace page Ledger.Dashboard
     {
       "title": "Income above, spend below, net through the middle",
       "description": "The macro reading. Derived from the same monthly rows the table below uses - income and spend are the two signs of one aggregate, so no second dataset exists for this.",
-      "transform": [{"filter": "datum.k === \'m\'"}],
+      "transform": [{"filter": "datum.k === ''m''"}],
       "widthNote": "Matched to the table below it, not to the card - a width chosen against the card overhangs the view on the right and loses its last months. The table is now five columns wide (118 + 300 + 130 + 74 + 130 plus the gaps between them), and this is that, less the axis labels the strip needs and the table does not.",
       "width": 700,
       "height": 110,
       "layer": [
         {
           "transform": [
-            {"calculate": "datum.kind === \'Income\' ? datum.v : -datum.v", "as": "signed"}
+            {"calculate": "datum.kind === ''Income'' ? datum.v : -datum.v", "as": "signed"}
           ],
           "mark": {"type": "area", "interpolate": "monotone", "opacity": 0.9},
           "encoding": {
@@ -138,7 +138,7 @@ create or replace page Ledger.Dashboard
         {
           "description": "Net. The only line on the strip, so it needs no legend to be the thing you read.",
           "transform": [
-            {"calculate": "datum.kind === \'Income\' ? datum.v : -datum.v", "as": "signed"},
+            {"calculate": "datum.kind === ''Income'' ? datum.v : -datum.v", "as": "signed"},
             {"aggregate": [{"op": "sum", "field": "signed", "as": "net"}], "groupby": ["t"]}
           ],
           "mark": {"type": "line", "color": "#17181A", "strokeWidth": 1.5, "interpolate": "monotone"},
@@ -157,7 +157,7 @@ create or replace page Ledger.Dashboard
       ],
       "encoding": {
         "x": {"field": "t", "type": "temporal",
-              "axisNote": "One tick per year rather than a fixed count. tickCount: 10 put ten ticks wherever they fell, which was fine across twenty months and collided into \'Jan 22Apr 22\' across fifty-six. An interval tick lands on January whatever the span is, and the labels can never crowd because there is one per year.",
+              "axisNote": "One tick per year rather than a fixed count. tickCount: 10 put ten ticks wherever they fell, which was fine across twenty months and collided into ''Jan 22Apr 22'' across fifty-six. An interval tick lands on January whatever the span is, and the labels can never crowd because there is one per year.",
               "axis": {"title": null, "format": "%Y", "tickCount": {"interval": "year", "step": 1}, "grid": false}}
       }
     },
@@ -165,8 +165,8 @@ create or replace page Ledger.Dashboard
       "description": "The table. Four columns, each faceted by category on the same sort and the same row height, so the rows line up across panels without being one chart.",
       "hconcat": [
         {
-          "titleNote": "The category names are a column of the table, not a facet header, and that is a consequence of `bounds: flush`. Flush layout does not measure the row header, so every row\'s header group came to rest wherever its own text ended - each label right-anchored at its own x, ragged across sixty pixels, while the DOM insisted every one of them was text-anchor=end. Drawn as a text mark in a panel of its own, alignment is exact by construction, and the labels become what they always were: the first column.",
-          "transform": [{"filter": "datum.k === \'s\'"}],
+          "titleNote": "The category names are a column of the table, not a facet header, and that is a consequence of `bounds: flush`. Flush layout does not measure the row header, so every row''s header group came to rest wherever its own text ended - each label right-anchored at its own x, ragged across sixty pixels, while the DOM insisted every one of them was text-anchor=end. Drawn as a text mark in a panel of its own, alignment is exact by construction, and the labels become what they always were: the first column.",
+          "transform": [{"filter": "datum.k === ''s''"}],
           "bounds": "flush",
           "facet": {
             "row": {
@@ -187,8 +187,8 @@ create or replace page Ledger.Dashboard
         },
         {
           "title": "Each month against the usual range",
-          "titleNote": "The span is not named here. It used to read \'Twenty months\', which was true when the seed generated twenty and a lie the moment it generated fifty-six — and unlike the caption above, a title inside a static spec cannot count anything. The caption states the span once; a panel header repeating it is a second copy that can only ever go stale.",
-          "transform": [{"filter": "datum.k === \'m\'"}],
+          "titleNote": "The span is not named here. It used to read ''Twenty months'', which was true when the seed generated twenty and a lie the moment it generated fifty-six — and unlike the caption above, a title inside a static spec cannot count anything. The caption states the span once; a panel header repeating it is a second copy that can only ever go stale.",
+          "transform": [{"filter": "datum.k === ''m''"}],
           "bounds": "flush",
           "boundsNote": "Every panel is flush, and that is what makes the table a table. Vega-Lite sizes a facet row to its content bounds by default, so a panel whose marks overflow the declared 26px - an outlier dot straddling the top of the sparkline, a rule drawn to the row edge - gets taller rows than a panel of plain text. Four panels, three different row pitches, and by the fourteenth category the labels sat a full row below their numbers.",
           "facet": {
@@ -270,7 +270,7 @@ create or replace page Ledger.Dashboard
         {
           "title": "vs last year",
           "description": "Direction and size in one mark, read against a drawn zero. No axis: the bar is the comparison, and a scale would invite reading absolute values that the sparkline already gives.",
-          "transform": [{"filter": "datum.k === \'s\'"}],
+          "transform": [{"filter": "datum.k === ''s''"}],
           "bounds": "flush",
           "facet": {
             "row": {
@@ -285,7 +285,7 @@ create or replace page Ledger.Dashboard
             "transform": [
               {
                 "description": "Favourable is not the same direction for income as for spend, and neither for a review backlog - more of that is simply worse.",
-                "calculate": "datum.kind === \'Income\' ? (datum.delta >= 0 ? \'better\' : \'worse\') : (datum.delta <= 0 ? \'better\' : \'worse\')",
+                "calculate": "datum.kind === ''Income'' ? (datum.delta >= 0 ? ''better'' : ''worse'') : (datum.delta <= 0 ? ''better'' : ''worse'')",
                 "as": "dir"
               }
             ],
@@ -317,7 +317,7 @@ create or replace page Ledger.Dashboard
         {
           "title": "this year",
           "description": "Direct labels rather than a fourth axis. At thirteen rows the numbers fit, and a number you can read is worth more than a bar you have to measure.",
-          "transform": [{"filter": "datum.k === \'s\'"}],
+          "transform": [{"filter": "datum.k === ''s''"}],
           "bounds": "flush",
           "facet": {
             "row": {
@@ -339,7 +339,7 @@ create or replace page Ledger.Dashboard
         {
           "title": "of which recurring",
           "description": "The saving column. A merchant billing in four months or more is a standing cost, and standing costs are the ones where cancelling saves twelve times - so the filled part of the bar is the part worth attacking.",
-          "transform": [{"filter": "datum.k === \'s\'"}],
+          "transform": [{"filter": "datum.k === ''s''"}],
           "bounds": "flush",
           "facet": {
             "row": {
@@ -351,16 +351,16 @@ create or replace page Ledger.Dashboard
           "spec": {
             "width": 130,
             "height": 26,
-            "layerNote": "Income is filtered out in the layers rather than in the panel, and the distinction matters. Filtering the panel would drop Salary and Freelance from this facet\'s row domain, leaving twelve rows against the other panels\' fourteen - the alignment breaks again, one column short. Filtering inside the layers leaves the rows in place and empty, which is the honest reading anyway: there is no standing cost to cancel in a salary. It also hands the shared x scale back to Rent, so the spend bars are readable instead of being slivers next to a full-width 43,661.",
+            "layerNote": "Income is filtered out in the layers rather than in the panel, and the distinction matters. Filtering the panel would drop Salary and Freelance from this facet''s row domain, leaving twelve rows against the other panels'' fourteen - the alignment breaks again, one column short. Filtering inside the layers leaves the rows in place and empty, which is the honest reading anyway: there is no standing cost to cancel in a salary. It also hands the shared x scale back to Rent, so the spend bars are readable instead of being slivers next to a full-width 43,661.",
             "layer": [
               {
                 "description": "The whole category, faint - the ground the recurring part is read against.",
-                "transform": [{"filter": "datum.kind !== \'Income\'"}],
+                "transform": [{"filter": "datum.kind !== ''Income''"}],
                 "mark": {"type": "bar", "height": 9, "color": "#E6E0D4", "cornerRadius": 1},
                 "encoding": {"x": {"field": "current", "type": "quantitative", "axis": null}}
               },
               {
-                "transform": [{"filter": "datum.kind !== \'Income\'"}],
+                "transform": [{"filter": "datum.kind !== ''Income''"}],
                 "mark": {"type": "bar", "height": 9, "color": "#6B4E8A", "cornerRadius": 1},
                 "encoding": {
                   "x": {"field": "recur", "type": "quantitative"},
@@ -446,7 +446,7 @@ create or replace page Ledger.Dashboard
               -- exist for the one selection that most needed it: 'Needs review'
               -- matched nothing, and the dashboard could count twelve
               -- transactions it had no way to show.
-              column colDashInspector (desktopwidth: 3) {
+              column (desktopwidth: 3) {
                 container ctnDashInspector (class: 'card ledger-inspector') {
                   container ctnDashInspectorHead (class: 'ledger-inspector-head') {
                     dynamictext txtDashInsKicker (content: 'Selected', class: 'ledger-kicker')
@@ -462,18 +462,18 @@ create or replace page Ledger.Dashboard
                     template tplDashLine {
                       container ctnDashLine (
                         class: 'ledger-line ledger-line-clickable',
-                        onclick: microflow Ledger.ACT_ShowTransaction(Line: $currentObject)
+                        onclick: call microflow Ledger.ACT_ShowTransaction(Line = $currentObject)
                       ) {
                         container ctnDashLineText (class: 'ledger-line-text') {
                           dynamictext txtDashLineMerchant (attribute: Merchant, class: 'ledger-line-merchant')
                           dynamictext txtDashLineMeta (
                             content: '{1} · {2}',
-                            contentparams: [{1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy'), {2} = AccountName],
+                            contentparams: ({1} = TxDate format (dateFormat: Custom, customDateFormat: 'd MMM yyyy'), {2} = AccountName),
                             class: 'ledger-line-meta')
                         }
                         dynamictext txtDashLineAmount (
                           content: '{1}€ {2}',
-                          contentparams: [{1} = Sign, {2} = AbsAmount format (decimalPrecision: 2, groupDigits: true)],
+                          contentparams: ({1} = Sign, {2} = AbsAmount format (decimalPrecision: 2, groupDigits: true)),
                           class: 'ledger-line-amount')
                       }
                     }
@@ -487,8 +487,7 @@ create or replace page Ledger.Dashboard
       }
     }
   }
-}
-/
+};
 
 -- Navigation is not written here. It used to be written by four files, each
 -- carrying the menu as it stood at that point, so running any one of them on

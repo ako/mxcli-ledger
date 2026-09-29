@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 19 - Categories & rules screen
 -- ============================================================================
@@ -19,17 +20,16 @@
  * Categories & rules: the taxonomy, plus the rules that assign categories and
  * the controls to run them.
  */
-create or replace page Ledger.Category_Overview
+create or modify page Ledger.Category_Overview folder 'Ledger'
 (
   title: 'Categories & rules',
   layout: Atlas_Core.Atlas_Default,
-  url: 'categories',
-  folder: 'Ledger'
+  url: 'categories'
 )
 {
   layoutgrid lgCategories {
-    row rowMain {
-      column colBody (desktopwidth: 12) {
+    row {
+      column (desktopwidth: 12) {
         dynamictext txtHeading (content: 'Categories & rules', rendermode: H2)
         dynamictext txtSub (
           content: 'Two-level taxonomy plus the rules that assign categories. Rules run in order and the first match wins.',
@@ -44,10 +44,10 @@ create or replace page Ledger.Category_Overview
           datasource: database from Ledger.Category sort by SortOrder asc,
           PageSize: 20
         ) {
-          column colCatName (attribute: Name, caption: 'Category')
-          column colCatGroup (attribute: Category_CategoryGroup/Name, caption: 'Group')
-          column colCatBudget (attribute: BaselineBudget, caption: 'Baseline budget / mo', Alignment: right)
-          column colCatOrder (attribute: SortOrder, caption: 'Order', Alignment: right)
+          column (attribute: Name, caption: 'Category')
+          column (attribute: Category_CategoryGroup/Name, caption: 'Group')
+          column (attribute: BaselineBudget, caption: 'Baseline budget / mo', Alignment: right)
+          column (attribute: SortOrder, caption: 'Order', Alignment: right)
         }
 
         dynamictext txtRulesHeading (content: 'Rules', rendermode: H4)
@@ -62,20 +62,20 @@ create or replace page Ledger.Category_Overview
             container ctnRulesActions (class: 'ledger-rules-actions') {
               actionbutton btnRunRules (
                 caption: 'Run rules',
-                action: microflow Ledger.ACT_ApplyRules(Context: $currentObject),
+                action: call microflow Ledger.ACT_ApplyRules(Context = $currentObject),
                 buttonstyle: primary)
               -- The same work as the button beside it, as one UPDATE per rule
               -- instead of a nested loop with a commit per match. Both are here
               -- so the two can be run against the same data and compared.
               actionbutton btnRunRulesBulk (
                 caption: 'Run rules (statements)',
-                action: microflow Ledger.ACT_ApplyRulesBulk(Context: $currentObject))
+                action: call microflow Ledger.ACT_ApplyRulesBulk(Context = $currentObject))
               actionbutton btnResetRules (
                 caption: 'Undo rule assignments',
-                action: microflow Ledger.ACT_ResetRuleAssignments(Context: $currentObject))
+                action: call microflow Ledger.ACT_ResetRuleAssignments(Context = $currentObject))
               actionbutton btnNewRule (
                 caption: 'New rule',
-                action: microflow Ledger.ACT_NewRule)
+                action: call microflow Ledger.ACT_NewRule)
             }
           }
         }
@@ -91,21 +91,21 @@ create or replace page Ledger.Category_Overview
           class: 'ledger-rules-grid'
         ) {
 
-          column colRuleOrder (
+          column (
             attribute: SortOrder, caption: '#', Alignment: right,
             Sortable: false, ColumnWidth: manual, Size: 40)
-          column colRuleField (
+          column (
             attribute: RuleField, caption: 'Field',
             Sortable: false, ColumnWidth: manual, Size: 100)
-          column colRuleOp (
+          column (
             attribute: RuleOperator, caption: 'Operator',
             Sortable: false, ColumnWidth: manual, Size: 110)
-          column colRuleValue (
+          column (
             attribute: MatchValue, caption: 'Value',
             Sortable: false, ColumnWidth: manual, Size: 220
           )
           -- A dynamictext cannot walk an association; a nested dataview can.
-          column colRuleCategory (
+          column (
             caption: 'Assigns', Sortable: false,
             ColumnWidth: manual, Size: 150
           ) {
@@ -113,29 +113,29 @@ create or replace page Ledger.Category_Overview
               dynamictext txtRuleCat (attribute: Name)
             }
           }
-          column colRuleHits (
+          column (
             attribute: MatchCount, caption: 'Categorised', Alignment: right,
             Sortable: false, ColumnWidth: manual, Size: 100)
           -- Caption must not be empty: an empty one makes mx check report
           -- CE0463 'the definition of this widget has changed' on the whole
           -- grid, which says nothing about the actual cause. See FINDINGS 54.
-          column colRuleActions (
+          column (
             caption: 'Actions', Sortable: false,
             ColumnWidth: manual, Size: 200
           ) {
             container ctnRuleActions (class: 'ledger-row-actions') {
               actionbutton btnRuleUp (
                 caption: '↑',
-                action: microflow Ledger.ACT_MoveRuleUp(Rule: $currentObject))
+                action: call microflow Ledger.ACT_MoveRuleUp(Rule = $currentObject))
               actionbutton btnRuleDown (
                 caption: '↓',
-                action: microflow Ledger.ACT_MoveRuleDown(Rule: $currentObject))
+                action: call microflow Ledger.ACT_MoveRuleDown(Rule = $currentObject))
               actionbutton btnRuleEdit (
                 caption: 'Edit',
-                action: show_page Ledger.CategoryRule_Edit(Rule: $currentObject))
+                action: show page Ledger.CategoryRule_Edit(Rule = $currentObject))
               actionbutton btnRuleDelete (
                 caption: 'Delete',
-                action: microflow Ledger.ACT_DeleteRule(Rule: $currentObject),
+                action: call microflow Ledger.ACT_DeleteRule(Rule = $currentObject),
                 buttonstyle: danger)
             }
           }
@@ -143,5 +143,4 @@ create or replace page Ledger.Category_Overview
       }
     }
   }
-}
-/
+};

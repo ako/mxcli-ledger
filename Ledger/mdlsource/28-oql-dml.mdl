@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 28 - OQL DML through Java actions
 -- ============================================================================
@@ -41,7 +42,7 @@
  * @param Statement An OQL insert, update or delete statement
  * @returns Rows affected
  */
-create or replace java action Ledger.OQL_Execute (
+create or modify java action Ledger.OQL_Execute (
   Statement: string
 )
 returns integer
@@ -54,7 +55,6 @@ int affected = stmt.execute(getContext());
 com.mendix.core.Core.getLogger("OQL").debug("OQL_Execute affected " + affected + " row(s): " + Statement);
 return (long) affected;
 $$;
-/
 
 /**
  * Execute one OQL DML statement carrying up to four bound variables.
@@ -75,7 +75,7 @@ $$;
  * @param Type1 'string', 'integer', 'decimal', 'boolean', 'datetime' or 'id'
  * @returns Rows affected
  */
-create or replace java action Ledger.OQL_ExecuteWith (
+create or modify java action Ledger.OQL_ExecuteWith (
   Statement: string,
   Name1: string,
   Value1: string,
@@ -138,7 +138,6 @@ int affected = stmt.execute(getContext());
 com.mendix.core.Core.getLogger("OQL").debug("OQL_ExecuteWith affected " + affected + " row(s): " + Statement);
 return (long) affected;
 $$;
-/
 
 /**
  * Run a statement and report what happened instead of throwing.
@@ -154,7 +153,7 @@ $$;
  * @param Statement An OQL statement to try
  * @returns 'OK rows=N' or 'ERR ...'
  */
-create or replace java action Ledger.OQL_Try (
+create or modify java action Ledger.OQL_Try (
   Statement: string
 )
 returns string
@@ -171,7 +170,6 @@ try {
     return "ERR " + t.getClass().getSimpleName() + ": " + message;
 }
 $$;
-/
 
 -- No grants here. A Java action has no security roles of its own in Mendix — it
 -- is reachable only through a microflow, and the microflow carries the access.
@@ -222,7 +220,6 @@ create or modify view entity Ledger.VRule (
   inner join r/Ledger.CategoryRule_Category/Ledger.Category as c
   inner join c/Ledger.Category_CategoryGroup/Ledger.CategoryGroup as g
 );
-/
 
 /**
  * Build the WHERE fragment for one rule.
@@ -269,7 +266,6 @@ begin
 
   return $Where;
 end;
-/
 
 /**
  * The bound value for one rule, shaped for its operator.
@@ -296,7 +292,6 @@ begin
 
   return $Value;
 end;
-/
 
 /**
  * Apply every rule to the uncategorised transactions, one statement per rule.
@@ -356,7 +351,6 @@ begin
 
   return $Done;
 end;
-/
 
 -- ============================================================================
 -- Use case 2: copy a year of budget overrides with insert-from-select
@@ -425,7 +419,6 @@ begin
   log info node 'OQLBULK' 'ACT_CopyBudgetYear copied ' + toString($Copied) + ' override(s)';
   return $Copied;
 end;
-/
 
 -- ============================================================================
 -- Use case 3: the loader table — stage, validate, promote
@@ -480,18 +473,14 @@ create or modify persistent entity Ledger.ImportRow (
    */
   HasParseError: boolean default false
 );
-/
 
 create or modify association Ledger.ImportRow_Account
   from Ledger.ImportRow to Ledger.Account;
-/
 
 create or modify association Ledger.ImportRow_Category
   from Ledger.ImportRow to Ledger.Category;
-/
 
-grant Ledger.User on Ledger.ImportRow (create, delete, read *, write *);
-/
+grant create, delete, read *, write * on entity Ledger.ImportRow to Ledger.User;
 
 /**
  * Validate a landed batch, in place, one statement per check.
@@ -580,7 +569,6 @@ begin
   log info node 'OQLBULK' 'VALIDATE_ImportBatch ' + $Batch + ': ' + toString($Invalid) + ' row(s) rejected';
   return $Invalid;
 end;
-/
 
 /**
  * Move the valid rows of a batch into Transaction, in one statement.
@@ -628,4 +616,3 @@ begin
   log info node 'OQLBULK' 'PROMOTE_ImportBatch ' + $Batch + ': promoted ' + toString($Promoted);
   return $Promoted;
 end;
-/

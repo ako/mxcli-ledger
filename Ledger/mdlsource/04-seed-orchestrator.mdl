@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 04 - Demo data: orchestration and startup wiring
 -- ============================================================================
@@ -45,7 +46,6 @@ begin
 
   return $Level;
 end;
-/
 
 /**
  * Seeds one year of transactions across all thirteen categories.
@@ -86,24 +86,24 @@ begin
   $LvlInsurance = call microflow Ledger.Seed_Level (RatioPermille = 900, YearsBack = $Back);
   $LvlSavings = call microflow Ledger.Seed_Level (RatioPermille = 900, YearsBack = $Back);
 
-  retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' limit 1;
-  retrieve $AccSpaar from Ledger.Account where Name = 'ING Spaarrekening' limit 1;
-  retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' limit 1;
-  retrieve $AccRev from Ledger.Account where Name = 'Revolut' limit 1;
+  retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' first;
+  retrieve $AccSpaar from Ledger.Account where Name = 'ING Spaarrekening' first;
+  retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' first;
+  retrieve $AccRev from Ledger.Account where Name = 'Revolut' first;
 
-  retrieve $CatSalary from Ledger.Category where Name = 'Salary' limit 1;
-  retrieve $CatFreelance from Ledger.Category where Name = 'Freelance' limit 1;
-  retrieve $CatRent from Ledger.Category where Name = 'Rent' limit 1;
-  retrieve $CatUtilities from Ledger.Category where Name = 'Utilities' limit 1;
-  retrieve $CatInternet from Ledger.Category where Name = 'Internet & phone' limit 1;
-  retrieve $CatGroceries from Ledger.Category where Name = 'Groceries' limit 1;
-  retrieve $CatRestaurants from Ledger.Category where Name = 'Restaurants & cafes' limit 1;
-  retrieve $CatTransport from Ledger.Category where Name = 'Transport' limit 1;
-  retrieve $CatSubs from Ledger.Category where Name = 'Subscriptions' limit 1;
-  retrieve $CatShopping from Ledger.Category where Name = 'Shopping' limit 1;
-  retrieve $CatHealth from Ledger.Category where Name = 'Health & sport' limit 1;
-  retrieve $CatInsurance from Ledger.Category where Name = 'Insurance' limit 1;
-  retrieve $CatSavings from Ledger.Category where Name = 'Savings transfer' limit 1;
+  retrieve $CatSalary from Ledger.Category where Name = 'Salary' first;
+  retrieve $CatFreelance from Ledger.Category where Name = 'Freelance' first;
+  retrieve $CatRent from Ledger.Category where Name = 'Rent' first;
+  retrieve $CatUtilities from Ledger.Category where Name = 'Utilities' first;
+  retrieve $CatInternet from Ledger.Category where Name = 'Internet & phone' first;
+  retrieve $CatGroceries from Ledger.Category where Name = 'Groceries' first;
+  retrieve $CatRestaurants from Ledger.Category where Name = 'Restaurants & cafes' first;
+  retrieve $CatTransport from Ledger.Category where Name = 'Transport' first;
+  retrieve $CatSubs from Ledger.Category where Name = 'Subscriptions' first;
+  retrieve $CatShopping from Ledger.Category where Name = 'Shopping' first;
+  retrieve $CatHealth from Ledger.Category where Name = 'Health & sport' first;
+  retrieve $CatInsurance from Ledger.Category where Name = 'Insurance' first;
+  retrieve $CatSavings from Ledger.Category where Name = 'Savings transfer' first;
 
   -- Income
   $N1 = call microflow Ledger.Seed_CategoryTransactions (
@@ -186,7 +186,6 @@ begin
 
   return $Created;
 end;
-/
 
 /**
  * Seeds the demo dataset, once.
@@ -219,7 +218,7 @@ begin
   @annotation 'The first year of history. Four full years before the reference year, which is enough for the year-over-year charts to show a trend rather than a step, and enough that the Budgets year selector has somewhere to go.'
   declare $FirstYear integer = 2022;
 
-  retrieve $ExistingAccount from Ledger.Account limit 1;
+  retrieve $ExistingAccount from Ledger.Account first;
 
   @annotation 'Guard: seed only into an empty database'
   if $ExistingAccount != empty then
@@ -239,8 +238,8 @@ begin
     end if;
   end if;
 
-  retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' limit 1;
-  retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' limit 1;
+  retrieve $AccIng from Ledger.Account where Name = 'ING Betaalrekening' first;
+  retrieve $AccAbn from Ledger.Account where Name = 'ABN AMRO Creditcard' first;
 
   @annotation 'Every year of history in full, then the reference year to date'
   set $Y = $FirstYear;
@@ -273,7 +272,6 @@ begin
 
   return $Created;
 end;
-/
 
 /**
  * After-startup entry point. Seeds demo data on first run.
@@ -289,7 +287,5 @@ begin
   set $Done = true;
   return $Done;
 end;
-/
 
-alter settings model AfterStartupMicroflow = 'Ledger.ASU_Startup';
-/
+alter settings runtime ( AfterStartupMicroflow: 'Ledger.ASU_Startup' );

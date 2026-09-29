@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 28 - Insights: clicking a chart, and brushing one
 -- ============================================================================
@@ -78,7 +79,6 @@ begin
 
   return trim($Value);
 end;
-/
 
 /**
  * Handles a click on the calendar: lists what was spent that day.
@@ -152,7 +152,6 @@ begin
 
   return $Done;
 end;
-/
 
 /**
  * Clears the day panel.
@@ -175,11 +174,7 @@ begin
   ) refresh;
   return $Done;
 end;
-/
 
 grant execute on microflow Ledger.GET_JsonValue to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_SelectInsightDay to Ledger.User;
-/
 grant execute on microflow Ledger.ACT_ClearInsightDay to Ledger.User;
-/

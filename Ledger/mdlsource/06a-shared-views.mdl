@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 06a - Shared transaction view
 -- ============================================================================
@@ -139,4 +140,3 @@ create or modify view entity Ledger.VTransactionLine (
   left join t/Ledger.Transaction_Category/Ledger.Category as c
   where t.IsMirror = false and c.Name = null
 );
-/

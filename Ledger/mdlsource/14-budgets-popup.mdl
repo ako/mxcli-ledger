@@ -1,3 +1,4 @@
+mdl 1;
 -- ============================================================================
 -- 14 - Budgets: the cell edit popup
 -- ============================================================================
@@ -20,14 +21,13 @@
  *
  * @param $Edit The cell being edited, prepared by ACT_EditBudgetCell
  */
-create or replace page Ledger.BudgetCell_Edit
+create or modify page Ledger.BudgetCell_Edit folder 'Ledger'
 (
-  params: {
+  params: (
     $Edit: Ledger.BudgetEdit
-  },
+  ),
   title: 'Edit budget',
-  layout: Atlas_Core.PopupLayout,
-  folder: 'Ledger'
+  layout: Atlas_Core.PopupLayout
 )
 {
   dataview dvEdit (datasource: $Edit) {
@@ -37,22 +37,21 @@ create or replace page Ledger.BudgetCell_Edit
 
     dynamictext txtBaseline (
       content: 'Category baseline is € {1} per month.',
-      contentparams: [{1} = BaselineBudget],
+      contentparams: ({1} = BaselineBudget),
       rendermode: paragraph,
       class: 'text-muted')
 
     footer footEdit {
       actionbutton btnSave (
         caption: 'Save',
-        action: microflow Ledger.ACT_SaveBudget(Edit: $currentObject),
+        action: call microflow Ledger.ACT_SaveBudget(Edit = $currentObject),
         buttonstyle: primary)
       actionbutton btnReset (
         caption: 'Reset to baseline',
-        action: microflow Ledger.ACT_ResetBudget(Edit: $currentObject))
+        action: call microflow Ledger.ACT_ResetBudget(Edit = $currentObject))
       actionbutton btnCancel (
         caption: 'Cancel',
-        action: close_page)
+        action: close page)
     }
   }
-}
-/
+};
