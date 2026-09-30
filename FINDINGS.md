@@ -8677,6 +8677,11 @@ rewrite" and stops. This is the whole distance between 40 of 41 files and 41.
 
 ### 158. The `mdl 1;` header alone makes `create or modify microflow` refuse a splice it would rebuild identically
 
+**Title wrong, fixed in Phase 48.** The header was not the cause: a `where [ … ]`
+constraint was matched as an XPath on one side and as an expression on the
+other, and under `mdl 0` that mismatch was a *silent whole-flow rebuild* rather
+than a refusal. The header only made it visible. The measurements below stand.
+
 The sharpest one. Two files, **byte-identical except for the first line**:
 
 ```
@@ -8864,3 +8869,131 @@ page can show a difference that is not there — or hide one that is.
 The page round-trip went from **22 of 34 documents silently damaged to none**,
 the fix proved my own two-phase-old attribution wrong, and the four defects this
 project filed last round are all still open.
+
+## Phase 48 — main `5ccbd480`: four findings closed, and one of them was mine to correct (2026-09-30)
+
+30 commits, **85 files, +4,332 / −415**, and most of it aimed at what this
+project filed two rounds ago. **Findings 156, 157, 158 and 159 are all fixed.**
+
+| finding | fix | verified |
+|---|---|---|
+| 156 `fmt --upgrade` cannot read a `.test.mdl` that `check` accepts | `#837` | it formats the file instead of erroring |
+| 157 `--header` declines over `min(` | `#838` | rewrites `min(` / `max(` / `avg(` to the Aggregate list statement |
+| 158 the `mdl 1;` line alone makes a splice refuse | `#839`, `#850` | the repro execs at exit 0; **all 41 files replay** |
+| 159 `diff` says unchanged for a statement `exec` refuses | `#839` + review | `diff` now runs the splice plan and reports the refusal |
+
+### The correction is mine, and it matters
+
+Finding 158 named the `mdl 1;` header as the cause. The fix says otherwise, in
+its first line:
+
+> **The mdl 1 header was not what differed.** diff-then-patch matched the
+> declared statements against the parsed describe of the stored flow, and two
+> authored spellings never matched it under either version […] `where [ … ]` is
+> read by the XPath rule (source text with the author's line breaks, lower-case
+> `and`) while describe prints the bare form, read as an expression (`AND`, no
+> source): one constraint, two trees.
+>
+> Unmatched, the retrieves became a replace plus drops: **under mdl 0 a silent
+> whole-flow rebuild (MDL-V1-REBUILD) that write elision happened to find
+> equal**, under mdl 1 a refusal.
+
+So the bug was older and quieter than I reported. Under `mdl 0` — where this
+project lived for forty phases — the same mismatch was rebuilding whole flows
+and getting away with it because the result happened to compare equal. The
+header did not introduce the fault; it turned a silent rebuild into a visible
+refusal, which is the header doing its job. I filed the messenger.
+
+It also explains finding 161's "a one-line XPath constraint gains line breaks":
+same constraint, same two readings.
+
+### 159: `diff` now reaches `exec`'s verdict, reason and all
+
+A change inside a loop body, which the splice still refuses by design:
+
+```
+$ mxcli diff loop-test.mdl -p Ledger.mpr
+Refused: Microflow Ledger.SYNC_RuleCounts: exec would refuse this statement and
+write nothing: the Loop at (1020, 200) changes inside its body; the splice does
+not edit inside a loop…
+Summary: 0 new, 0 modified, 0 unchanged, 1 refused
+```
+
+and `exec` refuses with the same sentence. A refusal is its own column in the
+summary rather than being counted as unchanged. On a change that *is* spliceable
+the three states line up too: `diff` → `1 modified`, `exec` → `spliced: 1
+replaced`, `diff` again → `1 unchanged`.
+
+### The migration this project did by hand is now one command per file
+
+Phase 46 took four steps, two of them hand work: a Python transform over 42
+`MDL-WIDGET33` sites, and two hand-written aggregate rewrites. Starting again
+from the **pre-migration** source on this build, and doing only:
+
+1. two `date` → `DateTime` edits in `01-domain-model.mdl` — 2 lines, still not
+   mechanical, and still the only thing that is not;
+2. `mxcli fmt --upgrade --header -w` on each of the 41 files;
+
+reproduces **all 41 committed files byte for byte**. `fmt --upgrade` now performs
+the `MDL-WIDGET33` rewrite itself, and its output is character-identical to the
+transform I wrote:
+
+```
+before  DynamicCellClass: 'if $currentObject/RowKind = … then ''cf-group'' else …'
+fmt     DynamicCellClass: if $currentObject/RowKind = … then 'cf-group' else …
+mine    DynamicCellClass: if $currentObject/RowKind = … then 'cf-group' else …
+```
+
+and `15-budgets-builder.mdl`, the one file that blocked step 4, now reports
+`rewrote for the header MDL-V1-LIMIT1 x1, MDL-V1-LIST x2, MDL-V1-SLASH x6` and
+takes the header, landing on the same `minimum $Years by Yr` I typed.
+
+### The `mdl 0` replay invariant is back
+
+`#836` makes the quoted expression spelling a warning again for a headerless
+script — it had become a refusal in every script since `#750`, which is what
+broke three of this project's files. Replaying the **original** pre-migration
+source, unmodified:
+
+| | Phase 45 (`ddeb6c85`) | now (`5ccbd480`) |
+|---|---|---|
+| files that fail to replay under `mdl 0` | 4 | **1** |
+| which | `01`, `11`, `16`, `29` | `01-domain-model.mdl` only |
+| `mx check` after replay | 0 errors | **0 errors** |
+
+The one remaining failure is the `date` type defect — this project's own, not
+the tool's. Phase 43 recorded the replay invariant as broken; for `mdl 0` it is
+broken no longer.
+
+### Still open
+
+- **161 — the describe → exec residual is unchanged.** Order-insensitive BSON
+  lines changed across all 34 documents: **1,020**, the same figure as
+  `2fb1ac08`, with the same three shapes (a null `Variable` key dropped, XPath
+  constraints gaining line breaks, translations reordered).
+- **162 — the `describe` subcommand still has no `mdl 1` mode.** `--format` is
+  still its only flag and it still writes `find($Budgets, …)`. New evidence from
+  this round: its output also carries `$N = count($Hits)`, which *this same
+  build* warns as `MDL-DEPR004` — the subcommand emits a form its own
+  deprecation registry flags, so the output is neither `mdl 1`-runnable nor
+  `mdl 0`-clean.
+- **163 — the `--page-check` race.** Reproduced again on this build: the same
+  URL twice in one run gives `text=312` with no `rows=`, then `rows=1 text=904`.
+  Four cold boots observed across two phases; the first check was short on three
+  of them.
+
+### The app, unchanged and verified so
+
+All 41 files replay with **zero failures** (the first time since Phase 42),
+`mx check` reports 0 errors, the four page verdicts are byte-identical to
+baseline (dashboard rows=1 text=904 once warm, cashflow 21/2290, budgets
+14/1745, transactions 37/2968), and the Cashflow page's stored description is
+byte-identical between the model this build produces and the one `2fb1ac08`
+produced — 15 `DynamicCellClass` expressions included. The source itself needed
+no change: 41 files, 0 rejected, the same 149 warnings in the same distribution.
+
+### Answer, in one line
+
+Every defect this project filed two rounds ago is closed, the hand work in its
+own migration is now mechanical, and the one finding I got wrong I got wrong in
+the tool's favour — the fault was older and quieter than I reported.
