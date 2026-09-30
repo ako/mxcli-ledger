@@ -8398,6 +8398,9 @@ upgrade's doing**:
   project's own `33-layout.mdl` says so.
 - the **width** is my source's own `desktopwidth: 12` overwriting a model a later
   file had set to `AutoFill` — same cause.
+  **Wrong — corrected in Phase 47.** The model never held `AutoFill`; `describe`
+  read the stored int64 weight with `.(int32)` and printed `AutoFill` for every
+  column (`#721` L1). There was no drift to explain.
 
 The only change `--upgrade` made to those columns was dropping the name
 (`column colBody (…)` → `column (…)`), and the describe shows the model
@@ -8720,3 +8723,144 @@ command set.
 The source is on `mdl 1`, the gate is clean for the first time, the app is
 unchanged on every measurement available, and the four defects the upgrade
 surfaced are all in the tooling rather than the app.
+
+## Phase 47 — main `2fb1ac08`: the page round-trip is repaired, and it corrects me (2026-09-30)
+
+83 commits, **291 files, +15,785 / −1,968**, almost all of it one campaign:
+`#721` L1–L5 and `#826`, describe → exec fidelity for Studio Pro-authored pages.
+This project is a corpus of exactly that, so the measurement is direct.
+
+**First, a correction.** Phase 44 explained a describe diff as *"my source's own
+`desktopwidth: 12` overwriting a model a later file had set to `AutoFill`"*, and
+Phase 46's migration work leaned on the same reading to dismiss the Insights and
+Cashflow describe diffs as drift rather than damage. **It is wrong.** The model
+always held `12`, `9` and `3`. `describe` could not read them:
+
+> Studio Pro stores LayoutGridColumn Weight/TabletWeight/PhoneWeight as int64;
+> describe read them with `.(int32)`, so every column printed
+> `DesktopWidth: AutoFill` — `#721` L1
+
+One stored model, two binaries, nothing else changed:
+
+| | `ddeb6c85` | `2fb1ac08` |
+|---|---|---|
+| `describe page Ledger.Cashflow_Overview` | 7 × `DesktopWidth: AutoFill` | `12`, 5 × `3`, `9` |
+| `describe page Ledger.Dashboard` | 3 × `AutoFill` | `12`, `3`, `9` |
+
+I had a reading of the evidence that fit, and I did not test it against a
+second instrument. The value was in the model the whole time.
+
+### 160. Measured with a reader that works, the old build damaged 22 of 34 documents
+
+The consequence of a read bug in `describe` is a write bug in `describe → exec`:
+the layout is flattened on the way through. Quantifying it needs the *new*
+binary as the reader, because the old one cannot see what it did.
+
+For every page and snippet: pristine model, describe → exec with build X, then
+read both with `2fb1ac08` and diff.
+
+| | `ddeb6c85` | `2fb1ac08` |
+|---|---|---|
+| documents changed by a describe → exec | **22 of 34** | **0 of 34** |
+| describe lines changed | 117 | 0 |
+| BSON lines changed (order-insensitive) | 11,662 | 1,020 |
+
+`mx check` was clean throughout, on both.
+
+**And the old build's own round-trip check called 21 of those 22 clean.** Run
+describe → exec → describe with one binary and the test passes: the reader that
+cannot see the width writes `AutoFill`, reads `AutoFill`, and reports a stable
+round-trip over a wrecked layout. A round-trip verified with the build that
+performs it is self-blind to exactly the bugs that matter — it can only catch a
+writer that disagrees with its own reader.
+
+At BSON level the old build's damage on one page (Insights, 106 lines) spans
+`Text`/`LanguageCode` ×14 each (translations), `Weight` ×12, `Parameter` and
+`Variable` ×12, `OnLeaveAction` and `DisabledDuringExecution` ×2 — the whole
+`#721` L1–L4 list, present in one document.
+
+### 161. What is left after the repair: three one-time rewrites
+
+1,020 BSON lines still move on a first describe → exec. A **second** round-trip
+moves nothing (`diff` empty), so these are one-time normalisations, not drift
+that compounds. Three shapes account for them:
+
+- **a null `Variable` key is dropped.** Stored: `Parameter: …, Variable: null`;
+  written back: the `Parameter` alone. Four sites on Cashflow, five on Import,
+  three on Insights. This is the same class `#721` L5 fixed for
+  `ListViewXPathSource.SourceVariable` (*"always carries its SourceVariable key,
+  null when unbound (44/44)"*), still open for parameter mappings.
+- **a one-line XPath constraint gains line breaks.**
+  `[CategoryId = …][Yr = 2026][MonthIndex = …]` is stored back as
+  `[CategoryId = …]\n[Yr = 2026]\n[MonthIndex = …]`. Whitespace-equivalent in
+  XPath, and stable on the second pass.
+- **translations are reordered.** Studio Pro's order, mxcli's order; the texts
+  and language codes are identical, count for count, across all ten languages of
+  `FeedbackModule.ShareFeedback`. This is most of the raw diff: that page reads
+  380 changed lines ordered and **34** order-insensitive.
+
+### 162. The `describe` subcommand has no `mdl 1` mode
+
+`describe` *as a statement* honours the script's header, and does it well:
+
+```
+mdl 1;  describe microflow Ledger.ACT_DrillCell;
+   →  $BRow = find $Budgets by CategoryId = $Row/CategoryIdText;
+```
+
+`describe` *as a subcommand* has no header to read, and `--format` is its only
+flag, so it always writes `mdl 0`:
+
+```
+mxcli describe microflow Ledger.ACT_DrillCell -p Ledger.mpr
+   →  $BRow = find($Budgets, CategoryId = $Row/CategoryIdText);
+```
+
+and that spelling is **refused under `mdl 1`**. Over this project's 85
+microflows, describing each and re-checking it with a `mdl 1;` header: **2 fail**
+on both builds. The same shape as finding 157 — `min(` where `minimum(` would
+do — generalised: for a project that has adopted the dialect, the obvious
+command for getting a document's source back gives source the project's own
+dialect will not run.
+
+### 163. `--page-check`'s first verdict can be taken before the page has rendered
+
+Found by accident and then isolated, because it undercuts the instrument this
+document has leaned on for forty phases. The same URL, twice in one run:
+
+```
+page /p/dashboard  h="Dashboard"           text=312   console-errors=1
+page /p/dashboard  h="Dashboard"  rows=1   text=904   console-errors=1
+```
+
+`text` is a third of the truth and the `rows=` field is **absent entirely**, with
+no warning that anything was incomplete — a missing key rather than a zero, so a
+reader comparing verdicts sees a different shape, not a flagged one. The heading
+had painted, which is presumably what the check waits for; the datasource had
+not returned.
+
+It is a race, not a rule: three cold boots of the same project gave 312, 312 and
+904 for that first check. Every page after the first was correct in all three.
+The practical consequence is that a first-page verdict can differ between two
+runs of the *same* build, so a baseline-versus-change comparison on the first
+page can show a difference that is not there — or hide one that is.
+
+### Everything else: unchanged, and verified so
+
+- **Findings 156–159 all still reproduce verbatim** on `2fb1ac08`. Nothing in
+  the 83 commits was aimed at them: `fmt --upgrade` still cannot parse a
+  `.test.mdl` that `check` accepts; `--header` still declines over `min(`; the
+  `mdl 1;` line alone still makes `create or modify microflow` refuse a splice;
+  `diff` still calls that same script unchanged.
+- **The `mdl 1` source is stable across the bump**: 41 files, 0 rejected, the
+  same 149 warnings in the same distribution.
+- **The app is unchanged**: replay applies 40 of 41 (the 41st is finding 158,
+  and its remaining statements apply clean on their own), `mx check` 0 errors,
+  and the pages render as before — cashflow rows=21 text=2290, budgets rows=14
+  text=1745, transactions rows=37 text=2968, dashboard 904 characters once warm.
+
+### Answer, in one line
+
+The page round-trip went from **22 of 34 documents silently damaged to none**,
+the fix proved my own two-phase-old attribution wrong, and the four defects this
+project filed last round are all still open.
