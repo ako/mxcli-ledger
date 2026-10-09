@@ -135,7 +135,7 @@ begin
         + '{"m":"' + $R/Merchant + '"'
         + ',"cat":"' + $R/CategoryName + '"'
         + ',"acc":"' + $R/AccountName + '"'
-        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+        + ',"v":' + formatDecimal($R/Amount, '0.00', 'en-US') + '}';
       set $Sep = ',';
       set $Total = $Total + $R/Amount;
       set $Count = $Count + 1;

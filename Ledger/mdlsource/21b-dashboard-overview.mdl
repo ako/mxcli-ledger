@@ -118,7 +118,7 @@ begin
       @annotation 'Category boundary: emit the category just finished, then start the next'
       if $R/CategoryName != $CurCat then
         if $CurCat != '' then
-          set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00') + ',';
+          set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00', 'en-US') + ',';
         end if;
         set $CurCat = $R/CategoryName;
         set $CatRecurring = 0;
@@ -137,7 +137,7 @@ begin
     set $CatRecurring = $CatRecurring + $MerchantTotal;
   end if;
   if $CurCat != '' then
-    set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00') + ',';
+    set $Result = $Result + $CurCat + '=' + formatDecimal($CatRecurring, '0.00', 'en-US') + ',';
   end if;
 
   return $Result;
@@ -213,7 +213,7 @@ begin
   begin
     if $C/CategoryName != $Cur then
       if $Cur != '' then
-        set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00') + ',';
+        set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00', 'en-US') + ',';
       end if;
       set $Cur = $C/CategoryName;
       set $Total = 0;
@@ -224,7 +224,7 @@ begin
   end loop;
 
   if $Cur != '' then
-    set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00') + ',';
+    set $Result = $Result + $Cur + '=' + formatDecimal($Total, '0.00', 'en-US') + ',';
   end if;
 
   return $Result;
@@ -293,8 +293,8 @@ begin
       + ',"grp":"' + $R/GroupName + '"'
       + ',"kind":"' + $R/GroupTypeName + '"'
       + ',"t":"' + $Month + '"'
-      + ',"ord":' + formatDecimal($Ord, '0.00')
-      + ',"v":' + formatDecimal($R/Total, '0.00') + '}';
+      + ',"ord":' + formatDecimal($Ord, '0.00', 'en-US')
+      + ',"v":' + formatDecimal($R/Total, '0.00', 'en-US') + '}';
     set $Sep = ',';
   end loop;
 
@@ -307,7 +307,7 @@ begin
         + ',"grp":"Review","kind":"Expense"'
         + ',"t":"' + formatDateTime($U/TxDate, 'yyyy-MM') + '-01"'
         + ',"ord":0.5'
-        + ',"v":' + formatDecimal($U/Amount, '0.00') + '}';
+        + ',"v":' + formatDecimal($U/Amount, '0.00', 'en-US') + '}';
       set $Sep = ',';
       set $UncatCount = $UncatCount + 1;
       set $UncatTotal = $UncatTotal + $U/Amount;
@@ -324,11 +324,11 @@ begin
         set $Json = $Json + $Sep
           + '{"k":"s","cat":"' + $CurCat + '"'
           + ',"grp":"' + $Grp + '","kind":"' + $Kind + '"'
-          + ',"prior":' + formatDecimal($Prior, '0.00')
-          + ',"current":' + formatDecimal($Current, '0.00')
-          + ',"delta":' + formatDecimal($Current - $Prior, '0.00')
-          + ',"ord":' + formatDecimal($Current, '0.00')
-          + ',"recur":' + formatDecimal($Recur, '0.00') + '}';
+          + ',"prior":' + formatDecimal($Prior, '0.00', 'en-US')
+          + ',"current":' + formatDecimal($Current, '0.00', 'en-US')
+          + ',"delta":' + formatDecimal($Current - $Prior, '0.00', 'en-US')
+          + ',"ord":' + formatDecimal($Current, '0.00', 'en-US')
+          + ',"recur":' + formatDecimal($Recur, '0.00', 'en-US') + '}';
         set $Sep = ',';
         set $CatCount = $CatCount + 1;
       end if;
@@ -356,11 +356,11 @@ begin
     set $Json = $Json + $Sep
       + '{"k":"s","cat":"' + $CurCat + '"'
       + ',"grp":"' + $Grp + '","kind":"' + $Kind + '"'
-      + ',"prior":' + formatDecimal($Prior, '0.00')
-      + ',"current":' + formatDecimal($Current, '0.00')
-      + ',"delta":' + formatDecimal($Current - $Prior, '0.00')
-      + ',"ord":' + formatDecimal($Current, '0.00')
-      + ',"recur":' + formatDecimal($Rc2, '0.00') + '}';
+      + ',"prior":' + formatDecimal($Prior, '0.00', 'en-US')
+      + ',"current":' + formatDecimal($Current, '0.00', 'en-US')
+      + ',"delta":' + formatDecimal($Current - $Prior, '0.00', 'en-US')
+      + ',"ord":' + formatDecimal($Current, '0.00', 'en-US')
+      + ',"recur":' + formatDecimal($Rc2, '0.00', 'en-US') + '}';
     set $Sep = ',';
     set $CatCount = $CatCount + 1;
   end if;
@@ -369,8 +369,8 @@ begin
   if $UncatCount > 0 then
     set $Json = $Json + $Sep
       + '{"k":"s","cat":"Needs review","grp":"Review","kind":"Expense"'
-      + ',"prior":0,"current":' + formatDecimal($UncatTotal, '0.00')
-      + ',"delta":' + formatDecimal($UncatTotal, '0.00')
+      + ',"prior":0,"current":' + formatDecimal($UncatTotal, '0.00', 'en-US')
+      + ',"delta":' + formatDecimal($UncatTotal, '0.00', 'en-US')
       + ',"ord":0.5,"recur":0}';
   end if;
 
@@ -427,7 +427,7 @@ begin
         + '{"m":"' + $R/Merchant + '"'
         + ',"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
         + ',"acc":"' + $R/AccountName + '"'
-        + ',"v":' + formatDecimal($R/Amount, '0.00') + '}';
+        + ',"v":' + formatDecimal($R/Amount, '0.00', 'en-US') + '}';
       set $Sep = ',';
       set $Count = $Count + 1;
     end if;

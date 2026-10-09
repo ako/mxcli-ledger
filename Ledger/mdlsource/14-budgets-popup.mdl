@@ -41,7 +41,7 @@ create or modify page Ledger.BudgetCell_Edit folder 'Ledger'
       rendermode: paragraph,
       class: 'text-muted')
 
-    footer footEdit {
+    footer {
       actionbutton btnSave (
         caption: 'Save',
         action: call microflow Ledger.ACT_SaveBudget(Edit = $currentObject),

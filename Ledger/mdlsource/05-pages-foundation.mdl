@@ -222,7 +222,7 @@ create or modify page Ledger.Transaction_Edit folder 'Ledger'
             datasource: database Ledger.Category,
             CaptionAttribute: Name)
 
-          footer ftEdit {
+          footer {
             actionbutton btnEditSave (
               caption: 'Save',
               action: call microflow Ledger.ACT_SaveTransaction(Tx = $currentObject),

@@ -82,7 +82,7 @@ create or modify page Ledger.Transaction_Detail folder 'Ledger'
       }
     }
 
-    footer footTx {
+    footer {
       actionbutton btnTxClose (caption: 'Close', action: close page)
     }
   }
