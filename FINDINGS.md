@@ -8786,6 +8786,9 @@ At BSON level the old build's damage on one page (Insights, 106 lines) spans
 
 ### 161. What is left after the repair: three one-time rewrites
 
+**Mostly fixed in Phase 49** — 1,020 BSON lines down to 894, of which 844 is one
+boilerplate page whose own cause is finding 167. The null-key drop is gone.
+
 1,020 BSON lines still move on a first describe → exec. A **second** round-trip
 moves nothing (`diff` empty), so these are one-time normalisations, not drift
 that compounds. Three shapes account for them:
@@ -8805,6 +8808,8 @@ that compounds. Three shapes account for them:
   380 changed lines ordered and **34** order-insensitive.
 
 ### 162. The `describe` subcommand has no `mdl 1` mode
+
+**Fixed in Phase 49** — `describe` gained `--mdl`, and `1` is its default.
 
 `describe` *as a statement* honours the script's header, and does it well:
 
@@ -8829,6 +8834,11 @@ command for getting a document's source back gives source the project's own
 dialect will not run.
 
 ### 163. `--page-check`'s first verdict can be taken before the page has rendered
+
+**Narrowed and partly corrected in Phase 49.** It is not the *first* verdict (a
+later one in the same run can be the short one) and the missing `rows=` is not
+part of it (an absent `rows=` now means zero rows). What stands is that the check
+does not wait for a slow datasource.
 
 Found by accident and then isolated, because it undercuts the instrument this
 document has leaned on for forty phases. The same URL, twice in one run:
@@ -8997,3 +9007,206 @@ no change: 41 files, 0 rejected, the same 149 warnings in the same distribution.
 Every defect this project filed two rounds ago is closed, the hand work in its
 own migration is now mechanical, and the one finding I got wrong I got wrong in
 the tool's favour — the fault was older and quieter than I reported.
+
+## Phase 49 — main `28a3b1bf`: a new rule finds a real bug in this app (2026-10-09)
+
+**747 commits, 3,772 files, +107,908 / −13,846** — nine days, and the largest
+jump this document has measured. Three of the four findings still open are
+closed or narrowed, a new rule found a genuine defect in the app, and a warning
+I have passed over for five phases turns out to be wrong.
+
+`mdl 1` has left preview: **MDL-LANG01's 41 banners are gone** and the rule no
+longer exists (`mxcli help MDL-LANG01` → unknown topic). A headerless script is
+still `mdl 0` — MDL-V1-SLASH still warns on the pre-migration source — so the
+opt-in is unchanged; only the "may still change" caveat is retired.
+
+| | before | after |
+|---|---|---|
+| warnings across the 41 files | 149 | **98** |
+| of which the tool withdrew | | MDL-LANG01 41, MDL-WIDGET15 8, MDL001 3 |
+| of which this phase fixed | | MDL-JSONNUM01 12, MDL-DEPR005 4, MDL-DEPR139 1 |
+| replay | 41 of 41 | **41 of 41** (second pass — see 166) |
+| `mx check` | 0 errors | **0 errors** |
+
+### 164. The JSON behind every chart was built in the user's language
+
+A new rule, **MDL-JSONNUM01**, fired 12 times, and it is right:
+
+> set 'Lines' builds JSON with formatDecimal(…) and no locale: it formats in the
+> user's language, so a Dutch user gets '12,50' and the JSON is invalid for them
+> only
+
+`formatDecimal(x, '0.00')` formats in the **current user's** language. Every
+chart payload in this app is a hand-built JSON string, so for a Dutch, German or
+French user the numbers come out `12,50` and the JSON is malformed — the charts
+break for them and for nobody else. This app enables `nl_NL`, `de_DE`, `fr_FR`,
+`cs_CZ`, `es_ES` and `it_IT`, so it is reachable; it has gone unnoticed for
+forty-nine phases because the default language is `en_US` and that is the only
+language anything here has ever run in.
+
+Fixed: 30 sites across `21b-dashboard-overview`, `25-insights-data` and
+`28-insights-interaction` now state the locale —
+`formatDecimal($X, '0.00', 'en-US')`. The tag must be hyphenated; `'en_US'` is
+silently ignored, which the rule says and which is its own small trap. Display
+formatting elsewhere (`07-cashflow-builder` and friends) is left
+locale-sensitive, which is correct for text a person reads, and the rule does
+not flag it — it fires only where the concatenation looks like JSON.
+
+**What I could not do: watch it break.** Driving this app into a Dutch session
+defeated me. Setting `DefaultLanguageCode: 'nl_NL'` and rebuilding changes
+nothing a browser sees: the runtime creates anonymous users with `en_US`
+regardless (measured — the model rebuilt, a fresh session's user still read
+`en_US`), and Atlas's language selector, which the layout does include, renders
+nothing for an anonymous user. So the failure rests on the rule's own
+measurement and on how `formatDecimal` is documented, **not on my having seen
+it**. For this app the bug is latent until it has signed-in users with a
+non-English language — which is exactly the shape of the warning.
+
+### 165. MDL-WIDGET07's 58 hits are a false positive, and I never checked
+
+It says:
+
+> page Ledger.Cashflow_Overview: widget `chartSpark` (pluggablewidget) property
+> `chartData` is not recognized and will be silently dropped on write
+
+It is not dropped. On the named widget of the named page, every property the
+warning condemns is in the stored model:
+
+```
+chartSpark properties present in the stored page:
+   chartData: True   chartHeight: True   spec: True
+   renderer: True    showActions: True
+```
+
+and across the Insights page all seven Vega widgets store all seven properties
+(7 × 7), and the charts draw from them — 7 embeds, 2,654 marks. The claim is
+falsifiable in one command, it has been at 58 hits since Phase 44, and **every
+round I wrote it down as an unchanged advisory without testing it.** That is the
+same mistake as Phase 47's: taking a tool's description of its own finding
+instead of measuring the thing described.
+
+### 166. A change inside a loop costs the flow's layout, and the rebuild needs two passes
+
+Finding 164's fix changes one expression per `set` — but those `set`s are inside
+loops, and the splice does not edit inside a loop. `exec` now **pre-flights every
+flow change in a file and refuses the whole file** rather than writing part of
+it, listing all of them at once:
+
+```
+✗ exec would refuse this statement: create or modify microflow
+  Ledger.ACT_SelectOverviewCategory: … the Loop at (2600, 200) changes inside its body …
+Refusing to execute: 4 flow change(s) above would be refused when reached. Nothing was written.
+  exec applies statements one at a time, so the statements before a refused
+  change would be written and the ones after it would not.
+```
+
+That is the right behaviour and new in this range. The route out is the one the
+refusal names — drop the flow and let `create or modify` rebuild it — and it
+costs what the refusal warned it would. Dropping and recreating the nine
+affected microflows changed 217 described lines, **all of it attributed**:
+`@position` ×30, `@merge` ×11, annotations losing their stored `position:`, and
+the 30 `formatDecimal` edits themselves. Nothing semantic moved, and the Insights
+page describes identically before and after.
+
+Two things worth knowing before doing this to a project:
+
+- **`drop microflow` takes `if exists` before the name**, not after:
+  `drop microflow if exists M.F;`. Written the SQL way round it is a syntax
+  error, and the message blames the missing `;`.
+- **The drop needs two replay passes.** `26-insights-page.mdl` references
+  `ACT_SelectInsightDay`, which `28-insights-interaction.mdl` defines two files
+  later; the build order assumes everything already exists, so pass one fails
+  on an unresolved reference and pass two is clean. 41 of 41 applied on the
+  second pass.
+
+### 167. A design property set to `None` is dropped on write
+
+The describe → exec residual (finding 161) is **894 order-insensitive BSON lines
+across 34 documents, down from 1,020** — and every document improved except one,
+which got markedly worse:
+
+| document | `2fb1ac08` | `28a3b1bf` |
+|---|---|---|
+| `Ledger.Cashflow_Overview` | 14 | **2** |
+| `Administration.Account_Edit` | 26 | **6** |
+| `FeedbackModule.ShareFeedback` | 380 | **10** |
+| 10 other documents | 3–27 | **0–3** |
+| `MyFirstModule.Home_Web` | 178 | **844** |
+
+`Home_Web` is now 94% of the whole residual, and the cause is specific:
+`Forms$DesignPropertyValue` entries go **46 → 33**, and every one of the 13 lost
+has the option `None`:
+
+```
+dropped by the round-trip:
+   ('Flex container', 'None') x 7
+   ('Cards style',    'None') x 3
+   ('Column gap',     'None') x 3
+added: (nothing)
+```
+
+Every design property with a real value survives; every one explicitly set to
+`None` is dropped. Studio Pro stores that choice — "this container is
+deliberately not a flex container" is not the same as saying nothing — so the
+round-trip loses an author's decision. It is the same class as the
+`Variable: null` key this range just fixed: an explicitly stored *nothing*
+treated as nothing to store.
+
+### 163 narrowed, and Phase 47 corrected on two counts
+
+The remaining open finding was "`--page-check`'s first verdict can be taken
+before the page has rendered". Both halves of how I framed it were wrong.
+
+- **Not the first verdict.** Asking for the same URL twice in one run gave
+  `text=904` then `text=312` — the *second* check short, the opposite way round
+  from Phase 47.
+- **Not the missing `rows=` either.** `--page-check` no longer counts a data
+  grid's header or a list view's "No items found" placeholder, so an absent
+  `rows=` now means zero rows. Phase 47 read its absence as part of the defect;
+  it is just the new counting. The same change re-baselines the row counts this
+  document has quoted for ten phases: cashflow 21 → 19, budgets 14 → 13,
+  transactions 37 → 35, with every **text length byte-identical**.
+
+What is left is narrower and duller: for about a minute after the runtime starts
+serving, the dashboard's datasource has not returned and the page genuinely is
+shorter. Six consecutive checks on a warm app all read 904. So the instrument
+reports what is on screen; it just does not wait for a slow datasource and gives
+no sign that the page was still filling. There is now a guard for exactly this —
+`--assert-text` / `--assert-count` turn a short page into a failure instead of a
+plausible number.
+
+### The new instruments, and one environment trap
+
+- **`mxcli playwright check /p/a /p/b -p app.mpr`** gives the `--page-check`
+  verdict for an already-running app, in one call, with `--assert-text` and
+  `--assert-count`. It replaces the hand-written Playwright probes this document
+  has leaned on, and because the app is already warm it sidesteps most of 163.
+- **`mxcli run --local --detach`**, `run status`, `run stop` — used throughout
+  this phase; they do what they say (`running: http://127.0.0.1:8080/ (pid N, …)`).
+- **`mxcli help <RULE>`** — every diagnostic now names its own help topic.
+- **The trap:** `playwright check` fails a page on *any* console error, and in
+  this container the agent proxy makes the theme's Google Fonts import fail with
+  `ERR_CERT_AUTHORITY_INVALID`. So all four pages report `FAIL` on a perfectly
+  healthy app and the exit status is unusable here. That is the environment, not
+  the app — but it sharpens finding 152, and corrects how I stated it: the Plex
+  `.woff2` files are vendored **per theme pack**
+  (`theme/mxcli-themes/*/files/theme/web/mxcli-fonts/`), not in the base theme,
+  so the CDN import is redundant only while a theme pack is active. Phase 46
+  called it flatly redundant; it needs that qualifier.
+
+### The app, verified
+
+41 of 41 files replay (second pass), `mx check` 0 errors, page text lengths
+byte-identical to baseline (dashboard 904, cashflow 2290, budgets 1745,
+transactions 2968), the dashboard draws 2 Vega embeds and 393 marks, and Insights
+draws 7 embeds and 2,654 marks — stable across three runs. Phase 46 recorded
+2,648 for Insights on an older build and an older model lineage; the page
+describes identically between the two models and no flow logic changed, so I
+cannot attribute the six marks to this change and am recording the new figure as
+the baseline rather than explaining it away.
+
+### Answer, in one line
+
+The tool found a real bug in this app that forty-nine phases of my own testing
+missed, and the same round showed that a warning I had been copying forward
+without checking was never true.
