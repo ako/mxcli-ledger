@@ -106,9 +106,9 @@ create or modify published odata service Ledger.InsightsFeed (
   ODataVersion: OData4,
   namespace: 'Ledger',
   ServiceName: 'InsightsFeed',
-  Summary: 'Row-level expense data for the Insights scatter'
+  Summary: 'Row-level expense data for the Insights scatter',
+  Authentication: (session)
 )
-authentication session
 {
   publish entity Ledger.VScatterFeed as 'Expenses' (
     ReadMode: ReadFromDatabase,

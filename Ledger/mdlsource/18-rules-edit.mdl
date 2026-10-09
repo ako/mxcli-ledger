@@ -108,7 +108,7 @@ create or modify page Ledger.CategoryRule_Edit folder 'Ledger'
       }
     }
 
-    footer footRule {
+    footer {
       actionbutton btnRuleSave (
         caption: 'Save',
         action: call microflow Ledger.ACT_SaveRule(Rule = $currentObject),

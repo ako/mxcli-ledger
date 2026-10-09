@@ -13,9 +13,12 @@ mdl 1;
 -- DS_InsightsContext does the retrieving, once, so the page costs one query per
 -- view instead of one per chart (docs/observability.md).
 --
--- Amounts go through formatDecimal('0.00'): a Decimal stringifies with a long
--- tail and small values come out in scientific notation (FINDINGS 19), neither
--- of which is valid JSON.
+-- Amounts go through formatDecimal('0.00', 'en-US'): a Decimal stringifies with
+-- a long tail and small values come out in scientific notation (FINDINGS 19),
+-- neither of which is valid JSON. The locale is stated because without it
+-- formatDecimal formats in the *user's* language, so a Dutch user would get
+-- '12,50' and invalid JSON for them alone (MDL-JSONNUM01, FINDINGS 164). The
+-- tag must be hyphenated: 'en_US' is silently ignored.
 -- ============================================================================
 
 /**
@@ -115,7 +118,7 @@ begin
       + ',"grp":"' + $R/GroupName + '"'
       + ',"kind":"' + $R/GroupTypeName + '"'
       + ',"color":"' + $R/ColorHex + '"'
-      + ',"v":' + formatDecimal($R/Signed, '0.00') + '}';
+      + ',"v":' + formatDecimal($R/Signed, '0.00', 'en-US') + '}';
     set $Sep = ',';
   end loop;
 
@@ -196,7 +199,7 @@ begin
     set $Json = $Json + $Sep
       + '{"d":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
       + ',"day":"' + formatDateTime($R/TxDate, 'yyyy-MM-dd') + '"'
-      + ',"v":' + formatDecimal($R/Total, '0.00')
+      + ',"v":' + formatDecimal($R/Total, '0.00', 'en-US')
       + ',"n":' + toString($R/TxCount) + '}';
     set $Sep = ',';
   end loop;
@@ -259,8 +262,8 @@ begin
           + ',"cat":"' + $CurCategory + '"'
           + ',"months":' + toString($CurMonths)
           + ',"tx":' + toString($CurTx)
-          + ',"spent":' + formatDecimal($CurTotal, '0.00')
-          + ',"year":' + formatDecimal($Projected, '0.00') + '}';
+          + ',"spent":' + formatDecimal($CurTotal, '0.00', 'en-US')
+          + ',"year":' + formatDecimal($Projected, '0.00', 'en-US') + '}';
         set $Sep = ',';
       end if;
       set $CurMerchant = $R/Merchant;
@@ -289,8 +292,8 @@ begin
       + ',"cat":"' + $CurCategory + '"'
       + ',"months":' + toString($CurMonths)
       + ',"tx":' + toString($CurTx)
-      + ',"spent":' + formatDecimal($CurTotal, '0.00')
-      + ',"year":' + formatDecimal($Projected, '0.00') + '}';
+      + ',"spent":' + formatDecimal($CurTotal, '0.00', 'en-US')
+      + ',"year":' + formatDecimal($Projected, '0.00', 'en-US') + '}';
   end if;
 
   return '[' + $Json + ']';
@@ -327,9 +330,9 @@ begin
       + '{"cat":"' + $R/CategoryName + '"'
       + ',"grp":"' + $R/GroupName + '"'
       + ',"kind":"' + $R/GroupTypeName + '"'
-      + ',"prior":' + formatDecimal($R/PriorTotal, '0.00')
-      + ',"current":' + formatDecimal($R/CurTotal, '0.00')
-      + ',"delta":' + formatDecimal($R/Delta, '0.00') + '}';
+      + ',"prior":' + formatDecimal($R/PriorTotal, '0.00', 'en-US')
+      + ',"current":' + formatDecimal($R/CurTotal, '0.00', 'en-US')
+      + ',"delta":' + formatDecimal($R/Delta, '0.00', 'en-US') + '}';
     set $Sep = ',';
   end loop;
 
