@@ -9064,6 +9064,9 @@ non-English language — which is exactly the shape of the warning.
 
 ### 165. MDL-WIDGET07's 58 hits are a false positive, and I never checked
 
+**Fixed in Phase 50** — 58 → 0, and a genuinely unknown property is now an
+error (MDL-WIDGET01) when the project is attached.
+
 It says:
 
 > page Ledger.Cashflow_Overview: widget `chartSpark` (pluggablewidget) property
@@ -9120,6 +9123,8 @@ Two things worth knowing before doing this to a project:
   second pass.
 
 ### 167. A design property set to `None` is dropped on write
+
+**Fixed in Phase 50** — 46 → 46, nothing dropped.
 
 The describe → exec residual (finding 161) is **894 order-insensitive BSON lines
 across 34 documents, down from 1,020** — and every document improved except one,
@@ -9210,3 +9215,161 @@ the baseline rather than explaining it away.
 The tool found a real bug in this app that forty-nine phases of my own testing
 missed, and the same round showed that a warning I had been copying forward
 without checking was never true.
+
+## Phase 50 — main `ce5b66fb`: a new constraint names a bug this project shipped (2026-10-10)
+
+**75 commits, 344 files, +15,613 / −635.** Three of the four findings left open
+are closed, the describe → exec residual is all but gone, and a new attribute
+constraint turned out to name a defect Phase 46 introduced and ten phases of
+browser testing never looked for.
+
+| | before | after |
+|---|---|---|
+| warnings across the 41 files | 98 | **40** |
+| describe → exec residual (order-insensitive BSON lines, 34 docs) | 894 | **29** |
+| `mx check` | 0 errors | **0 errors** |
+
+### 168. The dates in this app shift by a day for every user west of UTC
+
+`ce5b66fb` gives Studio Pro's **Localize** setting an MDL spelling —
+`DateTime not localized` — and MDL-DEPR160's note says what it is for:
+
+> Mendix has no date-only type: `date` was always stored as a DateTime, and
+> still is. […] For a calendar date that must not shift with the user's time
+> zone (a birth date), write `DateTime not localized` — **the rewrite does not,
+> because `date` was always stored localized.**
+
+That last clause is about this project. Phase 44 found `TxDate` declared `date`
+and silently stored as `DateTime`; Phase 46's migration rewrote it to plain
+`DateTime`, which preserved the stored meaning exactly — and the stored meaning
+was *localized*. The seed writes every `TxDate` at midnight
+(`dateTime(2026, 1, 1)` plus offsets), so the value has nowhere to go but
+backwards.
+
+Measured in a browser: one app, one database, three `timezoneId` values, the
+first three rows of the review grid.
+
+| timezone | before | after |
+|---|---|---|
+| UTC | 26 Sep, 24 Sep, 22 Sep | 26 Sep, 24 Sep, 22 Sep |
+| America/Los_Angeles (UTC−7) | **25 Sep, 23 Sep, 21 Sep** | 26 Sep, 24 Sep, 22 Sep |
+| Pacific/Kiritimati (UTC+14) | 26 Sep, 24 Sep, 22 Sep | 26 Sep, 24 Sep, 22 Sep |
+
+Every date a day early west of UTC, and nothing east of it — which is what a
+midnight value does under a negative offset. The second column is after
+`TxDate: DateTime not localized`.
+
+The part that makes it more than cosmetic: **the cashflow matrix buckets by
+month in the database**, on the stored value, so it kept the real month while
+the grid moved. For a transaction on the 1st, the grid said one month and the
+matrix said the next.
+
+Fixed: `Transaction.TxDate`, and `InsightsContext.FromDate` / `ToDate`, which
+feed the month keys through `formatDateTime(…, 'yyyy')` and `'MM'` and so carry
+the same hazard. `Account.LastImport` and `ImportRow.ImportedOn` stay localized:
+those are instants, not calendar dates, and localizing an instant is correct.
+
+Worth noting where the constraint is and is not accepted, because it is exactly
+right: a non-persistent entity takes it, and a **view entity refuses it** — a
+view's value follows its OQL source, and `describe` never prints it there.
+
+### 169. Changing an attribute's Localize desynchronises every view that selects it
+
+Applying 168 to the domain model alone left the project unbuildable, and only
+`mx check` said so:
+
+```
+mxcli check / exec     — silent
+mx check               — [error] [CE6770] "View Entity is out of sync with the
+                         OQL Query." at Entity 'Ledger.VTransactionLine'
+                         … 'Ledger.VDaySpend' … 'Ledger.VScatterFeed'
+                         The app contains: 3 errors.
+```
+
+Three views select `TxDate`; their derived columns still carried the old
+localized flag. Re-executing the three view files cleared it — 0 errors — and a
+full in-order replay would have done the same, since they run after
+`01-domain-model.mdl`. So this bites the incremental edit, which is how anyone
+would actually make this change, and the only tool that notices is the one you
+run last.
+
+### 165 closed, with the negative control it deserved
+
+MDL-WIDGET07 goes **58 → 0**, and the fix is better than the one I asked for.
+Without a project mxcli cannot know a pluggable widget's schema, so it no longer
+guesses. With one it reads the real schema from the `.mpk`:
+
+```
+$ mxcli check … -p Ledger.mpr          # a property that genuinely does not exist
+✗ page Ledger.Insights: widget `chartStream` (vegachart) has no property
+  `totallyBogusProp`  [MDL-WIDGET01]
+1 issues: 1 errors, 0 warnings, 0 info
+```
+
+An **error**, naming the widget by its real type rather than the generic
+`pluggablewidget`. Detection did not go away with the false positives; it moved
+to where the information exists and got stronger. Phase 49 proved the warning
+wrong; this is the control that proves the fix is not just suppression.
+
+### 167 closed, 161 all but closed
+
+`Forms$DesignPropertyValue` survives a round-trip **46 → 46**: the `None`-valued
+design properties are no longer dropped. With that and the canonicalisation work
+behind it (`give every written element Studio Pro's property set`, `write the
+property names Studio Pro writes, and only those`, `strip the properties a
+project's version does not declare`), the residual across all 34 documents is
+**29 lines**:
+
+| | `ddeb6c85` | `2fb1ac08` | `28a3b1bf` | `ce5b66fb` |
+|---|---|---|---|---|
+| BSON lines changed by a describe → exec | 11,662 | 1,020 | 894 | **29** |
+
+`MyFirstModule.Home_Web`, 94% of last round's residual, is down from 844 to 13.
+
+### 170. What is left is small, and no longer only cosmetic
+
+The 29 lines are four shapes, and two of them change a value rather than drop a
+default:
+
+- **`AttributeRef: null` dropped** ×4 — the third instance of this family, after
+  `Variable: null` and the design-property `None`: an explicitly stored *nothing*
+  treated as nothing to store.
+- **`SubmitBehaviour: "WhileEditing"` → `"OnEndEditing"`** ×3 on
+  `FeedbackModule.ShareFeedback` and its `_Logo` twin. That is a behaviour
+  change: a text box that submits as you type becomes one that submits when you
+  leave the field.
+- **`PreviewWidth: 1` → `-1`** and **`Width: "FixedWidth"` → `"FullWidth"`** on
+  `Home_Web` — a stored width rewritten, not defaulted.
+- **An array marker `2` → `3`** on `Administration.Account_Overview`, the
+  empty-versus-populated list marker earlier changelogs describe.
+
+A line count that small is easy to wave through; three of these are the model
+being told something different from what it said.
+
+### 166's message half fixed
+
+The `if exists` error now teaches instead of misleading:
+
+```
+- line 2:26 extraneous input 'if' expecting the start of a statement …
+`if exists` goes before the name, not after it:
+  drop microflow if exists M.F;    (correct)
+```
+
+and the spurious cascade is gone — one error for one mistake, where a nine-line
+file used to report three bogus missing-`;` errors on the lines after it.
+
+### The app, verified
+
+Page verdicts byte-identical to baseline (dashboard text=904, cashflow
+rows=19 text=2290, budgets rows=13 text=1745, transactions rows=35 text=2968),
+dashboard 2 Vega embeds / 393 marks, Insights 7 embeds / 2,654 marks, and
+`mx check` 0 errors. Replaying the committed source onto a model that predates
+the Phase 49 locale fix hits finding 166's loop refusal on the same three files
+and needs the same drop-and-rebuild; the source itself is clean.
+
+### Answer, in one line
+
+A constraint that did not exist last week named a bug this project has carried
+since Phase 46, and the browser showed it in three timezones — while the last
+of the round-trip damage fell from 894 lines to 29.
