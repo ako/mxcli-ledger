@@ -175,8 +175,13 @@ create or modify persistent entity Ledger.Merchant (
  */
 @position(380, 100)
 create or modify persistent entity Ledger.Transaction (
-  /** Booking date */
-  TxDate: DateTime not null error message 'Transaction date is required',
+  /**
+   * Booking date. `not localized` because this is a calendar date, not an
+   * instant: the seed stores it at midnight, so a localized DateTime renders a
+   * day earlier for every user west of UTC while the matrix — bucketed in the
+   * database on the stored value — keeps the real month (FINDINGS 168).
+   */
+  TxDate: DateTime not localized not null error message 'Transaction date is required',
   /** Counterparty name as it appeared on the statement */
   Merchant: string(200) not null,
   /** Payment reference / description */

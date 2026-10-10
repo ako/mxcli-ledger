@@ -60,10 +60,10 @@ create or modify non-persistent entity Ledger.InsightsContext (
   WindowText: string(160),
   /** What the filter currently selects, in words */
   FilterText: string(200),
-  /** Start of the period, inclusive */
-  FromDate: datetime,
-  /** End of the period, inclusive */
-  ToDate: datetime,
+  /** Start of the period, inclusive. Calendar date — see FINDINGS 168. */
+  FromDate: datetime not localized,
+  /** End of the period, inclusive. Calendar date — see FINDINGS 168. */
+  ToDate: datetime not localized,
   /** The clicked mark's datum, as JSON, written by the chart widget */
   SelectedPoint: string,
   /** Transactions behind the clicked day */
