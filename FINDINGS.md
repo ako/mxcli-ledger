@@ -9275,6 +9275,8 @@ view's value follows its OQL source, and `describe` never prints it there.
 
 ### 169. Changing an attribute's Localize desynchronises every view that selects it
 
+**Fixed in Phase 51** — `exec` resyncs the dependent views and reports each one.
+
 Applying 168 to the domain model alone left the project unbuildable, and only
 `mx check` said so:
 
@@ -9328,6 +9330,9 @@ project's version does not declare`), the residual across all 34 documents is
 
 ### 170. What is left is small, and no longer only cosmetic
 
+**Fixed in Phase 51** — all four shapes gone; the residual is 2 lines of XPath
+whitespace across 34 documents.
+
 The 29 lines are four shapes, and two of them change a value rather than drop a
 default:
 
@@ -9373,3 +9378,126 @@ and needs the same drop-and-rebuild; the source itself is clean.
 A constraint that did not exist last week named a bug this project has carried
 since Phase 46, and the browser showed it in three timezones — while the last
 of the round-trip damage fell from 894 lines to 29.
+
+## Phase 51 — main `020f4572b`: the round-trip reaches two lines (2026-10-14)
+
+**298 commits, 736 files, +36,454 / −4,255.** Both findings left over from Phase
+50 are closed, the describe → exec round-trip is now effectively lossless, and
+one new defect turned up before any of that could be measured — in the build
+itself.
+
+### 171. `make build` needs `rsync`, and one of its three sync targets has no fallback
+
+The round began with the toolchain unable to build at all:
+
+```
+make: rsync: No such file or directory
+make: *** [Makefile:79: sync-mods] Error 127
+```
+
+`sync-mods` is new, and it is the odd one out. Its two siblings both guard the
+call:
+
+```make
+# line 63, sync-skills       — and line 71, sync-skill-packs
+@rsync -a --delete --exclude='.DS_Store' … 2>/dev/null \
+    || { rm -rf … && mkdir -p … && cp -R … ; }
+
+# line 79, sync-mods         — no redirect, no fallback
+@rsync -a --delete --exclude='tests/' --exclude='*.test.ts' … mods/ cmd/mxcli/mods/
+```
+
+So a machine without `rsync` — this container, and any slim CI image — can run
+`sync-skills` and `sync-skill-packs` and then dies on the third. The fallback its
+neighbours carry is deliberate and one line long; `sync-mods` just did not get
+it. Worked around here by replicating the copy and its four excludes by hand,
+which is the only reason the rest of this phase has numbers in it.
+
+### 169 closed — `exec` now resyncs the views and says so
+
+Phase 50's second finding was that changing an attribute's Localize left every
+dependent view out of sync, with `mxcli check` and `exec` silent and only
+`mx check` catching it. Now:
+
+```
+$ mxcli exec mdlsource/01-domain-model.mdl -p Ledger.mpr
+Modified entity: Ledger.Transaction
+Resynced view Ledger.VTransactionLine (TxDate: not localized)
+Resynced view Ledger.VDaySpend (TxDate: not localized)
+```
+
+and `mx check` reports **0 errors without re-running the view files** — the
+incremental edit that left the project unbuildable last round now just works.
+A second run resyncs nothing, so it is idempotent rather than unconditional.
+
+### 170 and 161 closed — 2 lines left, and they are the benign one
+
+| | `ddeb6c85` | `2fb1ac08` | `28a3b1bf` | `ce5b66fb` | `020f4572b` |
+|---|---|---|---|---|---|
+| BSON lines changed by a describe → exec, 34 documents | 11,662 | 1,020 | 894 | 29 | **2** |
+
+Every shape Phase 50 listed is gone: the four `AttributeRef: null` drops, and
+all three value rewrites — `SubmitBehaviour: WhileEditing → OnEndEditing`,
+`PreviewWidth: 1 → -1` with `Width: FixedWidth → FullWidth`, and the array
+marker `2 → 3`. What remains is one line on one page, the XPath constraint
+reflow this document has tracked since Phase 47:
+
+```
+stored        "[CategoryId = …][Yr = 2026][MonthIndex = …]"
+round-tripped "[CategoryId = …]\n[Yr = 2026]\n[MonthIndex = …]"
+```
+
+whitespace-equivalent in XPath and **idempotent on a second pass** (pass 1 vs
+pass 2: 0 lines). Thirty-four documents, two lines, no semantic loss. For a
+project whose whole premise is that the source is the model, that number is the
+one that mattered.
+
+### 163 still open, and my own framing was too narrow a second time
+
+Phase 50 narrowed this to "for about a minute after the runtime starts serving,
+the datasource has not returned", on the evidence of six consecutive warm checks
+all reading 904. That sample was too small. On an app that had been serving for
+minutes:
+
+```
+904  312  904          ← three consecutive checks
+904 904 904 904 904 904 904 904 904 904   ← ten more
+```
+
+So a short reading is not confined to a cold window; it recurs, intermittently,
+on a warm app — once in thirteen warm checks here, plus the first check after
+boot. The settled browser probe reads 904 with 2 Vega embeds and 393 marks, so
+the page is right and the instrument is sampling early. The mitigation is
+unchanged and is now the only safe way to use it: `--assert-text` /
+`--assert-count`, which turn a short page into a failure instead of a plausible
+number.
+
+Two phases running, I have stated this finding's shape more confidently than the
+evidence supported. The durable claim is the narrow one: **a `--page-check` text
+length is not reproducible, so never compare two of them without an assertion.**
+
+### Also tested
+
+- **`describe module Ledger with all`** emits 393 KB / **284 statements** and
+  checks clean — the whole module described and parsed back in one statement.
+- That same output reports **MDL-JSONNUM01 ×13 on the pre-migration model**,
+  which confirms finding 164 from the *model* side rather than from the source
+  files I wrote — a second instrument reaching the same verdict.
+- **The source is unmoved by 298 commits**: 41 files, 0 rejected, the same 40
+  warnings in the same distribution (18 MDL-ENUMDOC01, 14 MDL067, 7 MDL-PERF01,
+  1 MDL038).
+
+### The app, verified
+
+Replay: pass 1 carries finding 166's one build-order failure after the deliberate
+flow drop, **pass 2 applies all 41 with 0 failures**, `mx check` **0 errors**.
+Pages match baseline — dashboard text=904 warm, cashflow rows=19 text=2290,
+budgets rows=13 text=1745, transactions rows=35 text=2968 — dashboard 2 Vega
+embeds / 393 marks, Insights 7 / 2,654. And Phase 50's timezone fix survives a
+full replay: UTC and America/Los_Angeles both render 26 Sep, 24 Sep.
+
+### Answer, in one line
+
+The round-trip that lost 11,662 lines of a Studio Pro model five builds ago now
+loses two lines of whitespace — and the only new defect this round was in the
+Makefile, found by it refusing to build.
