@@ -9388,6 +9388,8 @@ itself.
 
 ### 171. `make build` needs `rsync`, and one of its three sync targets has no fallback
 
+**Fixed in Phase 52** — `sync-mods` now carries the same fallback as its siblings.
+
 The round began with the toolchain unable to build at all:
 
 ```
@@ -9501,3 +9503,97 @@ full replay: UTC and America/Los_Angeles both render 26 Sep, 24 Sep.
 The round-trip that lost 11,662 lines of a Studio Pro model five builds ago now
 loses two lines of whitespace — and the only new defect this round was in the
 Makefile, found by it refusing to build.
+
+## Phase 52 — PR 1497: a BSON driver swap, tested for the thing it could break (2026-10-20)
+
+Asked to test a specific pull request rather than a release. **PR 1497 is not in
+`main`** — 309 files, +1,381 / −1,100 against its merge base, built here as
+`nightly-1909-g36f8cc426` and compared against `main` at `4c0e494e8`.
+
+Its substance is one refactor: **drop `go.mongodb.org/mongo-driver` v1 entirely**
+and run on v2 alone. The motive is a customer's dependency scan — CVE-2026-107325,
+flagged on v1.17.10, which is that line's final release and will never be fixed.
+
+### The claim, checked against the binaries rather than the message
+
+```
+$ go version -m <binary> | grep mongo-driver
+main 4c0e494e8   go.mongodb.org/mongo-driver    v1.17.10
+                 go.mongodb.org/mongo-driver/v2 v2.9.2
+PR 1497          go.mongodb.org/mongo-driver/v2 v2.9.2
+```
+
+v1 is gone, and with it the finding that would have recurred on every scan.
+
+### What it could break, and why this project is the right place to find out
+
+The commit does not undersell the risk:
+
+> The migration is not a find-and-replace. The two drivers decode nested
+> documents into different Go types, and the type assertions mxcli reads them
+> back with were written against v1's. […] A failed type assertion is not an
+> error, so the value is silently dropped and the next write emits a document
+> with a property missing, which Studio Pro refuses to merge.
+
+A silently dropped property in a stored model is exactly what this document has
+spent nine phases measuring. The residual it tracks went 11,662 → 2 lines; if
+the driver swap reintroduced loss, that number is where it would show. Three
+measurements, all on the same corpus, each binary run against its own copy:
+
+| | main `4c0e494e8` | PR 1497 |
+|---|---|---|
+| `check` over the 41 source files | 0 rejected, 40 warnings | **identical** |
+| describe → exec residual, 34 documents, vs pristine | 2 lines | **2 lines** |
+| describe → exec residual, **main's result vs the PR's** | — | **0 lines** |
+| full two-pass replay, then every stored document compared | — | **174 documents, 0 differing** |
+| `mx check` after the replay | 0 errors | **0 errors** |
+
+The 174 spans pages, snippets, microflows, layouts, constants and enumerations
+— the write path for every document type this project authors. The read path
+was checked separately and is identical too: 26 layouts, constants and
+enumerations, plus `describe settings`, `describe navigation`, `list scheduled
+events`, and `describe module Ledger with all` at **9,164 lines**, all
+byte-for-byte the same from both binaries. Those last three matter because they
+are precisely the places the commit says broke during development — the settings
+guard, the scheduled-event property count, and the Atlas layouts' icon and image
+lookups.
+
+And the app built by the PR binary renders as it always has: cashflow rows=19
+text=2290, budgets rows=13 text=1745, transactions rows=35 text=2968, dashboard
+904 characters with 2 Vega embeds and 393 marks, Insights 7 embeds and 2,654
+marks.
+
+**No defect found.** For a change of this shape that is the useful result, and
+it is worth saying plainly rather than padding: the swap is byte-neutral on a
+34-document Studio Pro-authored corpus and a 174-document authored one.
+
+### A correction to my own instrument
+
+The first attempt at the write-path comparison was wrong. I ran `cmp` over
+`mprcontents/` and it reported **223 of 224 differing** — which is nonsense
+twice over: those entries are hex-named *directories*, not files, so `cmp` was
+erroring rather than comparing; and both replays drop and recreate nine
+microflows, so every regenerated ID would differ even between two runs of the
+same binary. A raw byte diff cannot answer this question. The normalised,
+ID-stripped comparison can, and that is where the 0 comes from. Had I reported
+the first number it would have looked like a catastrophic regression in a PR
+that has none.
+
+### 171 fixed
+
+Phase 51's finding — `make build` dying on `sync-mods` because it was the one
+sync target without an `rsync` fallback — is fixed on `main` and in this PR:
+
+```make
+@rsync -a --delete … mods/ cmd/mxcli/mods/ 2>/dev/null \
+    || { rm -rf cmd/mxcli/mods && mkdir -p cmd/mxcli/mods && cp -R mods/. cmd/mxcli/mods/ \
+      && find cmd/mxcli/mods \( -type d -name tests -o -path '*/.claude-plugin/types' \) -prune -exec rm -rf {} + …
+```
+
+`rsync` is still absent from this container, and both builds completed — which
+is the proof the fallback works rather than merely exists.
+
+### Answer, in one line
+
+The CVE is gone from the binary, and the driver it took with it changed nothing
+this project can measure: 174 stored documents, zero differences.
