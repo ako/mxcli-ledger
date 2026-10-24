@@ -9030,6 +9030,9 @@ opt-in is unchanged; only the "may still change" caveat is retired.
 
 ### 164. The JSON behind every chart was built in the user's language
 
+**Observed in Phase 53**, both directions: the unfixed model's chart collapses in a
+Dutch session with "Data is not valid JSON", the fixed one renders unchanged.
+
 A new rule, **MDL-JSONNUM01**, fired 12 times, and it is right:
 
 > set 'Lines' builds JSON with formatDecimal(…) and no locale: it formats in the
@@ -9597,3 +9600,134 @@ is the proof the fallback works rather than merely exists.
 
 The CVE is gone from the binary, and the driver it took with it changed nothing
 this project can measure: 174 stored documents, zero differences.
+
+## Phase 53 — main `a059cb3`: finding 164 stops being hearsay (2026-10-23)
+
+**500 commits, 1,432 files, +72,048 / −4,917** since the last tested build. The
+range lands roughly two dozen new `check` / `executor` refusals — CE0117,
+CE8812, CE7247, CE1406, MDL078, MDL089, MDL-WIDGET42 — and **not one of them
+fires on this project**: 41 files, 0 rejected, **0 errors**, the same 40
+advisory warnings as before.
+
+That is only worth saying if the new rules are live, so two controls:
+
+```
+$ mxcli check dead.mdl -p Ledger.mpr        # a log after a return
+✗ this LOG can never run: in the same block it follows a RETURN.
+  mxbuild refuses the flow (CE0104 unreachable / CE0105 / CE0709)  [MDL-FLOW05]
+```
+
+and `#1521`'s new note, which is **the inverse of finding 168**. With `TxDate`
+stored `not localized`, a statement that says neither way used to keep the
+stored value in silence; now it says so:
+
+```
+Modified attribute 'TxDate' on entity Ledger.Transaction
+  Note: Ledger.Transaction.TxDate keeps its stored `not localized`
+  (the statement does not say); write `TxDate: DateTime localized` to change it.
+```
+
+Finding 169's auto-resync still fires and now names three views, `VScatterFeed
+(d: not localized)` included.
+
+**One new rule I could not exercise**: MDL-WIDGET49. My first attempt put a
+numeric literal in `DynamicCellClass`, which is not one of the pluggable-widget
+Expression properties the rule reads a ReturnType for; my second named a filter
+widget this app does not have. So that one is relayed on its author's
+measurement, not mine, and is marked as such.
+
+### 164 observed, in both directions
+
+Phase 49 filed the JSON-locale defect on MDL-JSONNUM01's evidence and recorded
+plainly that I could not watch it happen: Atlas's language selector rendered
+nothing for an anonymous session. **In this build it renders** — a real
+`mx-name-comboBox1 language-selector` combobox that opens and lists all seven
+languages.
+
+And the two models to hand are a natural A/B, because the committed `.mpr`
+predates the Phase 49 fix while a replay of the committed source carries it:
+
+```
+pristine committed model   formatDecimal($R/Signed, '0.00')
+replayed from source       formatDecimal($R/Signed, '0.00', 'en-US')
+```
+
+Switching the session to Dutch, same app, same data:
+
+| dashboard | English | Dutch |
+|---|---|---|
+| **unfixed** `'0.00'` | 2 Vega embeds, 392 marks | **1 embed, 8 marks** |
+| **fixed** `'0.00', 'en-US'` | 2 embeds, 392 marks | **2 embeds, 392 marks** |
+
+and on the unfixed one the widget states the cause itself:
+
+```
+Data is not valid JSON: Expected double-quoted property name in JSON
+at position 87 (line 1 column 88)
+```
+
+That is MDL-JSONNUM01's prediction word for word — `12,50` where `12.50`
+belongs, malformed JSON, the chart gone, and only for the Dutch user. Four
+phases after the rule found it, the bug is **observed rather than inferred**,
+and the fix is confirmed in the same breath by the other row of the table.
+
+### 172. The committed `.mpr` has drifted from the committed source, and it costs
+
+This project's premise is that `mdlsource/` is the model. The `.mpr` is
+committed too, but it is not regenerated per change, and it has fallen behind:
+its last content commit is *"Upgrade to Mendix 11.14.0"*, several phases before
+Phase 50's `not localized` work. `mxcli diff` of one file against it:
+
+```
+Summary: 0 new, 11 modified, 0 removed — exec would write 1 unit(s)
+```
+
+The cost is measurable in finding 166's currency. Replaying the committed source
+onto the committed model refused **six files / nine microflows** on the loop
+splice, where recent phases replaying onto a current model refused three:
+
+| replay target | files refused on pass 1 |
+|---|---|
+| a model current with the source (Phases 49–51) | 3 |
+| the committed `.mpr` (this phase) | **6** |
+
+Drop the nine, replay twice, and it lands: pass 2 carries the one known
+build-order failure, **pass 3 applies 41 of 41**, `mx check` **0 errors**. So
+nothing is broken — but the committed model is now far enough behind that
+anyone opening it in Studio Pro gets a model several phases stale, and the
+drop-and-rebuild it needs grows with the gap. Either regenerate the `.mpr` with
+each change or stop committing it; carrying it half-updated is the one option
+with no upside.
+
+### A baseline refresh, attributed before being believed
+
+Two page text lengths moved, and the pages now render `English, United States`
+— the language selector above. The tempting reading is that the new writers
+changed the model. **They did not.** The pristine committed `.mpr` and the
+freshly replayed one render *identically* on this build:
+
+| | pristine committed | replayed from source |
+|---|---|---|
+| /p/cashflow | rows=19 text=2377 | rows=19 text=2377 |
+| /p/transactions | rows=35 text=3029 | rows=35 text=3029 |
+| console errors | 0 | 0 |
+
+Two models three phases apart in content, the same rendered output — so the
+shift is environment-level (this container downloaded a fresh runtime and
+widget `.mpk`s), not model-level. The new numbers are simply the baseline from
+here: **cashflow 2377, transactions 3029, dashboard 904 / 2 embeds / 392 marks**,
+and `console-errors=0`, which also retires the Phase 49 trap where the proxy's
+font failure made `playwright check` report `FAIL 4 of 4` on a healthy app.
+
+### 163 reproduced again
+
+Ten dashboard checks on a warm app: `904 904 312 904 904 904 904 904 904 904`.
+One short reading, mid-sequence, exactly as Phase 51 narrowed it. The standing
+rule holds — never compare two `--page-check` text lengths without
+`--assert-text`.
+
+### Answer, in one line
+
+Two dozen new refusals and this project trips none of them; and the locale bug
+the tool found four phases ago finally broke a chart in front of me, in Dutch,
+with the fix proven in the same experiment.
